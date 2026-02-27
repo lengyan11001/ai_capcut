@@ -66,7 +66,21 @@ python -m mcp
 - `cwd` 请改为你本机的 `ai_test_platform` 绝对路径。
 - 若后端部署在别的机器，将 `AI_TEST_PLATFORM_BASE_URL` 改为该地址；token 仍为在平台登录后获取的 token。
 
-**方式二：使用 uv**
+**方式二：HTTP（仅 URL，需服务端先起 MCP HTTP 服务）**
+
+若已在某台机器上以 HTTP 模式运行 MCP（见第七节），在 Cursor 中只需配置 url，token 放在 query：
+
+```json
+{
+  "mcpServers": {
+    "ai-test-platform": {
+      "url": "http://服务器IP:8001/mcp?token=你的平台token"
+    }
+  }
+}
+```
+
+**方式三：使用 uv（stdio）**
 
 若已安装 uv，可将 `command` 改为 `uv`，`args` 改为 `["run", "python", "-m", "mcp"]`，并保证 `cwd` 指向 `ai_test_platform`（含 `mcp/` 与可选 `pyproject.toml` 的目录）。
 
@@ -82,13 +96,48 @@ python -m mcp
 
 详见 [MCP_AND_COST.md](MCP_AND_COST.md)。
 
-## 七、部署到一台机器（可选）
+## 七、HTTP 模式（独立端口，token 走 query）
 
-若希望多人共用同一 MCP 端点，可将 MCP 以 **streamable-http** 方式跑在一台服务器上：
+若希望像速推一样「只填一个 URL」、无需配置 cwd/command/env，可在服务器上以 **HTTP 模式** 跑 MCP，Cursor 端用 `url` + query 传 token。
 
-1. 在服务器上安装依赖并设置 `AI_TEST_PLATFORM_BASE_URL`、`AI_TEST_PLATFORM_TOKEN`。
-2. 启动时使用 HTTP 传输，例如在 `mcp/__main__.py` 中改为 `mcp.run(transport="streamable-http")`（具体以 MCP SDK 文档为准），并指定 host/port。
-3. 使用 systemd、supervisor 或 Docker 常驻运行该进程。
-4. 在 Cursor 中配置 MCP 为「HTTP/SSE」连接，填写该服务器 URL。
+### 7.1 启动 HTTP MCP 服务
 
-当前默认为 **stdio**，适合本机 Cursor 直连；部署为 HTTP 时再按需修改启动方式与 Cursor 配置。
+在 **仓库根目录**（`ai_capcut`，即 `ai_test_platform` 的上一级）下，设置后端地址后启动（默认端口 8001）：
+
+```bash
+cd /path/to/ai_capcut
+export AI_TEST_PLATFORM_BASE_URL=http://你的平台域名或IP:8000
+python -m ai_test_platform.mcp --http
+```
+
+指定端口：
+
+```bash
+python -m ai_test_platform.mcp --http --port 8002
+```
+
+服务根路径为 `/mcp`，例如：`http://服务器IP:8001/mcp`。
+
+### 7.2 Cursor 配置（仅 URL）
+
+在 Cursor 的 MCP 配置中新增一条，**只填 url**，token 放在 query 里：
+
+```json
+{
+  "mcpServers": {
+    "ai-test-platform": {
+      "url": "http://你的服务器IP:8001/mcp?token=你的平台登录token"
+    }
+  }
+}
+```
+
+- 将 `你的服务器IP`、`8001`（若改过端口则对应修改）、`你的平台登录token` 替换为实际值。
+- 前端控制台「复制 Token」拿到 token 后，拼到 `?token=` 后面即可；无需再配 cwd、command、env。
+
+### 7.3 部署到服务器
+
+1. 在服务器上进入仓库根目录，安装 MCP 依赖：`pip install -r ai_test_platform/mcp/requirements.txt`。
+2. 设置环境变量 `AI_TEST_PLATFORM_BASE_URL` 指向平台后端（如 `http://127.0.0.1:8000` 若与后端同机）。
+3. 常驻运行：`python -m ai_test_platform.mcp --http --port 8001`（可用 systemd/supervisor）；放通 8001 端口或 Nginx 反代。
+4. 用户在 Cursor 中只配置上述 `url` 即可。

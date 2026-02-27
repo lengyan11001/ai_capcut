@@ -4,14 +4,24 @@ from typing import Any, Dict, Optional
 
 import httpx
 
+from .context import get_platform_token
+
 BASE_URL = os.environ.get("AI_TEST_PLATFORM_BASE_URL", "http://localhost:8000").rstrip("/")
-TOKEN = os.environ.get("AI_TEST_PLATFORM_TOKEN", "")
+
+
+def _get_token() -> str:
+    """优先用请求上下文 token（HTTP 模式），否则用环境变量。"""
+    t = get_platform_token()
+    if t:
+        return t
+    return os.environ.get("AI_TEST_PLATFORM_TOKEN", "")
 
 
 def _headers() -> Dict[str, str]:
     h = {"Content-Type": "application/json"}
-    if TOKEN:
-        h["Authorization"] = f"Bearer {TOKEN}"
+    token = _get_token()
+    if token:
+        h["Authorization"] = f"Bearer {token}"
     return h
 
 

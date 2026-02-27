@@ -381,14 +381,15 @@
 
       <div class="card mcp-card" style="margin-top: 1.25rem;">
         <div class="card-label">Cursor MCP 接入</div>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">在 Cursor 中使用本平台能力：复制下方「一键复制 MCP 配置」后，粘贴到 Cursor 的 MCP 配置（Settings → MCP 或 .cursor/mcp.json），仅需将 <code style="background: rgba(255,255,255,0.08); padding: 0.1em 0.35em; border-radius: 4px;">cwd</code> 改为你本机的 ai_test_platform 目录路径。</p>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">若服务端已起 <strong>HTTP MCP</strong>（<code>python -m ai_test_platform.mcp --http</code>），用「复制 HTTP 链接」粘贴到 Cursor 的 MCP 配置的 <code>url</code> 即可，无需 cwd/command。否则用「一键复制 MCP 配置」走 stdio，并将 <code>cwd</code> 改为本机 ai_test_platform 路径。</p>
         <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
           <span style="font-size: 0.9rem; color: var(--text-muted);">Token</span>
           <span id="tokenMask" style="font-family: monospace; font-size: 0.9rem;">••••••••••••</span>
         </div>
         <div class="card-actions" style="margin-top: 0.5rem; margin-bottom: 0;">
           <button type="button" id="copyTokenBtn" class="btn btn-ghost btn-sm">复制 Token</button>
-          <button type="button" id="copyMcpConfigBtn" class="btn btn-primary btn-sm">一键复制 MCP 配置</button>
+          <button type="button" id="copyHttpUrlBtn" class="btn btn-primary btn-sm">复制 HTTP 链接</button>
+          <button type="button" id="copyMcpConfigBtn" class="btn btn-ghost btn-sm">一键复制 MCP 配置（stdio）</button>
         </div>
       </div>
 
@@ -762,6 +763,21 @@
                 var t = copyMcpBtn.textContent;
                 copyMcpBtn.textContent = '已复制';
                 setTimeout(function() { copyMcpBtn.textContent = t; }, 1500);
+              });
+            });
+          }
+          var copyHttpUrlBtn = document.getElementById('copyHttpUrlBtn');
+          if (copyHttpUrlBtn && !copyHttpUrlBtn._bound) {
+            copyHttpUrlBtn._bound = true;
+            copyHttpUrlBtn.addEventListener('click', function() {
+              if (!token) return;
+              var host = window.location.hostname || 'localhost';
+              var protocol = window.location.protocol || 'http:';
+              var mcpHttpUrl = protocol + '//' + host + ':8001/mcp?token=' + encodeURIComponent(token);
+              copyToClipboard(mcpHttpUrl, function() {
+                var t = copyHttpUrlBtn.textContent;
+                copyHttpUrlBtn.textContent = '已复制';
+                setTimeout(function() { copyHttpUrlBtn.textContent = t; }, 1500);
               });
             });
           }
