@@ -437,7 +437,10 @@
       </div>
 
       <div id="panel-libraries" class="dash-panel">
-        <h3 style="margin-bottom: 0.75rem;">用例库</h3>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.75rem;">
+          <h3 style="margin: 0;">用例库</h3>
+          <button type="button" id="refreshLibrariesBtn" class="btn btn-ghost btn-sm">刷新</button>
+        </div>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">在「文档模版」中从链接或上传文件创建用例库后，会出现在下方列表；可编辑用例后点击「执行」并选择账号运行。</p>
         <div id="libraryList"></div>
         <div id="libraryDetail" style="display: none; margin-top: 1rem;">
@@ -619,6 +622,13 @@
         if (form) form.classList.add('visible');
       });
     });
+
+    var refreshBtn = document.getElementById('refreshLibrariesBtn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', function() {
+        loadLibraries();
+      });
+    }
 
     document.getElementById('loginForm').addEventListener('submit', function(e) {
       e.preventDefault();
