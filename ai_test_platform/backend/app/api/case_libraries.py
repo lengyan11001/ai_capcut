@@ -30,6 +30,12 @@ class LibraryUpdateCases(BaseModel):
     cases: List[dict] = Field(..., description="用例列表，每项含 name, method, path, full_url, expect_status 等")
 
 
+class CreateLibraryFromCases(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255, description="用例库名称")
+    cases: List[dict] = Field(..., description="用例列表（来自 /api-test/from-doc 等），每项为单条用例字典")
+    template_id: Optional[int] = Field(None, description="可选，关联的文档模版 ID")
+
+
 class ExecuteRequest(BaseModel):
     account_id: int = Field(..., description="本次执行使用的账号 ID")
     case_index: Optional[int] = Field(None, description="仅执行该下标的一条用例；不传则执行全部")
@@ -144,6 +150,38 @@ async def create_library_from_upload(
         user_id=current_user.id,
         name=library_name,
         template_id=None,
+        cases=cases,
+    )
+    db.add(lib)
+    db.commit()
+    db.refresh(lib)
+    return {
+        "id": lib.id,
+        "name": lib.name,
+        "cases_count": len(cases),
+        "created_at": lib.created_at.isoformat() if lib.created_at else "",
+    }
+
+
+@router.post("/from-cases", response_model=dict)
+def create_library_from_cases(
+    payload: CreateLibraryFromCases,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """根据已有用例列表创建用例库。
+
+    典型来源：
+    - /api-test/from-doc 生成的 cases（含可选的大模型生成说明）
+    - 其他自定义生成流程
+    """
+    cases = payload.cases or []
+    if not cases:
+        raise HTTPException(status_code=400, detail="用例列表为空，无法创建用例库")
+    lib = CaseLibrary(
+        user_id=current_user.id,
+        name=payload.name,
+        template_id=payload.template_id,
         cases=cases,
     )
     db.add(lib)

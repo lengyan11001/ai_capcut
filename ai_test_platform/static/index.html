@@ -406,7 +406,6 @@
         <button type="button" data-panel="panel-templates" class="active">文档模版</button>
         <button type="button" data-panel="panel-libraries">用例库</button>
         <button type="button" data-panel="panel-accounts">账号列表</button>
-        <button type="button" data-panel="panel-quick">快捷测试</button>
       </div>
 
       <div id="panel-templates" class="dash-panel visible">
@@ -429,10 +428,70 @@
 
       <div id="panel-libraries" class="dash-panel">
         <h3 style="margin-bottom: 0.75rem;">用例库</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">从模版生成、上传 OpenAPI 文件或直接维护用例，可编辑后点击「执行」并选择账号运行。</p>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">从文档创建用例库（上传文件或填写链接），在下方用例库列表中可编辑后点击「执行」并选择账号运行。</p>
+        <div class="doc-test-card" style="max-width: none;">
+          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">从文档链接创建用例库</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+            支持多个文档地址：每行一个链接，会合并所有接口后生成用例库。可选使用大模型生成更详细的用例说明。
+          </p>
+          <form id="fromDocForm">
+            <label>用例库名称</label>
+            <input type="text" name="library_name" id="fromDocLibraryName" required placeholder="例如：项目A-从链接创建">
+            <label>文档地址（必填，可多行）</label>
+            <textarea name="schema_urls" id="schemaUrlsInput" rows="4" placeholder="每行一个链接，例如：&#10;https://s.apifox.cn/xxx/api-251382054&#10;https://s.apifox.cn/xxx/api-415865434"></textarea>
+            <div class="row2">
+              <div>
+                <label>测试环境 base_url（可选）</label>
+                <input type="text" name="base_url" placeholder="https://api.example.com">
+              </div>
+              <div>
+                <label>说明</label>
+                <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.4rem;">此处仅创建用例库，不会自动执行接口；执行请在下方用例库中点击「执行」。</p>
+              </div>
+            </div>
+            <div class="row2">
+              <div>
+                <label>大模型（可选，用于生成更详细用例说明）</label>
+                <select id="llmModelSelect" name="llm_model_id" style="width: 100%; padding: 0.4rem 0.6rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 0.85rem;">
+                  <option value="">不使用大模型（免费）</option>
+                </select>
+                <div class="hint" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">列表会根据 /auth/pricing 返回的可用模型自动填充。</div>
+              </div>
+              <div>
+                <label>仅预估大模型积分（不实际调用）</label>
+                <input type="checkbox" name="estimate_only" id="estimateOnly" style="width: auto; margin-top: 0.5rem;">
+              </div>
+            </div>
+            <details class="opt-block" id="authBlock">
+              <summary>认证：先登录再跑（可选）</summary>
+              <label style="margin-top: 0.75rem;">登录接口完整 URL</label>
+              <input type="url" name="login_url" placeholder="https://api.example.com/auth/login">
+              <div class="row2" style="margin-top: 0.5rem;">
+                <div>
+                  <label>账号</label>
+                  <input type="text" name="auth_username" placeholder="测试账号">
+                </div>
+                <div>
+                  <label>密码</label>
+                  <input type="password" name="auth_password" placeholder="测试密码">
+                </div>
+              </div>
+              <label>Token 在响应中的路径</label>
+              <input type="text" name="token_response_path" placeholder="data.token 或 access_token" value="access_token">
+            </details>
+            <details class="opt-block" id="headersBlock">
+              <summary>固定 Header（可选）</summary>
+              <label style="margin-top: 0.75rem;">Header 键值（如 Authorization: Bearer xxx）</label>
+              <input type="text" name="extra_headers_raw" placeholder='{"Authorization": "Bearer your-token"}' style="font-family: monospace;">
+            </details>
+            <button type="submit" class="btn btn-primary" style="margin-top: 0.5rem;">创建用例库</button>
+            <div id="fromDocMsg" class="msg"></div>
+            <pre id="fromDocResult"></pre>
+          </form>
+        </div>
         <div class="doc-test-card" style="max-width: none; margin-bottom: 1rem;">
-          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">上传 OpenAPI 文件</h4>
-          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">支持 Apifox 导出的 OpenAPI (Swagger) JSON/YAML，上传后直接生成用例库（不扣积分）。</p>
+          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">上传 OpenAPI 文件创建用例库</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">支持 Apifox 导出的 OpenAPI (Swagger) JSON/YAML，上传后直接创建用例库（不扣积分）。</p>
           <form id="uploadOpenApiForm">
             <label>用例库名称</label>
             <input type="text" name="library_name" required placeholder="例如：项目A-导出">
@@ -440,7 +499,7 @@
             <input type="file" name="file" accept=".json,.yaml,.yml" required>
             <label>base_url（可选）</label>
             <input type="text" name="base_url" placeholder="https://api.example.com">
-            <button type="submit" class="btn btn-primary">上传并生成用例库</button>
+            <button type="submit" class="btn btn-primary">创建用例</button>
           </form>
           <div id="uploadOpenApiMsg" class="msg" style="margin-top: 0.5rem;"></div>
         </div>
@@ -502,67 +561,6 @@
           </form>
         </div>
         <div id="accountList" style="margin-top: 1.5rem;"></div>
-      </div>
-
-      <div id="panel-quick" class="dash-panel">
-      <div class="doc-test-card">
-        <h3>从文档地址测试</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
-          支持多个文档地址：每行一个链接，会合并所有接口后一起生成/执行。可填登录账号或固定 Header，执行时自动注入。
-        </p>
-        <form id="fromDocForm">
-          <label>文档地址（必填，可多行）</label>
-          <textarea name="schema_urls" id="schemaUrlsInput" rows="4" placeholder="每行一个链接，例如：&#10;https://s.apifox.cn/xxx/api-251382054&#10;https://s.apifox.cn/xxx/api-415865434"></textarea>
-          <div class="row2">
-            <div>
-              <label>测试环境 base_url（可选）</label>
-              <input type="text" name="base_url" placeholder="https://api.example.com">
-            </div>
-            <div>
-              <label>仅生成用例不执行（不扣积分）</label>
-              <input type="checkbox" name="only_generate" id="onlyGenerate" style="width: auto; margin-top: 0.5rem;">
-            </div>
-          </div>
-          <div class="row2">
-            <div>
-              <label>大模型（可选，用于生成更详细用例说明）</label>
-              <select id="llmModelSelect" name="llm_model_id" style="width: 100%; padding: 0.4rem 0.6rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 0.85rem;">
-                <option value="">不使用大模型（免费）</option>
-              </select>
-              <div class="hint" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">列表会根据 /auth/pricing 返回的可用模型自动填充。</div>
-            </div>
-            <div>
-              <label>仅预估大模型积分（不实际调用）</label>
-              <input type="checkbox" name="estimate_only" id="estimateOnly" style="width: auto; margin-top: 0.5rem;">
-            </div>
-          </div>
-          <details class="opt-block" id="authBlock">
-            <summary>认证：先登录再跑（可选）</summary>
-            <label style="margin-top: 0.75rem;">登录接口完整 URL</label>
-            <input type="url" name="login_url" placeholder="https://api.example.com/auth/login">
-            <div class="row2" style="margin-top: 0.5rem;">
-              <div>
-                <label>账号</label>
-                <input type="text" name="auth_username" placeholder="测试账号">
-              </div>
-              <div>
-                <label>密码</label>
-                <input type="password" name="auth_password" placeholder="测试密码">
-              </div>
-            </div>
-            <label>Token 在响应中的路径</label>
-            <input type="text" name="token_response_path" placeholder="data.token 或 access_token" value="access_token">
-          </details>
-          <details class="opt-block" id="headersBlock">
-            <summary>固定 Header（可选）</summary>
-            <label style="margin-top: 0.75rem;">Header 键值（如 Authorization: Bearer xxx）</label>
-            <input type="text" name="extra_headers_raw" placeholder='{"Authorization": "Bearer your-token"}' style="font-family: monospace;">
-          </details>
-          <button type="submit" class="btn btn-primary" style="margin-top: 0.5rem;">生成并执行</button>
-          <div id="fromDocMsg" class="msg"></div>
-          <pre id="fromDocResult"></pre>
-        </form>
-      </div>
       </div>
 
       <p class="dashboard-footer">
@@ -889,9 +887,8 @@
         var panel = document.getElementById(btn.dataset.panel);
         if (panel) panel.classList.add('visible');
         if (btn.dataset.panel === 'panel-templates') loadTemplates();
-        if (btn.dataset.panel === 'panel-libraries') loadLibraries();
+        if (btn.dataset.panel === 'panel-libraries') { loadLibraries(); loadLlmModels(); }
         if (btn.dataset.panel === 'panel-accounts') loadAccounts();
-        if (btn.dataset.panel === 'panel-quick') loadLlmModels();
       });
     });
 
@@ -1547,6 +1544,7 @@
     document.getElementById('fromDocForm').addEventListener('submit', function(e) {
       e.preventDefault();
       var fd = new FormData(this);
+      var libName = (fd.get('library_name') || '').trim();
       var urlsText = document.getElementById('schemaUrlsInput').value || '';
       var urls = urlsText.split(/\r?\n/).map(function(s) { return s.trim(); }).filter(Boolean);
       if (!urls.length) {
@@ -1555,15 +1553,21 @@
         document.getElementById('fromDocMsg').style.display = 'block';
         return;
       }
-      var base_url = fd.get('base_url') || null;
-      var only_generate = document.getElementById('onlyGenerate').checked;
-      var llm_model_id_el = document.getElementById('llmModelSelect');
-      var llm_model_id = llm_model_id_el ? (llm_model_id_el.value || '') : '';
       var estimate_only_el = document.getElementById('estimateOnly');
       var estimate_only = estimate_only_el ? estimate_only_el.checked : false;
+      if (!estimate_only && !libName) {
+        document.getElementById('fromDocMsg').textContent = '请填写用例库名称';
+        document.getElementById('fromDocMsg').className = 'msg err';
+        document.getElementById('fromDocMsg').style.display = 'block';
+        return;
+      }
+      var base_url = fd.get('base_url') || null;
+      var llm_model_id_el = document.getElementById('llmModelSelect');
+      var llm_model_id = llm_model_id_el ? (llm_model_id_el.value || '') : '';
       var body = {
         base_url: base_url || undefined,
-        only_generate: only_generate,
+        // 这里仅创建用例库，不直接执行接口
+        only_generate: true,
         max_cases_per_api: 1
       };
       if (urls.length === 1) { body.schema_url = urls[0]; } else { body.schema_urls = urls; }
@@ -1620,28 +1624,52 @@
                 lines.push('大模型实际 tokens: ' + JSON.stringify(d.llm_usage));
               }
             }
-            if (d.results && d.results.length) {
-              var pass = d.results.filter(function(r) { return r.passed; }).length;
-              lines.push('通过: ' + pass + ' / ' + d.results.length);
-              d.results.forEach(function(r, i) {
-                lines.push((r.passed ? '✓' : '✗') + ' ' + r.case.method + ' ' + r.case.path + ' → ' + r.status_code + (r.error ? ' ' + r.error : ''));
+            // 仅做预估时，不创建用例库
+            if (body.estimate_only) {
+              resultEl.textContent = lines.join('\n');
+              msgEl.textContent = '已完成大模型积分预估（未调用模型、未创建用例库）';
+              msgEl.className = 'msg ok';
+              msgEl.style.display = 'block';
+              return;
+            }
+            // 创建用例库
+            fetch(API_BASE + '/case-libraries/from-cases', {
+              method: 'POST',
+              headers: authHeaders(),
+              body: JSON.stringify({
+                name: libName,
+                cases: d.cases || []
+              })
+            })
+              .then(function(r2) { return r2.json().then(function(d2) { return { ok: r2.ok, data: d2 }; }); })
+              .then(function(y) {
+                if (y.ok) {
+                  lines.push('已创建用例库: ' + (y.data.name || libName) + '（' + (y.data.cases_count || d.total_cases) + ' 条用例）');
+                  resultEl.textContent = lines.join('\n');
+                  var msgText;
+                  if (d.llm_credits_used) {
+                    msgText = '已创建用例库，并完成大模型生成，已扣大模型积分';
+                  } else {
+                    msgText = '已创建用例库（未使用大模型不扣积分）';
+                  }
+                  msgEl.textContent = msgText;
+                  msgEl.className = 'msg ok';
+                  msgEl.style.display = 'block';
+                  loadLibraries();
+                  loadDashboard();
+                } else {
+                  msgEl.textContent = y.data.detail || '创建用例库失败';
+                  msgEl.className = 'msg err';
+                  msgEl.style.display = 'block';
+                  resultEl.textContent = lines.join('\n');
+                }
+              })
+              .catch(function(err2) {
+                msgEl.textContent = '创建用例库失败: ' + (err2.message || '');
+                msgEl.className = 'msg err';
+                msgEl.style.display = 'block';
+                resultEl.textContent = lines.join('\n');
               });
-            }
-            resultEl.textContent = lines.join('\n');
-            var msgText;
-            if (d.executed) {
-              msgText = '执行完成，已扣执行积分' + (d.llm_credits_used ? '（含大模型积分）' : '');
-            } else if (d.llm_credits_used) {
-              msgText = '已生成用例并完成大模型生成，已扣大模型积分';
-            } else if (d.llm_estimate && (body.estimate_only || d.llm_credits_used == null)) {
-              msgText = '已完成大模型积分预估（未调用模型、未扣积分）';
-            } else {
-              msgText = '已生成用例（未执行不扣积分）';
-            }
-            msgEl.textContent = msgText;
-            msgEl.className = 'msg ok';
-            msgEl.style.display = 'block';
-            loadDashboard();
           } else {
             msgEl.textContent = x.data.detail || x.data.message || '请求失败';
             msgEl.className = 'msg err';
