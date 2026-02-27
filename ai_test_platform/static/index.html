@@ -359,6 +359,15 @@
           <button type="submit">注册</button>
           <div id="registerMsg" class="msg"></div>
         </form>
+        <div id="verifyEmailSection" style="display:none; margin-top: 1rem;">
+          <label>邮箱</label>
+          <input type="email" id="verifyEmailInput" readonly>
+          <label>邮箱验证码</label>
+          <input type="text" id="verifyCodeInput" placeholder="请输入邮件中的 6 位验证码">
+          <button type="button" id="verifyEmailBtn" class="btn btn-primary" style="width:100%; margin-top:0.25rem;">验证并登录</button>
+          <button type="button" id="resendCodeBtn" class="btn btn-ghost btn-sm" style="margin-top:0.5rem;">重新发送验证码</button>
+          <div id="verifyEmailMsg" class="msg"></div>
+        </div>
       </div>
     </div>
 
@@ -634,6 +643,7 @@
   <script>
     var API_BASE = '';
     var token = localStorage.getItem('token');
+    var pendingVerifyEmail = null;
 
     function showMsg(el, text, isErr) {
       el.textContent = text;
@@ -680,8 +690,62 @@
       })
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(x) {
-          if (x.ok) { showMsg(msgEl, '注册成功，请登录', false); }
-          else { showMsg(msgEl, x.data.detail || '注册失败', true); }
+          if (x.ok) {
+            pendingVerifyEmail = fd.get('email');
+            showMsg(msgEl, '注册成功，验证码已发送到邮箱，请在下方输入验证码完成验证。', false);
+            var sec = document.getElementById('verifyEmailSection');
+            document.getElementById('verifyEmailInput').value = pendingVerifyEmail;
+            sec.style.display = 'block';
+          } else {
+            showMsg(msgEl, x.data.detail || '注册失败', true);
+          }
+        })
+        .catch(function() { showMsg(msgEl, '网络错误', true); });
+    });
+
+    document.getElementById('verifyEmailBtn').addEventListener('click', function() {
+      var email = document.getElementById('verifyEmailInput').value || pendingVerifyEmail;
+      var code = (document.getElementById('verifyCodeInput').value || '').trim();
+      var msgEl = document.getElementById('verifyEmailMsg');
+      if (!email || !code) {
+        showMsg(msgEl, '请先填写验证码', true);
+        return;
+      }
+      fetch(API_BASE + '/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, code: code })
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          if (!x.ok) {
+            showMsg(msgEl, x.data.detail || '验证失败', true);
+            return;
+          }
+          token = x.data.access_token;
+          localStorage.setItem('token', token);
+          showMsg(msgEl, '验证成功，已自动登录。', false);
+          // 切换到控制台视图
+          loadDashboard();
+        })
+        .catch(function() { showMsg(msgEl, '网络错误', true); });
+    });
+
+    document.getElementById('resendCodeBtn').addEventListener('click', function() {
+      var email = document.getElementById('verifyEmailInput').value || pendingVerifyEmail;
+      var msgEl = document.getElementById('verifyEmailMsg');
+      if (!email) {
+        showMsg(msgEl, '请先完成注册', true);
+        return;
+      }
+      fetch(API_BASE + '/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          showMsg(msgEl, x.data.detail || (x.ok ? '验证码已发送' : '发送失败'), !x.ok);
         })
         .catch(function() { showMsg(msgEl, '网络错误', true); });
     });

@@ -141,6 +141,13 @@ def login(
     if not user:
         raise HTTPException(status_code=400, detail="用户名或密码错误")
 
+    # 未完成邮箱验证的账号禁止登录
+    if not getattr(user, "is_email_verified", False):
+        raise HTTPException(
+            status_code=400,
+            detail="该邮箱尚未完成验证，请先输入验证码完成验证后再登录",
+        )
+
     access_token = create_access_token(data={"sub": str(user.id)})
     return Token(access_token=access_token)
 
@@ -200,7 +207,7 @@ def _create_and_send_verification_code(db: Session, user: User) -> None:
         pass
 
 
-@router.post("/verify-email", summary="验证邮箱验证码")
+@router.post("/verify-email", response_model=Token, summary="验证邮箱验证码并登录")
 def verify_email(payload: VerifyEmailIn, db: Session = Depends(get_db)):
     user = get_user_by_email(db, payload.email)
     if not user:
@@ -230,7 +237,9 @@ def verify_email(payload: VerifyEmailIn, db: Session = Depends(get_db)):
     db.add_all([rec, user])
     db.commit()
 
-    return {"detail": "邮箱验证成功"}
+    # 验证成功后直接登录，返回访问令牌
+    access_token = create_access_token(data={"sub": str(user.id)})
+    return Token(access_token=access_token)
 
 
 class ResendVerifyEmailIn(BaseModel):
