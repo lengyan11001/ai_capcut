@@ -379,6 +379,19 @@
         <button type="button" id="logout" class="btn btn-ghost">退出登录</button>
       </div>
 
+      <div class="card mcp-card" style="margin-top: 1.25rem;">
+        <div class="card-label">Cursor MCP 接入</div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">在 Cursor 中使用本平台能力：复制下方「一键复制 MCP 配置」后，粘贴到 Cursor 的 MCP 配置（Settings → MCP 或 .cursor/mcp.json），仅需将 <code style="background: rgba(255,255,255,0.08); padding: 0.1em 0.35em; border-radius: 4px;">cwd</code> 改为你本机的 ai_test_platform 目录路径。</p>
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+          <span style="font-size: 0.9rem; color: var(--text-muted);">Token</span>
+          <span id="tokenMask" style="font-family: monospace; font-size: 0.9rem;">••••••••••••</span>
+        </div>
+        <div class="card-actions" style="margin-top: 0.5rem; margin-bottom: 0;">
+          <button type="button" id="copyTokenBtn" class="btn btn-ghost btn-sm">复制 Token</button>
+          <button type="button" id="copyMcpConfigBtn" class="btn btn-primary btn-sm">一键复制 MCP 配置</button>
+        </div>
+      </div>
+
       <div class="dash-tabs">
         <button type="button" data-panel="panel-templates" class="active">文档模版</button>
         <button type="button" data-panel="panel-libraries">用例库</button>
@@ -672,6 +685,25 @@
         .catch(function() { showMsg(msgEl, '网络错误', true); });
     });
 
+    function copyToClipboard(text, doneCb) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() { if (doneCb) doneCb(); }).catch(function() {
+          fallbackCopy(text, doneCb);
+        });
+      } else {
+        fallbackCopy(text, doneCb);
+      }
+    }
+    function fallbackCopy(text, doneCb) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); if (doneCb) doneCb(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+
     function loadDashboard() {
       if (!token) {
         document.getElementById('authPanel').style.display = 'block';
@@ -692,6 +724,47 @@
           document.getElementById('headerCredits').style.display = 'inline';
           document.getElementById('authPanel').style.display = 'none';
           document.getElementById('dashboard').classList.add('visible');
+          var maskEl = document.getElementById('tokenMask');
+          if (maskEl) maskEl.textContent = '••••••••••••';
+          var copyTokenBtn = document.getElementById('copyTokenBtn');
+          var copyMcpBtn = document.getElementById('copyMcpConfigBtn');
+          if (copyTokenBtn && !copyTokenBtn._bound) {
+            copyTokenBtn._bound = true;
+            copyTokenBtn.addEventListener('click', function() {
+              if (!token) return;
+              copyToClipboard(token, function() {
+                var t = copyTokenBtn.textContent;
+                copyTokenBtn.textContent = '已复制';
+                setTimeout(function() { copyTokenBtn.textContent = t; }, 1500);
+              });
+            });
+          }
+          if (copyMcpBtn && !copyMcpBtn._bound) {
+            copyMcpBtn._bound = true;
+            copyMcpBtn.addEventListener('click', function() {
+              if (!token) return;
+              var baseUrl = window.location.origin || (window.location.protocol + '//' + window.location.host);
+              var mcp = {
+                mcpServers: {
+                  'ai-test-platform': {
+                    command: 'python',
+                    args: ['-m', 'mcp'],
+                    cwd: '请替换为你的 ai_test_platform 目录绝对路径',
+                    env: {
+                      AI_TEST_PLATFORM_BASE_URL: baseUrl,
+                      AI_TEST_PLATFORM_TOKEN: token
+                    }
+                  }
+                }
+              };
+              var jsonStr = JSON.stringify(mcp, null, 2);
+              copyToClipboard(jsonStr, function() {
+                var t = copyMcpBtn.textContent;
+                copyMcpBtn.textContent = '已复制';
+                setTimeout(function() { copyMcpBtn.textContent = t; }, 1500);
+              });
+            });
+          }
           loadTemplates();
         });
     }
