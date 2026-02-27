@@ -1,5 +1,6 @@
 """文档模版：保存文档地址，支持一键生成用例库"""
-from typing import List, Optional
+import asyncio
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
@@ -280,11 +281,12 @@ async def generate_cases_from_template(
             "只输出 JSON，不要输出多余文字。"
         )
         try:
-            llm_result = call_llm(
-                model_id=llm_model_id,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                temperature=0.2,
+            llm_result = await asyncio.to_thread(
+                call_llm,
+                llm_model_id,
+                system_prompt,
+                user_prompt,
+                0.2,
             )
             content = str(llm_result.get("content") or "").strip()
             llm_credits_used = int(llm_result.get("credits_used") or 0)

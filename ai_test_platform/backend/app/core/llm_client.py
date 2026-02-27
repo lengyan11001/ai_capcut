@@ -227,20 +227,29 @@ def call_llm(
         raise ValueError(f"不支持的模型 ID: {model_id}")
 
     client = _get_client()
-    resp = client.chat.completions.create(
-        model=cfg.model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=temperature,
-    )
+    try:
+        resp = client.chat.completions.create(
+            model=cfg.model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=temperature,
+        )
+    except Exception as e:
+        err_msg = str(e).strip() or getattr(e, "message", "")
+        raise RuntimeError(f"大模型接口调用失败：{err_msg}") from e
+
+    if not getattr(resp, "choices", None) or len(resp.choices) == 0:
+        raise RuntimeError("大模型返回为空（无 choices），请检查模型名与 API 配置")
+
     choice = resp.choices[0]
-    content = (choice.message.content or "").strip()
+    content = (getattr(choice, "message", None) and getattr(choice.message, "content", None) or "") or ""
+    content = (content if isinstance(content, str) else "").strip()
     usage_raw = getattr(resp, "usage", None)
     prompt_tokens = int(getattr(usage_raw, "prompt_tokens", 0) or 0)
     completion_tokens = int(getattr(usage_raw, "completion_tokens", 0) or 0)
-    total_tokens = int(getattr(usage_raw, "total_tokens", prompt_tokens + completion_tokens) or 0)
+    total_tokens = int(getattr(usage_raw, "total_tokens", 0) or (prompt_tokens + completion_tokens))
 
     credits_used = estimate_credits_for_usage(
         model_id=model_id,

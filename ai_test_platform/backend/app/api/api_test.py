@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -841,11 +842,12 @@ async def generate_tests_from_doc(
             "只输出 JSON，不要输出多余文字。"
         )
         try:
-            llm_result = call_llm(
-                model_id=payload.llm_model_id,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                temperature=0.2,
+            llm_result = await asyncio.to_thread(
+                call_llm,
+                payload.llm_model_id,
+                system_prompt,
+                user_prompt,
+                0.2,
             )
             content = str(llm_result.get("content") or "").strip()
             llm_credits_used = int(llm_result.get("credits_used") or 0)

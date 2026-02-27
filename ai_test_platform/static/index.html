@@ -864,12 +864,7 @@
       if (llm && llm.enabled && llm.models) {
         Object.keys(llm.models).forEach(function(id) {
           var m = llm.models[id] || {};
-          var name = m.display_name || id;
-          var est = m.estimated_credits_per_100k_tokens;
-          var label = name;
-          if (typeof est === 'number' && est > 0) {
-            label += '（约 ' + est + ' 积分 / 100K tokens）';
-          }
+          var label = m.display_name || id;
           opts.push('<option value="' + id + '">' + label + '</option>');
         });
       }
