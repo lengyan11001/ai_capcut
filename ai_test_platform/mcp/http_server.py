@@ -76,7 +76,7 @@ def _tool_definitions() -> List[Dict[str, Any]]:
         },
         {
             "name": "generate_cases_from_doc",
-            "description": "从 Swagger/OpenAPI 文档生成用例，不执行（不扣费）",
+            "description": "从 Swagger/OpenAPI 文档生成用例，不执行（不扣费，可选仅预估大模型成本）",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -97,12 +97,20 @@ def _tool_definitions() -> List[Dict[str, Any]]:
                         "type": "integer",
                         "description": "每个接口生成多少条用例，默认 1",
                     },
+                    "llm_model_id": {
+                        "type": "string",
+                        "description": "可选：指定用于丰富用例描述的大模型 ID（例如 aliyun:qwen-turbo），不填则不使用大模型",
+                    },
+                    "estimate_only": {
+                        "type": "boolean",
+                        "description": "若为 true，仅预估使用该模型的大致积分，不实际调用模型与执行接口",
+                    },
                 },
             },
         },
         {
             "name": "generate_and_run_from_doc",
-            "description": "从文档生成用例并执行（按执行条数扣积分）",
+            "description": "从文档生成用例并执行（按执行条数 + 可选大模型积分扣费）",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -134,6 +142,14 @@ def _tool_definitions() -> List[Dict[str, Any]]:
                     "auth": {
                         "type": "object",
                         "description": "可选：先调登录接口取 token 再执行用例的配置",
+                    },
+                    "llm_model_id": {
+                        "type": "string",
+                        "description": "可选：指定用于生成更详细用例说明的大模型 ID，例如 aliyun:qwen-plus / volc:doubao-flash / deepseek:chat",
+                    },
+                    "estimate_only": {
+                        "type": "boolean",
+                        "description": "若为 true，仅预估执行与大模型的大致积分，不真正调用与扣费",
                     },
                 },
             },
@@ -182,6 +198,12 @@ async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str]) -> T
                 base_url = args.get("base_url")
                 if base_url:
                     payload["base_url"] = base_url
+                # MCP 侧可选传入 estimate_only：仅做积分预估
+                if "estimate_only" in args:
+                    payload["estimate_only"] = bool(args.get("estimate_only"))
+                # MCP 侧可选传入 llm_model_id：指定具体大模型计费
+                if args.get("llm_model_id"):
+                    payload["llm_model_id"] = args["llm_model_id"]
                 if args.get("extra_headers"):
                     payload["extra_headers"] = args["extra_headers"]
                 if args.get("extra_query"):

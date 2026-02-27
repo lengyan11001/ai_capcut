@@ -523,6 +523,19 @@
               <input type="checkbox" name="only_generate" id="onlyGenerate" style="width: auto; margin-top: 0.5rem;">
             </div>
           </div>
+          <div class="row2">
+            <div>
+              <label>大模型（可选，用于生成更详细用例说明）</label>
+              <select id="llmModelSelect" name="llm_model_id" style="width: 100%; padding: 0.4rem 0.6rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 0.85rem;">
+                <option value="">不使用大模型（免费）</option>
+              </select>
+              <div class="hint" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">列表会根据 /auth/pricing 返回的可用模型自动填充。</div>
+            </div>
+            <div>
+              <label>仅预估大模型积分（不实际调用）</label>
+              <input type="checkbox" name="estimate_only" id="estimateOnly" style="width: auto; margin-top: 0.5rem;">
+            </div>
+          </div>
           <details class="opt-block" id="authBlock">
             <summary>认证：先登录再跑（可选）</summary>
             <label style="margin-top: 0.75rem;">登录接口完整 URL</label>
@@ -644,6 +657,7 @@
     var API_BASE = '';
     var token = localStorage.getItem('token');
     var pendingVerifyEmail = null;
+    var llmModelsCache = null;
 
     function showMsg(el, text, isErr) {
       el.textContent = text;
@@ -846,6 +860,7 @@
             });
           }
           loadTemplates();
+          loadLlmModels();
         });
     }
 
@@ -876,8 +891,52 @@
         if (btn.dataset.panel === 'panel-templates') loadTemplates();
         if (btn.dataset.panel === 'panel-libraries') loadLibraries();
         if (btn.dataset.panel === 'panel-accounts') loadAccounts();
+        if (btn.dataset.panel === 'panel-quick') loadLlmModels();
       });
     });
+
+    function loadLlmModels() {
+      var sel = document.getElementById('llmModelSelect');
+      if (!sel || !token) return;
+      // 已经加载过且缓存存在时，直接使用缓存渲染
+      if (llmModelsCache) {
+        renderLlmModelOptions(sel, llmModelsCache);
+        return;
+      }
+      fetch(API_BASE + '/auth/pricing', { headers: authHeaders() })
+        .then(function(r) {
+          if (!r.ok) return null;
+          return r.json();
+        })
+        .then(function(d) {
+          if (!d || !d.llm || !d.llm.models) {
+            renderLlmModelOptions(sel, null);
+            return;
+          }
+          llmModelsCache = d.llm;
+          renderLlmModelOptions(sel, llmModelsCache);
+        })
+        .catch(function() {
+          renderLlmModelOptions(sel, null);
+        });
+    }
+
+    function renderLlmModelOptions(sel, llm) {
+      var opts = ['<option value="">不使用大模型（免费）</option>'];
+      if (llm && llm.enabled && llm.models) {
+        Object.keys(llm.models).forEach(function(id) {
+          var m = llm.models[id] || {};
+          var name = m.display_name || id;
+          var est = m.estimated_credits_per_100k_tokens;
+          var label = name;
+          if (typeof est === 'number' && est > 0) {
+            label += '（约 ' + est + ' 积分 / 100K tokens）';
+          }
+          opts.push('<option value="' + id + '">' + label + '</option>');
+        });
+      }
+      sel.innerHTML = opts.join('');
+    }
 
     function loadTemplates() {
       fetch(API_BASE + '/templates', { headers: authHeaders() })
@@ -1498,12 +1557,22 @@
       }
       var base_url = fd.get('base_url') || null;
       var only_generate = document.getElementById('onlyGenerate').checked;
+      var llm_model_id_el = document.getElementById('llmModelSelect');
+      var llm_model_id = llm_model_id_el ? (llm_model_id_el.value || '') : '';
+      var estimate_only_el = document.getElementById('estimateOnly');
+      var estimate_only = estimate_only_el ? estimate_only_el.checked : false;
       var body = {
         base_url: base_url || undefined,
         only_generate: only_generate,
         max_cases_per_api: 1
       };
       if (urls.length === 1) { body.schema_url = urls[0]; } else { body.schema_urls = urls; }
+      if (llm_model_id) {
+        body.llm_model_id = llm_model_id;
+      }
+      if (estimate_only) {
+        body.estimate_only = true;
+      }
       var login_url = fd.get('login_url');
       if (login_url) {
         body.auth = {
@@ -1542,6 +1611,15 @@
           if (x.ok) {
             var d = x.data;
             var lines = ['接口数: ' + d.total_apis, '用例数: ' + d.total_cases, '已执行: ' + (d.executed ? '是' : '否')];
+            if (d.llm_estimate && typeof d.llm_estimate.estimated_credits === 'number') {
+              lines.push('大模型预估积分: ' + d.llm_estimate.estimated_credits + '（预估 tokens: ' + (d.llm_estimate.estimated_total_tokens || 0) + '）');
+            }
+            if (d.llm_credits_used != null) {
+              lines.push('大模型实际消耗积分: ' + d.llm_credits_used);
+              if (d.llm_usage) {
+                lines.push('大模型实际 tokens: ' + JSON.stringify(d.llm_usage));
+              }
+            }
             if (d.results && d.results.length) {
               var pass = d.results.filter(function(r) { return r.passed; }).length;
               lines.push('通过: ' + pass + ' / ' + d.results.length);
@@ -1550,7 +1628,17 @@
               });
             }
             resultEl.textContent = lines.join('\n');
-            msgEl.textContent = d.executed ? '执行完成，已扣积分' : '已生成用例（未执行不扣积分）';
+            var msgText;
+            if (d.executed) {
+              msgText = '执行完成，已扣执行积分' + (d.llm_credits_used ? '（含大模型积分）' : '');
+            } else if (d.llm_credits_used) {
+              msgText = '已生成用例并完成大模型生成，已扣大模型积分';
+            } else if (d.llm_estimate && (body.estimate_only || d.llm_credits_used == null)) {
+              msgText = '已完成大模型积分预估（未调用模型、未扣积分）';
+            } else {
+              msgText = '已生成用例（未执行不扣积分）';
+            }
+            msgEl.textContent = msgText;
             msgEl.className = 'msg ok';
             msgEl.style.display = 'block';
             loadDashboard();

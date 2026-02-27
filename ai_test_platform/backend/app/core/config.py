@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from: str | None = None
     smtp_use_tls: bool = True
+    # 大模型配置（用于用例生成等）
+    openai_api_key: str | None = None
+    openai_base_url: str | None = None  # 可选，自定义网关或代理
 
     class Config:
         env_file = ".env"

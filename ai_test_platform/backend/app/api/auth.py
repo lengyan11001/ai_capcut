@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..core.llm_client import public_llm_pricing
 from ..db import get_db
 from ..models import EmailVerificationCode, User
 from ..core.email_sender import email_sender
@@ -172,6 +173,7 @@ def get_pricing():
             {"name": "from_doc_execute", "credits_per_case": CREDITS_PER_CALL["from_doc_execute"], "desc": "从文档执行每条用例"},
             {"name": "from_doc_generate", "credits": CREDITS_PER_CALL["from_doc_generate"], "desc": "仅生成用例不执行"},
         ],
+        "llm": public_llm_pricing(),
     }
 
 

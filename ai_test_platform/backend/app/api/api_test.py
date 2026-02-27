@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..core.credits import credits_for_api_test, credits_for_from_doc
+from ..core.llm_client import call_llm, estimate_credits_for_apis
 from ..db import get_db
 from ..models import User
 from .auth import get_current_user
@@ -124,6 +125,14 @@ class ApiFromDocRequest(BaseModel):
         default=None,
         description="可选：先调登录接口取 token，再注入到后续请求",
     )
+    llm_model_id: Optional[str] = Field(
+        default=None,
+        description="可选：指定用于高级用例生成的大模型 ID，例如 aliyun:qwen-turbo；不填则不使用大模型，仅规则生成",
+    )
+    estimate_only: bool = Field(
+        False,
+        description="为 true 时仅估算使用指定模型的大致积分，不实际执行接口请求与扣费",
+    )
 
     @property
     def resolved_urls(self) -> List[str]:
@@ -150,6 +159,10 @@ class ApiFromDocResult(BaseModel):
     executed: bool
     cases: List[GeneratedTestCase]
     results: Optional[List[ExecutedCaseResult]] = None
+    llm_estimate: Optional[Dict[str, int]] = None
+    llm_model_id: Optional[str] = None
+    llm_credits_used: Optional[int] = None
+    llm_usage: Optional[Dict[str, int]] = None
 
 
 @router.post(
@@ -771,14 +784,121 @@ async def generate_tests_from_doc(
     executed = False
     exec_results: List[ExecutedCaseResult] = []
 
-    # 若只生成不执行，直接返回
-    if payload.only_generate:
+    # 若指定了大模型，预估一次积分消耗（不实际扣费）
+    llm_estimate: Optional[Dict[str, int]] = None
+    if payload.llm_model_id:
+        llm_estimate = estimate_credits_for_apis(
+            model_id=payload.llm_model_id,
+            api_count=len(apis),
+        )
+
+    # 若仅做预估，则不执行接口、不扣积分，也不真正调用模型
+    if payload.estimate_only:
         return ApiFromDocResult(
             total_apis=len(apis),
             total_cases=len(cases),
             executed=False,
             cases=cases,
             results=None,
+            llm_estimate=llm_estimate,
+            llm_model_id=payload.llm_model_id,
+            llm_credits_used=None,
+            llm_usage=None,
+        )
+
+    # 准备 LLM 实际调用的结果占位
+    llm_credits_used: Optional[int] = None
+    llm_usage: Optional[Dict[str, int]] = None
+
+    # 若只生成不执行（only_generate=true），但指定了大模型：
+    # - 会调用一次 LLM 丰富用例描述
+    # - 按实际 usage 扣除相应积分
+    if payload.only_generate and payload.llm_model_id:
+        # 构造 LLM 提示：基于已解析的用例，为每个用例生成更详细的中文描述
+        system_prompt = (
+            "你是一名资深接口测试工程师，擅长根据 OpenAPI 文档设计高质量接口测试用例。"
+            "现在给你一组基于文档自动解析的初始用例，请你为每条用例生成更详细的中文说明，"
+            "包括覆盖的场景、关键参数、边界条件等。"
+        )
+        # 只传必要信息，避免 prompt 过长
+        simple_cases = [
+            {
+                "index": idx,
+                "name": c.name,
+                "method": c.method,
+                "path": c.path,
+                "full_url": c.full_url,
+                "expect_status": c.expect_status,
+            }
+            for idx, c in enumerate(cases)
+        ]
+        user_prompt = (
+            "下面是根据接口文档自动解析出的初始测试用例列表（JSON）：\n"
+            f"{json.dumps(simple_cases, ensure_ascii=False, indent=2)}\n\n"
+            "请你生成一个 JSON 数组，数组中的每一项对应一条用例，格式为：\n"
+            '{ "index": number, "description": string }\n'
+            "其中 index 对应上面列表中的 index 字段，description 为该用例的详细中文说明。\n"
+            "只输出 JSON，不要输出多余文字。"
+        )
+        try:
+            llm_result = call_llm(
+                model_id=payload.llm_model_id,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.2,
+            )
+            content = str(llm_result.get("content") or "").strip()
+            llm_credits_used = int(llm_result.get("credits_used") or 0)
+            usage_raw = llm_result.get("usage") or {}
+            llm_usage = {
+                "prompt_tokens": int(usage_raw.get("prompt_tokens") or 0),
+                "completion_tokens": int(usage_raw.get("completion_tokens") or 0),
+                "total_tokens": int(usage_raw.get("total_tokens") or 0),
+            }
+            # 尝试解析 LLM 返回的 JSON，按 index 覆盖 description
+            try:
+                parsed = json.loads(content)
+                if isinstance(parsed, list):
+                    desc_map: Dict[int, str] = {}
+                    for item in parsed:
+                        if not isinstance(item, dict):
+                            continue
+                        idx = item.get("index")
+                        desc = item.get("description")
+                        if isinstance(idx, int) and isinstance(desc, str):
+                            desc_map[idx] = desc.strip()
+                    for i, c in enumerate(cases):
+                        if i in desc_map and desc_map[i]:
+                            c.description = desc_map[i]
+            except (ValueError, json.JSONDecodeError):
+                # 解析失败则忽略，仅保留原始 cases
+                pass
+        except Exception:
+            # LLM 调用失败时忽略，不阻断仅生成流程
+            llm_credits_used = None
+            llm_usage = None
+
+        # 扣除 LLM 积分（若成功计算）
+        if llm_credits_used and llm_credits_used > 0:
+            if current_user.credits < llm_credits_used:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail=f"积分不足，本次大模型生成预计需 {llm_credits_used} 积分，当前 {current_user.credits}",
+                )
+            current_user.credits -= llm_credits_used
+            db.add(current_user)
+            db.commit()
+
+        return ApiFromDocResult(
+            total_apis=len(apis),
+            total_cases=len(cases),
+            executed=False,
+            cases=cases,
+            results=None,
+            llm_estimate=llm_estimate,
+            llm_model_id=payload.llm_model_id,
+            llm_credits_used=llm_credits_used,
+            llm_usage=llm_usage,
         )
 
     credits_needed = credits_for_from_doc(only_generate=False, case_count=len(cases))
@@ -837,8 +957,18 @@ async def generate_tests_from_doc(
                     )
                 )
 
-    # 扣除积分
+    # 扣除执行用例所需积分
     current_user.credits -= credits_needed
+
+    # 若存在大模型调用的积分消耗，一并扣除
+    if llm_credits_used and llm_credits_used > 0:
+        if current_user.credits < llm_credits_used:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=f"积分不足，大模型实际消耗 {llm_credits_used} 积分，当前剩余 {current_user.credits}",
+            )
+        current_user.credits -= llm_credits_used
+
     db.add(current_user)
     db.commit()
 
@@ -850,6 +980,10 @@ async def generate_tests_from_doc(
         executed=executed,
         cases=cases,
         results=exec_results,
+        llm_estimate=llm_estimate,
+        llm_model_id=payload.llm_model_id,
+        llm_credits_used=llm_credits_used,
+        llm_usage=llm_usage,
     )
 
 
