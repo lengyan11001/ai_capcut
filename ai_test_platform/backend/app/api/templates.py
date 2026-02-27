@@ -177,10 +177,19 @@ def delete_template(
 
 
 class GenerateCasesRequest(BaseModel):
-    library_name: str = Field(..., min_length=1, max_length=255, description="新建用例库名称")
+    library_name: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=255,
+        description="新建用例库名称；estimate_only 为 true 时可省略",
+    )
     llm_model_id: Optional[str] = Field(
         default=None,
         description="可选：指定用于生成更详细用例说明的大模型 ID，不填则仅规则生成",
+    )
+    estimate_only: bool = Field(
+        False,
+        description="为 true 时仅根据文档接口数估算大模型积分，不调用模型、不创建用例库",
     )
 
 
@@ -222,6 +231,23 @@ async def generate_cases_from_template(
         raise HTTPException(status_code=400, detail="未从文档中解析出任何接口")
 
     llm_model_id = payload.llm_model_id or None
+
+    # 仅预估：根据接口数估算大模型积分，不调用模型、不创建用例库
+    if payload.estimate_only:
+        llm_estimate: Optional[dict] = None
+        if llm_model_id:
+            llm_estimate = estimate_credits_for_apis(llm_model_id, api_count=len(cases))
+        return {
+            "estimate_only": True,
+            "total_apis": len(cases),
+            "total_cases": len(cases),
+            "llm_model_id": llm_model_id,
+            "llm_estimate": llm_estimate,
+        }
+
+    if not payload.library_name or not payload.library_name.strip():
+        raise HTTPException(status_code=400, detail="请填写用例库名称")
+
     llm_credits_used: Optional[int] = None
 
     # 2. 若指定了大模型，为每条用例生成更详细说明，并按用量扣积分
@@ -300,7 +326,7 @@ async def generate_cases_from_template(
     # 3. 创建用例库
     lib = CaseLibrary(
         user_id=current_user.id,
-        name=payload.library_name,
+        name=payload.library_name.strip(),
         template_id=t.id,
         cases=cases,
     )

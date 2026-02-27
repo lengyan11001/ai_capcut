@@ -508,6 +508,10 @@
             <option value="">不使用大模型（免费）</option>
           </select>
           <div class="hint">不选择则仅规则生成，不会扣除大模型积分。</div>
+          <div style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" id="btnEstimateCredits" class="btn btn-ghost btn-sm">预估积分</button>
+            <span id="generateEstimateResult" class="meta" style="font-size: 0.85rem;"></span>
+          </div>
         </div>
         <div class="btns">
           <button type="button" id="confirmGenerateCases" class="btn btn-primary">生成</button>
@@ -893,6 +897,7 @@
             b.addEventListener('click', function() {
               templateIdForGenerate = parseInt(b.closest('.list-item').dataset.id, 10);
               document.getElementById('generateLibraryName').value = '';
+              document.getElementById('generateEstimateResult').textContent = '';
               document.getElementById('modalGenerateCases').classList.add('visible');
             });
           });
@@ -955,6 +960,42 @@
         .catch(function() {
           showMsg(msgEl, '网络错误', true);
           msgEl.style.display = 'block';
+        });
+    });
+
+    document.getElementById('btnEstimateCredits').addEventListener('click', function() {
+      if (!templateIdForGenerate) return;
+      var llmSel = document.getElementById('templateLlmModelSelect');
+      var llmId = llmSel ? (llmSel.value || '') : '';
+      if (!llmId) {
+        document.getElementById('generateEstimateResult').textContent = '请先选择大模型';
+        return;
+      }
+      var resultEl = document.getElementById('generateEstimateResult');
+      resultEl.textContent = '计算中…';
+      fetch(API_BASE + '/templates/' + templateIdForGenerate + '/generate-cases', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ llm_model_id: llmId, estimate_only: true })
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          if (x.ok && x.data.estimate_only) {
+            var d = x.data;
+            var total = d.total_apis || d.total_cases || 0;
+            var est = d.llm_estimate;
+            if (est && typeof est.estimated_credits === 'number') {
+              var tokens = est.estimated_total_tokens || 0;
+              resultEl.textContent = '约 ' + total + ' 个接口，预计消耗约 ' + est.estimated_credits + ' 积分（约 ' + (tokens / 1000).toFixed(1) + 'K tokens）';
+            } else {
+              resultEl.textContent = '约 ' + total + ' 个接口';
+            }
+          } else {
+            resultEl.textContent = x.data.detail || '预估失败';
+          }
+        })
+        .catch(function() {
+          document.getElementById('generateEstimateResult').textContent = '网络错误';
         });
     });
 
