@@ -54,6 +54,23 @@ class CaseLibrary(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
+class CaseGenerateRecord(Base):
+    """用例生成记录：每次点击「创建用例」并（可选）调大模型时创建，成功或失败都记录原因"""
+    __tablename__ = "case_generate_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey("document_templates.id"), nullable=False, index=True)
+    template_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    library_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    llm_model_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)  # running | success | failed
+    message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 成功说明或失败原因
+    library_id: Mapped[Optional[int]] = mapped_column(ForeignKey("case_libraries.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 class Account(Base):
     """账号：登录型或静态 Token，执行用例时选用"""
     __tablename__ = "accounts"

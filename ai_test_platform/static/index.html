@@ -302,6 +302,8 @@
     .table-wrap table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     .table-wrap th, .table-wrap td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
     .table-wrap input { width: 100%; padding: 0.35rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem; }
+    .records-table td.ok { color: #6ee7b7; }
+    .records-table td.err { color: #fca5a5; }
     .execute-result-block { padding: 1rem; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: var(--radius-sm); }
     .execute-result-stats { font-weight: 500; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
     .execute-result-list { display: flex; flex-direction: column; gap: 0.75rem; }
@@ -427,6 +429,11 @@
           <div id="templateUploadMsg" class="msg" style="margin-top: 0.5rem;"></div>
         </div>
         <div id="templateList" style="margin-top: 1.5rem;"></div>
+        <div style="margin-top: 2rem;">
+          <h4 style="font-size: 0.95rem; margin-bottom: 0.5rem;">用例生成记录</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">每次创建用例（含使用大模型）都会记录，成功或失败原因在下方展示。</p>
+          <div id="generateRecordsList" class="list-block"></div>
+        </div>
       </div>
 
       <div id="panel-libraries" class="dash-panel">
@@ -826,7 +833,7 @@
         btn.classList.add('active');
         var panel = document.getElementById(btn.dataset.panel);
         if (panel) panel.classList.add('visible');
-        if (btn.dataset.panel === 'panel-templates') loadTemplates();
+        if (btn.dataset.panel === 'panel-templates') { loadTemplates(); loadGenerateRecords(); }
         if (btn.dataset.panel === 'panel-libraries') { loadLibraries(); loadLlmModels(); }
         if (btn.dataset.panel === 'panel-accounts') loadAccounts();
       });
@@ -898,6 +905,33 @@
           });
         })
         .catch(function() { document.getElementById('templateList').innerHTML = '<p class="msg err">加载失败</p>'; });
+    }
+
+    function loadGenerateRecords() {
+      fetch(API_BASE + '/templates/generate-records', { headers: authHeaders() })
+        .then(function(r) {
+          if (r.status === 401) { token = null; localStorage.removeItem('token'); loadDashboard(); return null; }
+          return r.json();
+        })
+        .then(function(list) {
+          var el = document.getElementById('generateRecordsList');
+          if (!el) return;
+          if (!list || !list.length) { el.innerHTML = '<p class="meta">暂无生成记录</p>'; return; }
+          el.innerHTML = '<div class="table-wrap"><table class="records-table"><thead><tr><th>模版</th><th>用例库名</th><th>大模型</th><th>状态</th><th>原因 / 说明</th><th>时间</th></tr></thead><tbody>' +
+            list.map(function(r) {
+              var statusCls = r.status === 'success' ? 'ok' : (r.status === 'failed' ? 'err' : '');
+              var statusText = r.status === 'success' ? '成功' : (r.status === 'failed' ? '失败' : '生成中');
+              var time = (r.finished_at || r.created_at || '').slice(0, 19).replace('T', ' ');
+              var msg = (r.message || '-');
+              if (msg.length > 80) msg = msg.slice(0, 80) + '…';
+              return '<tr><td>' + escapeHtml(r.template_name || '') + '</td><td>' + escapeHtml(r.library_name || '') + '</td><td>' + escapeHtml(r.llm_model_id || '-') + '</td><td class="' + statusCls + '">' + statusText + '</td><td title="' + escapeAttr(r.message || '') + '">' + escapeHtml(msg) + '</td><td>' + escapeHtml(time) + '</td></tr>';
+            }).join('') +
+            '</tbody></table></div>';
+        })
+        .catch(function() {
+          var el = document.getElementById('generateRecordsList');
+          if (el) el.innerHTML = '<p class="msg err">加载失败</p>';
+        });
     }
 
     document.getElementById('templateForm').addEventListener('submit', function(e) {
