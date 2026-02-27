@@ -523,6 +523,7 @@
             <span id="generateEstimateResult" class="meta" style="font-size: 0.85rem;"></span>
           </div>
         </div>
+        <div id="generateCasesMsg" class="msg" style="margin-top: 0.5rem; display: none;"></div>
         <div class="btns">
           <button type="button" id="confirmGenerateCases" class="btn btn-primary">生成</button>
           <button type="button" id="cancelGenerateCases" class="btn btn-ghost">取消</button>
@@ -1039,18 +1040,33 @@
     });
 
     var isGeneratingCases = false;
+    var generateConfirmPending = false;
     document.getElementById('confirmGenerateCases').addEventListener('click', function() {
       if (isGeneratingCases) return;
       var name = document.getElementById('generateLibraryName').value.trim();
-      if (!name) { alert('请输入用例库名称'); return; }
+      var msgEl = document.getElementById('generateCasesMsg');
+      msgEl.style.display = 'none';
+      if (!name) {
+        showMsg(msgEl, '请输入用例库名称', true);
+        return;
+      }
       if (!templateIdForGenerate) return;
       var llmSel = document.getElementById('templateLlmModelSelect');
       var llmId = llmSel ? (llmSel.value || '') : '';
-      var msg = '确定根据当前模版创建用例库「' + name + '」吗？';
-      if (llmId) {
-        msg += '\n\n已选择大模型，生成过程中将按实际用量扣除大模型积分。';
+
+      if (!generateConfirmPending) {
+        var tip = '将根据当前模版创建用例库「' + name + '」。';
+        if (llmId) {
+          tip += ' 已选择大模型，生成过程中将按实际用量扣除大模型积分。再次点击「生成」确认。';
+        } else {
+          tip += ' 不使用大模型，仅规则生成。再次点击「生成」确认。';
+        }
+        showMsg(msgEl, tip, false);
+        generateConfirmPending = true;
+        return;
       }
-      if (!confirm(msg)) return;
+
+      generateConfirmPending = false;
       var payload = { library_name: name };
       if (llmId) payload.llm_model_id = llmId;
       var btn = document.getElementById('confirmGenerateCases');
@@ -1072,12 +1088,15 @@
           isGeneratingCases = false;
           btn.disabled = false;
           btn.textContent = origText;
-          document.getElementById('modalGenerateCases').classList.remove('visible');
-          templateIdForGenerate = null;
           if (x.ok) {
-            loadLibraries();
-            document.querySelector('.dash-tabs button[data-panel="panel-libraries"]').click();
-          } else { alert(x.data.detail || '生成失败'); }
+            // 异步任务已创建，关闭弹窗并刷新生成记录
+            document.getElementById('modalGenerateCases').classList.remove('visible');
+            templateIdForGenerate = null;
+            loadGenerateRecords();
+          } else {
+            // 在弹窗内部展示错误信息（如余额不足等）
+            showMsg(msgEl, x.data.detail || '生成失败', true);
+          }
         })
         .catch(function(err) {
           clearTimeout(timeoutId);
@@ -1085,9 +1104,9 @@
           btn.disabled = false;
           btn.textContent = origText;
           if (err.name === 'AbortError') {
-            alert('请求超时（3 分钟），大模型可能响应过慢，请稍后重试或减少接口数量。');
+            showMsg(msgEl, '请求超时（3 分钟），大模型可能响应过慢，请稍后重试或减少接口数量。', true);
           } else {
-            alert('网络错误');
+            showMsg(msgEl, '网络错误', true);
           }
         });
     });

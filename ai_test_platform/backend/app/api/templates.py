@@ -4,11 +4,11 @@ import json
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..db import get_db
+from ..db import SessionLocal, get_db
 from ..models import CaseGenerateRecord, CaseLibrary, DocumentTemplate, User
 from .auth import get_current_user
 from .api_test import fetch_urls_and_build_case_dicts, parse_openapi_content_to_cases
@@ -230,6 +230,7 @@ class GenerateCasesRequest(BaseModel):
 async def generate_cases_from_template(
     template_id: int,
     payload: GenerateCasesRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -295,51 +296,93 @@ async def generate_cases_from_template(
     db.commit()
     db.refresh(record)
 
-    llm_credits_used: Optional[int] = None
     try:
-        # 2. 若指定了大模型，为每条用例生成更详细说明，并按用量扣积分
+        # 若指定了大模型，先按接口数预估一次大模型积分，用于余额校验与提示
         if llm_model_id:
-            # 先按接口数预估一次大模型积分，用于余额校验与提示
             est = estimate_credits_for_apis(llm_model_id, api_count=len(cases))
             est_credits = int((est or {}).get("estimated_credits") or 0)
             if est_credits > 0 and current_user.credits < est_credits:
-                # 在实际调用前直接提示余额不足，避免跑到一半才失败
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=f"积分不足，本次预计需 {est_credits} 积分，当前 {current_user.credits}",
                 )
 
-            system_prompt = (
-                "你是一名资深接口测试工程师，擅长根据 OpenAPI 文档设计高质量接口测试用例。"
-                "现在给你一组基于文档自动解析的初始用例，请你为每条用例生成更详细的中文说明，"
-                "包括覆盖的场景、关键参数、边界条件等。"
-            )
-            simple_cases = [
-                {
-                    "index": idx,
-                    "name": c.get("name"),
-                    "method": c.get("method"),
-                    "path": c.get("path"),
-                    "full_url": c.get("full_url"),
-                    "expect_status": c.get("expect_status", 200),
-                }
-                for idx, c in enumerate(cases)
-            ]
-            user_prompt = (
-                "下面是根据接口文档自动解析出的初始测试用例列表（JSON）：\n"
-                f"{json.dumps(simple_cases, ensure_ascii=False, indent=2)}\n\n"
-                "请你生成一个 JSON 数组，数组中的每一项对应一条用例，格式为：\n"
-                '{ "index": number, "description": string }\n'
-                "其中 index 对应上面列表中的 index 字段，description 为该用例的详细中文说明。\n"
-                "只输出 JSON，不要输出多余文字。"
-            )
-            try:
-                llm_result = await asyncio.to_thread(
-                        call_llm,
-                    llm_model_id,
-                    system_prompt,
-                    user_prompt,
-                    0.2,
+        # 将真正的生成流程放到后台任务中执行（调用大模型 + 创建用例库 + 更新记录）
+        background_tasks.add_task(
+            _run_generate_cases_job,
+            record_id=record.id,
+            cases=cases,
+        )
+
+        return {
+            "task_record_id": record.id,
+            "status": record.status,
+            "message": "已创建生成任务，可在下方用例生成记录中查看进度",
+        }
+    except Exception as e:
+        # 更新记录：失败原因展示给用户看
+        detail = getattr(e, "detail", str(e))
+        record.status = "failed"
+        record.message = (detail if isinstance(detail, str) else str(detail))[:2000]
+        record.finished_at = datetime.utcnow()
+        db.add(record)
+        db.commit()
+        raise
+
+
+def _run_generate_cases_job(record_id: int, cases: List[dict]) -> None:
+    """后台任务：调用大模型（可选）并创建用例库，最终更新生成记录状态。"""
+    db = SessionLocal()
+    try:
+        record = db.query(CaseGenerateRecord).filter(CaseGenerateRecord.id == record_id).first()
+        if not record:
+            return
+
+        user = db.query(User).filter(User.id == record.user_id).first()
+        template = db.query(DocumentTemplate).filter(DocumentTemplate.id == record.template_id).first()
+        if not user or not template:
+            record.status = "failed"
+            record.message = "用户或模版不存在"
+            record.finished_at = datetime.utcnow()
+            db.add(record)
+            db.commit()
+            return
+
+        llm_model_id = record.llm_model_id
+        llm_credits_used: Optional[int] = None
+
+        try:
+            # 1. 若指定了大模型，为每条用例生成更详细说明，并按用量扣积分
+            if llm_model_id:
+                system_prompt = (
+                    "你是一名资深接口测试工程师，擅长根据 OpenAPI 文档设计高质量接口测试用例。"
+                    "现在给你一组基于文档自动解析的初始用例，请你为每条用例生成更详细的中文说明，"
+                    "包括覆盖的场景、关键参数、边界条件等。"
+                )
+                simple_cases = [
+                    {
+                        "index": idx,
+                        "name": c.get("name"),
+                        "method": c.get("method"),
+                        "path": c.get("path"),
+                        "full_url": c.get("full_url"),
+                        "expect_status": c.get("expect_status", 200),
+                    }
+                    for idx, c in enumerate(cases)
+                ]
+                user_prompt = (
+                    "下面是根据接口文档自动解析出的初始测试用例列表（JSON）：\n"
+                    f"{json.dumps(simple_cases, ensure_ascii=False, indent=2)}\n\n"
+                    "请你生成一个 JSON 数组，数组中的每一项对应一条用例，格式为：\n"
+                    '{ "index": number, "description": string }\n'
+                    "其中 index 对应上面列表中的 index 字段，description 为该用例的详细中文说明。\n"
+                    "只输出 JSON，不要输出多余文字。"
+                )
+                llm_result = call_llm(
+                    model_id=llm_model_id,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=0.2,
                 )
                 content = str(llm_result.get("content") or "").strip()
                 llm_credits_used = int(llm_result.get("credits_used") or 0)
@@ -361,57 +404,45 @@ async def generate_cases_from_template(
                 except (ValueError, json.JSONDecodeError):
                     # 解析失败则忽略，仅保留原始 cases
                     pass
-            except Exception as e:  # noqa: BLE001
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"调用大模型生成用例说明失败：{e}",
-                ) from e
 
-            # 扣除大模型积分
-            if llm_credits_used and llm_credits_used > 0:
-                if current_user.credits < llm_credits_used:
-                    raise HTTPException(
-                        status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                        detail=f"积分不足，本次大模型生成需 {llm_credits_used} 积分，当前 {current_user.credits}",
-                    )
-                current_user.credits -= llm_credits_used
-                db.add(current_user)
-                db.commit()
+                # 扣除大模型积分（再次防御，避免并发修改）
+                if llm_credits_used and llm_credits_used > 0:
+                    if user.credits < llm_credits_used:
+                        raise RuntimeError(
+                            f"积分不足，本次大模型生成需 {llm_credits_used} 积分，当前 {user.credits}"
+                        )
+                    user.credits -= llm_credits_used
+                    db.add(user)
+                    db.commit()
 
-        # 3. 创建用例库
-        lib = CaseLibrary(
-            user_id=current_user.id,
-            name=payload.library_name.strip(),
-            template_id=t.id,
-            cases=cases,
-        )
-        db.add(lib)
-        db.commit()
-        db.refresh(lib)
+            # 2. 创建用例库
+            lib = CaseLibrary(
+                user_id=user.id,
+                name=record.library_name,
+                template_id=template.id,
+                cases=cases,
+            )
+            db.add(lib)
+            db.commit()
+            db.refresh(lib)
 
-        # 更新记录：成功
-        record.status = "success"
-        record.message = f"已生成用例库「{lib.name}」，共 {len(cases)} 条用例"
-        if llm_credits_used:
-            record.message += f"，消耗大模型积分 {llm_credits_used}"
-        record.library_id = lib.id
-        record.finished_at = datetime.utcnow()
-        db.add(record)
-        db.commit()
-
-        return {
-            "id": lib.id,
-            "name": lib.name,
-            "cases_count": len(cases),
-            "created_at": lib.created_at.isoformat() if lib.created_at else "",
-            "llm_credits_used": llm_credits_used,
-        }
-    except Exception as e:
-        # 更新记录：失败原因展示给用户
-        record.status = "failed"
-        detail = getattr(e, "detail", str(e))
-        record.message = (detail if isinstance(detail, str) else str(detail))[:2000]
-        record.finished_at = datetime.utcnow()
-        db.add(record)
-        db.commit()
-        raise
+            # 3. 更新记录：成功
+            record.status = "success"
+            msg = f"已生成用例库「{lib.name}」，共 {len(cases)} 条用例"
+            if llm_credits_used:
+                msg += f"，消耗大模型积分 {llm_credits_used}"
+            record.message = msg
+            record.library_id = lib.id
+            record.finished_at = datetime.utcnow()
+            db.add(record)
+            db.commit()
+        except Exception as e:  # noqa: BLE001
+            # 更新记录：失败原因展示给用户
+            record.status = "failed"
+            detail = str(e).strip() or repr(e)
+            record.message = detail[:2000]
+            record.finished_at = datetime.utcnow()
+            db.add(record)
+            db.commit()
+    finally:
+        db.close()
