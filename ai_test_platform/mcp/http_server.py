@@ -278,8 +278,7 @@ async def _handle_single_message(msg: Dict[str, Any], request: Request) -> Optio
             "jsonrpc": "2.0",
             "id": msg_id,
             "result": {
-                "tools": tools,
-                "nextCursor": None,
+                "tools": tools
             },
         }
 
