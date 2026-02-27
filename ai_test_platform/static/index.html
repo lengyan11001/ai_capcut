@@ -1002,13 +1002,23 @@
       var llmId = llmSel ? (llmSel.value || '') : '';
       var payload = { library_name: name };
       if (llmId) payload.llm_model_id = llmId;
+      var btn = document.getElementById('confirmGenerateCases');
+      var origText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '生成中…';
+      var controller = new AbortController();
+      var timeoutId = setTimeout(function() { controller.abort(); }, 180000);
       fetch(API_BASE + '/templates/' + templateIdForGenerate + '/generate-cases', {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       })
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(x) {
+          clearTimeout(timeoutId);
+          btn.disabled = false;
+          btn.textContent = origText;
           document.getElementById('modalGenerateCases').classList.remove('visible');
           templateIdForGenerate = null;
           if (x.ok) {
@@ -1016,7 +1026,16 @@
             document.querySelector('.dash-tabs button[data-panel="panel-libraries"]').click();
           } else { alert(x.data.detail || '生成失败'); }
         })
-        .catch(function() { alert('网络错误'); });
+        .catch(function(err) {
+          clearTimeout(timeoutId);
+          btn.disabled = false;
+          btn.textContent = origText;
+          if (err.name === 'AbortError') {
+            alert('请求超时（3 分钟），大模型可能响应过慢，请稍后重试或减少接口数量。');
+          } else {
+            alert('网络错误');
+          }
+        });
     });
     document.getElementById('cancelGenerateCases').addEventListener('click', function() {
       document.getElementById('modalGenerateCases').classList.remove('visible');

@@ -115,12 +115,17 @@ def is_llm_enabled() -> bool:
     return bool(settings.openai_api_key)
 
 
+# 大模型单次请求最长等待时间（秒），避免一直 pending
+LLM_REQUEST_TIMEOUT: float = 120.0
+
+
 def _get_client() -> OpenAI:
     if not settings.openai_api_key:
         raise RuntimeError("未配置 OPENAI_API_KEY，无法使用 LLM 功能")
+    kwargs: Dict[str, object] = {"api_key": settings.openai_api_key, "timeout": LLM_REQUEST_TIMEOUT}
     if settings.openai_base_url:
-        return OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url)
-    return OpenAI(api_key=settings.openai_api_key)
+        kwargs["base_url"] = settings.openai_base_url
+    return OpenAI(**kwargs)
 
 
 def _get_model_config(model_id: str) -> Optional[LLMModelConfig]:
