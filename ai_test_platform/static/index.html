@@ -272,17 +272,6 @@
     }
     .doc-test-card .opt-block summary { cursor: pointer; color: var(--text-muted); font-size: 0.9rem; }
     .doc-test-card .opt-block.open summary { color: var(--accent); }
-    .doc-test-card #fromDocMsg { margin-top: 0.75rem; }
-    .doc-test-card #fromDocResult {
-      margin-top: 1rem;
-      padding: 0.75rem;
-      background: rgba(255,255,255,0.04);
-      border-radius: var(--radius-sm);
-      font-size: 0.85rem;
-      white-space: pre-wrap;
-      max-height: 200px;
-      overflow-y: auto;
-    }
     .dash-tabs { display: flex; gap: 0.25rem; margin: 1.5rem 0 1rem; padding: 4px; background: rgba(255,255,255,0.04); border-radius: var(--radius-sm); flex-wrap: wrap; }
     .dash-tabs button { padding: 0.5rem 1rem; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 0.9rem; }
     .dash-tabs button:hover { color: var(--text); }
@@ -442,81 +431,7 @@
 
       <div id="panel-libraries" class="dash-panel">
         <h3 style="margin-bottom: 0.75rem;">用例库</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">从文档创建用例库（上传文件或填写链接），在下方用例库列表中可编辑后点击「执行」并选择账号运行。</p>
-        <div class="doc-test-card" style="max-width: none;">
-          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">从文档链接创建用例库</h4>
-          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-            支持多个文档地址：每行一个链接，会合并所有接口后生成用例库。可选使用大模型生成更详细的用例说明。
-          </p>
-          <form id="fromDocForm">
-            <label>用例库名称</label>
-            <input type="text" name="library_name" id="fromDocLibraryName" required placeholder="例如：项目A-从链接创建">
-            <label>文档地址（必填，可多行）</label>
-            <textarea name="schema_urls" id="schemaUrlsInput" rows="4" placeholder="每行一个链接，例如：&#10;https://s.apifox.cn/xxx/api-251382054&#10;https://s.apifox.cn/xxx/api-415865434"></textarea>
-            <div class="row2">
-              <div>
-                <label>测试环境 base_url（可选）</label>
-                <input type="text" name="base_url" placeholder="https://api.example.com">
-              </div>
-              <div>
-                <label>说明</label>
-                <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.4rem;">此处仅创建用例库，不会自动执行接口；执行请在下方用例库中点击「执行」。</p>
-              </div>
-            </div>
-            <div class="row2">
-              <div>
-                <label>大模型（可选，用于生成更详细用例说明）</label>
-                <select id="llmModelSelect" name="llm_model_id" style="width: 100%; padding: 0.4rem 0.6rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 0.85rem;">
-                  <option value="">不使用大模型（免费）</option>
-                </select>
-                <div class="hint" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">列表会根据 /auth/pricing 返回的可用模型自动填充。</div>
-              </div>
-              <div>
-                <label>仅预估大模型积分（不实际调用）</label>
-                <input type="checkbox" name="estimate_only" id="estimateOnly" style="width: auto; margin-top: 0.5rem;">
-              </div>
-            </div>
-            <details class="opt-block" id="authBlock">
-              <summary>认证：先登录再跑（可选）</summary>
-              <label style="margin-top: 0.75rem;">登录接口完整 URL</label>
-              <input type="url" name="login_url" placeholder="https://api.example.com/auth/login">
-              <div class="row2" style="margin-top: 0.5rem;">
-                <div>
-                  <label>账号</label>
-                  <input type="text" name="auth_username" placeholder="测试账号">
-                </div>
-                <div>
-                  <label>密码</label>
-                  <input type="password" name="auth_password" placeholder="测试密码">
-                </div>
-              </div>
-              <label>Token 在响应中的路径</label>
-              <input type="text" name="token_response_path" placeholder="data.token 或 access_token" value="access_token">
-            </details>
-            <details class="opt-block" id="headersBlock">
-              <summary>固定 Header（可选）</summary>
-              <label style="margin-top: 0.75rem;">Header 键值（如 Authorization: Bearer xxx）</label>
-              <input type="text" name="extra_headers_raw" placeholder='{"Authorization": "Bearer your-token"}' style="font-family: monospace;">
-            </details>
-            <button type="submit" class="btn btn-primary" style="margin-top: 0.5rem;">创建用例库</button>
-            <div id="fromDocMsg" class="msg"></div>
-            <pre id="fromDocResult"></pre>
-          </form>
-        </div>
-        <div class="doc-test-card" style="max-width: none; margin-bottom: 1rem;">
-          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">上传 OpenAPI 文件创建用例库</h4>
-          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">支持 Apifox 导出的 OpenAPI (Swagger) JSON/YAML，上传后直接创建用例库（不扣积分）。</p>
-          <form id="uploadOpenApiForm">
-            <label>用例库名称</label>
-            <input type="text" name="library_name" required placeholder="例如：项目A-导出">
-            <label>OpenAPI 文件（.json / .yaml / .yml）</label>
-            <input type="file" name="file" accept=".json,.yaml,.yml" required>
-            <label>base_url（可选）</label>
-            <input type="text" name="base_url" placeholder="https://api.example.com">
-            <button type="submit" class="btn btn-primary">创建用例</button>
-          </form>
-          <div id="uploadOpenApiMsg" class="msg" style="margin-top: 0.5rem;"></div>
-        </div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">在「文档模版」中从链接或上传文件创建用例库后，会出现在下方列表；可编辑用例后点击「执行」并选择账号运行。</p>
         <div id="libraryList"></div>
         <div id="libraryDetail" style="display: none; margin-top: 1rem;">
           <h4 id="libraryDetailTitle"></h4>
@@ -1084,7 +999,7 @@
           var detailEl = document.getElementById('libraryDetail');
           detailEl.style.display = 'none';
           listEl.style.display = 'block';
-          if (!list.length) { listEl.innerHTML = '<p class="meta">暂无用例库，可从文档模版「生成用例」或上方上传 OpenAPI 文件。</p>'; return; }
+          if (!list.length) { listEl.innerHTML = '<p class="meta">暂无用例库，请先在「文档模版」中保存模版后点击「生成用例」。</p>'; return; }
           listEl.innerHTML = list.map(function(l) {
             var up = (l.updated_at || '').slice(0, 16);
             return '<div class="list-item" data-id="' + l.id + '">' +
@@ -1118,45 +1033,6 @@
         })
         .catch(function() { document.getElementById('libraryList').innerHTML = '<p class="msg err">加载失败</p>'; });
     }
-
-    document.getElementById('uploadOpenApiForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      var fd = new FormData(this);
-      var name = fd.get('library_name');
-      var file = fd.get('file');
-      if (!name || !file || !file.size) {
-        showMsg(document.getElementById('uploadOpenApiMsg'), '请填写用例库名称并选择文件', true);
-        return;
-      }
-      var body = new FormData();
-      body.append('file', file);
-      body.append('library_name', name);
-      var baseUrl = fd.get('base_url');
-      if (baseUrl && baseUrl.trim()) body.append('base_url', baseUrl.trim());
-      var msgEl = document.getElementById('uploadOpenApiMsg');
-      msgEl.style.display = 'none';
-      fetch(API_BASE + '/case-libraries/from-upload', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + token },
-        body: body
-      })
-        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-        .then(function(x) {
-          if (x.ok) {
-            showMsg(msgEl, '已生成用例库「' + x.data.name + '」，共 ' + x.data.cases_count + ' 条用例', false);
-            msgEl.style.display = 'block';
-            this.reset();
-            loadLibraries();
-          } else {
-            showMsg(msgEl, x.data.detail || '上传失败', true);
-            msgEl.style.display = 'block';
-          }
-        }.bind(this))
-        .catch(function() {
-          showMsg(msgEl, '网络错误', true);
-          msgEl.style.display = 'block';
-        });
-    });
 
     var selectedCaseIndices = [];
     function renderCasesTable(cases) {
@@ -1606,150 +1482,6 @@
     function escapeHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
     function escapeAttr(s) { return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
     function truncate(s, len) { s = (s || '').trim(); return s.length <= len ? s : s.slice(0, len) + '…'; }
-
-    document.getElementById('fromDocForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      var fd = new FormData(this);
-      var libName = (fd.get('library_name') || '').trim();
-      var urlsText = document.getElementById('schemaUrlsInput').value || '';
-      var urls = urlsText.split(/\r?\n/).map(function(s) { return s.trim(); }).filter(Boolean);
-      if (!urls.length) {
-        document.getElementById('fromDocMsg').textContent = '请至少填写一个文档地址';
-        document.getElementById('fromDocMsg').className = 'msg err';
-        document.getElementById('fromDocMsg').style.display = 'block';
-        return;
-      }
-      var estimate_only_el = document.getElementById('estimateOnly');
-      var estimate_only = estimate_only_el ? estimate_only_el.checked : false;
-      if (!estimate_only && !libName) {
-        document.getElementById('fromDocMsg').textContent = '请填写用例库名称';
-        document.getElementById('fromDocMsg').className = 'msg err';
-        document.getElementById('fromDocMsg').style.display = 'block';
-        return;
-      }
-      var base_url = fd.get('base_url') || null;
-      var llm_model_id_el = document.getElementById('llmModelSelect');
-      var llm_model_id = llm_model_id_el ? (llm_model_id_el.value || '') : '';
-      var body = {
-        base_url: base_url || undefined,
-        // 这里仅创建用例库，不直接执行接口
-        only_generate: true,
-        max_cases_per_api: 1
-      };
-      if (urls.length === 1) { body.schema_url = urls[0]; } else { body.schema_urls = urls; }
-      if (llm_model_id) {
-        body.llm_model_id = llm_model_id;
-      }
-      if (estimate_only) {
-        body.estimate_only = true;
-      }
-      var login_url = fd.get('login_url');
-      if (login_url) {
-        body.auth = {
-          login_url: login_url,
-          method: 'POST',
-          username: fd.get('auth_username') || undefined,
-          password: fd.get('auth_password') || undefined,
-          token_response_path: fd.get('token_response_path') || 'access_token',
-          header_name: 'Authorization',
-          header_prefix: 'Bearer '
-        };
-      }
-      var raw = fd.get('extra_headers_raw');
-      if (raw && raw.trim()) {
-        try {
-          body.extra_headers = JSON.parse(raw);
-        } catch (err) {
-          document.getElementById('fromDocMsg').textContent = '固定 Header 必须是合法 JSON';
-          document.getElementById('fromDocMsg').className = 'msg err';
-          document.getElementById('fromDocMsg').style.display = 'block';
-          document.getElementById('fromDocResult').textContent = '';
-          return;
-        }
-      }
-      var msgEl = document.getElementById('fromDocMsg');
-      var resultEl = document.getElementById('fromDocResult');
-      msgEl.style.display = 'none';
-      resultEl.textContent = '请求中…';
-      fetch(API_BASE + '/api-test/from-doc', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify(body)
-      })
-        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, status: r.status, data: d }; }); })
-        .then(function(x) {
-          if (x.ok) {
-            var d = x.data;
-            var lines = ['接口数: ' + d.total_apis, '用例数: ' + d.total_cases, '已执行: ' + (d.executed ? '是' : '否')];
-            if (d.llm_estimate && typeof d.llm_estimate.estimated_credits === 'number') {
-              lines.push('大模型预估积分: ' + d.llm_estimate.estimated_credits + '（预估 tokens: ' + (d.llm_estimate.estimated_total_tokens || 0) + '）');
-            }
-            if (d.llm_credits_used != null) {
-              lines.push('大模型实际消耗积分: ' + d.llm_credits_used);
-              if (d.llm_usage) {
-                lines.push('大模型实际 tokens: ' + JSON.stringify(d.llm_usage));
-              }
-            }
-            // 仅做预估时，不创建用例库
-            if (body.estimate_only) {
-              resultEl.textContent = lines.join('\n');
-              msgEl.textContent = '已完成大模型积分预估（未调用模型、未创建用例库）';
-              msgEl.className = 'msg ok';
-              msgEl.style.display = 'block';
-              return;
-            }
-            // 创建用例库
-            fetch(API_BASE + '/case-libraries/from-cases', {
-              method: 'POST',
-              headers: authHeaders(),
-              body: JSON.stringify({
-                name: libName,
-                cases: d.cases || []
-              })
-            })
-              .then(function(r2) { return r2.json().then(function(d2) { return { ok: r2.ok, data: d2 }; }); })
-              .then(function(y) {
-                if (y.ok) {
-                  lines.push('已创建用例库: ' + (y.data.name || libName) + '（' + (y.data.cases_count || d.total_cases) + ' 条用例）');
-                  resultEl.textContent = lines.join('\n');
-                  var msgText;
-                  if (d.llm_credits_used) {
-                    msgText = '已创建用例库，并完成大模型生成，已扣大模型积分';
-                  } else {
-                    msgText = '已创建用例库（未使用大模型不扣积分）';
-                  }
-                  msgEl.textContent = msgText;
-                  msgEl.className = 'msg ok';
-                  msgEl.style.display = 'block';
-                  loadLibraries();
-                  loadDashboard();
-                } else {
-                  msgEl.textContent = y.data.detail || '创建用例库失败';
-                  msgEl.className = 'msg err';
-                  msgEl.style.display = 'block';
-                  resultEl.textContent = lines.join('\n');
-                }
-              })
-              .catch(function(err2) {
-                msgEl.textContent = '创建用例库失败: ' + (err2.message || '');
-                msgEl.className = 'msg err';
-                msgEl.style.display = 'block';
-                resultEl.textContent = lines.join('\n');
-              });
-          } else {
-            msgEl.textContent = x.data.detail || x.data.message || '请求失败';
-            msgEl.className = 'msg err';
-            msgEl.style.display = 'block';
-            resultEl.textContent = typeof x.data === 'object' ? JSON.stringify(x.data, null, 2) : '';
-          }
-        })
-        .catch(function(err) {
-          msgEl.textContent = '网络错误';
-          msgEl.className = 'msg err';
-          msgEl.style.display = 'block';
-          resultEl.textContent = err.message || '';
-        });
-    });
 
     if (token) loadDashboard();
   </script>
