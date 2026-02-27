@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # 大模型配置（用于用例生成等）
     openai_api_key: str | None = None
     openai_base_url: str | None = None  # 可选，自定义网关或代理
+    openai_provider: str | None = None  # 可选，当前配置的厂商，仅展示该厂商模型。可选值：deepseek / aliyun / volcengine
 
     class Config:
         env_file = ".env"

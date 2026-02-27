@@ -293,7 +293,10 @@ def public_llm_pricing() -> Dict[str, object]:
     base_prompt = sample_tokens.get("prompt_tokens", 0)
     base_completion = sample_tokens.get("completion_tokens", 0)
 
+    provider_filter = (settings.openai_provider or "").strip().lower() or None
     for model_id, cfg in LLM_MODELS.items():
+        if provider_filter and cfg.provider != provider_filter:
+            continue
         est_credits = estimate_credits_for_usage(
             model_id=model_id,
             prompt_tokens=base_prompt,
