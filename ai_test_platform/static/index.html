@@ -410,7 +410,7 @@
 
       <div id="panel-templates" class="dash-panel visible">
         <h3 style="margin-bottom: 0.75rem;">文档模版</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">保存接口文档地址，点击「生成用例」可生成用例库（可多次生成，每次新建一个用例库）。</p>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">保存接口文档模版（在线链接或本地文件），在模版列表中选择模型后点击「生成用例」可生成用例库。</p>
         <div class="doc-test-card" style="max-width: none;">
           <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">新建模版</h4>
           <form id="templateForm">
@@ -422,6 +422,20 @@
             <input type="text" name="base_url" placeholder="https://api.example.com">
             <button type="submit" class="btn btn-primary">保存模版</button>
           </form>
+        </div>
+        <div class="doc-test-card" style="max-width: none; margin-top: 1rem;">
+          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">从 OpenAPI 文件创建模版</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">支持 Apifox 导出的 OpenAPI (Swagger) JSON/YAML，文件内容将保存在模版中，后续可多次生成用例库。</p>
+          <form id="templateUploadForm">
+            <label>模版名称</label>
+            <input type="text" name="name" required placeholder="例如：项目A-本地文件模版">
+            <label>OpenAPI 文件（.json / .yaml / .yml）</label>
+            <input type="file" name="file" accept=".json,.yaml,.yml" required>
+            <label>base_url（可选）</label>
+            <input type="text" name="base_url" placeholder="https://api.example.com">
+            <button type="submit" class="btn btn-primary">保存模版</button>
+          </form>
+          <div id="templateUploadMsg" class="msg" style="margin-top: 0.5rem;"></div>
         </div>
         <div id="templateList" style="margin-top: 1.5rem;"></div>
       </div>
@@ -573,6 +587,13 @@
         <h4>生成用例库</h4>
         <label>用例库名称</label>
         <input type="text" id="generateLibraryName" placeholder="例如：项目A-202502">
+        <div class="modal-field">
+          <label>大模型（可选，用于生成更详细用例说明）</label>
+          <select id="templateLlmModelSelect" data-llm-select="true" style="width: 100%; padding: 0.4rem 0.6rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 0.85rem;">
+            <option value="">不使用大模型（免费）</option>
+          </select>
+          <div class="hint">不选择则仅规则生成，不会扣除大模型积分。</div>
+        </div>
         <div class="btns">
           <button type="button" id="confirmGenerateCases" class="btn btn-primary">生成</button>
           <button type="button" id="cancelGenerateCases" class="btn btn-ghost">取消</button>
@@ -893,11 +914,12 @@
     });
 
     function loadLlmModels() {
-      var sel = document.getElementById('llmModelSelect');
-      if (!sel || !token) return;
+      if (!token) return;
+      var sels = document.querySelectorAll('select[data-llm-select]');
+      if (!sels.length) return;
       // 已经加载过且缓存存在时，直接使用缓存渲染
       if (llmModelsCache) {
-        renderLlmModelOptions(sel, llmModelsCache);
+        sels.forEach(function(sel) { renderLlmModelOptions(sel, llmModelsCache); });
         return;
       }
       fetch(API_BASE + '/auth/pricing', { headers: authHeaders() })
@@ -907,14 +929,14 @@
         })
         .then(function(d) {
           if (!d || !d.llm || !d.llm.models) {
-            renderLlmModelOptions(sel, null);
+            sels.forEach(function(sel) { renderLlmModelOptions(sel, null); });
             return;
           }
           llmModelsCache = d.llm;
-          renderLlmModelOptions(sel, llmModelsCache);
+          sels.forEach(function(sel) { renderLlmModelOptions(sel, llmModelsCache); });
         })
         .catch(function() {
-          renderLlmModelOptions(sel, null);
+          sels.forEach(function(sel) { renderLlmModelOptions(sel, null); });
         });
     }
 
@@ -947,8 +969,9 @@
           if (!list.length) { el.innerHTML = '<p class="meta">暂无模版，请先新建。</p>'; return; }
           el.innerHTML = list.map(function(t) {
             var urls = (t.schema_urls || []).length;
+            var src = t.has_file ? '本地文件模版' : (urls + ' 个文档地址');
             return '<div class="list-item" data-id="' + t.id + '">' +
-              '<div><div class="title">' + escapeHtml(t.name) + '</div><div class="meta">' + urls + ' 个文档地址</div></div>' +
+              '<div><div class="title">' + escapeHtml(t.name) + '</div><div class="meta">' + src + '</div></div>' +
               '<div class="acts"><button type="button" class="btn btn-primary btn-generate">生成用例</button></div></div>';
           }).join('');
           el.querySelectorAll('.btn-generate').forEach(function(b) {
@@ -981,14 +1004,57 @@
         .catch(function() { alert('网络错误'); });
     });
 
+    document.getElementById('templateUploadForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(this);
+      var name = fd.get('name');
+      var file = fd.get('file');
+      if (!name || !file || !file.size) {
+        showMsg(document.getElementById('templateUploadMsg'), '请填写模版名称并选择文件', true);
+        return;
+      }
+      var body = new FormData();
+      body.append('name', name);
+      body.append('file', file);
+      var baseUrl = fd.get('base_url');
+      if (baseUrl && baseUrl.trim()) body.append('base_url', baseUrl.trim());
+      var msgEl = document.getElementById('templateUploadMsg');
+      msgEl.style.display = 'none';
+      fetch(API_BASE + '/templates/from-upload', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body: body
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          if (x.ok) {
+            showMsg(msgEl, '已保存模版「' + x.data.name + '」', false);
+            msgEl.style.display = 'block';
+            document.getElementById('templateUploadForm').reset();
+            loadTemplates();
+          } else {
+            showMsg(msgEl, x.data.detail || '保存失败', true);
+            msgEl.style.display = 'block';
+          }
+        })
+        .catch(function() {
+          showMsg(msgEl, '网络错误', true);
+          msgEl.style.display = 'block';
+        });
+    });
+
     document.getElementById('confirmGenerateCases').addEventListener('click', function() {
       var name = document.getElementById('generateLibraryName').value.trim();
       if (!name) { alert('请输入用例库名称'); return; }
       if (!templateIdForGenerate) return;
+      var llmSel = document.getElementById('templateLlmModelSelect');
+      var llmId = llmSel ? (llmSel.value || '') : '';
+      var payload = { library_name: name };
+      if (llmId) payload.llm_model_id = llmId;
       fetch(API_BASE + '/templates/' + templateIdForGenerate + '/generate-cases', {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ library_name: name })
+        body: JSON.stringify(payload)
       })
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(x) {

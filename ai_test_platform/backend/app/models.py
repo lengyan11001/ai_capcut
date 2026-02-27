@@ -36,6 +36,8 @@ class DocumentTemplate(Base):
     base_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     extra_headers: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     extra_query: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # 可选：直接存储上传的 OpenAPI 文件内容（JSON 或 YAML 文本）
+    file_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
