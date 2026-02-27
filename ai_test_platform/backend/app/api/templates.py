@@ -299,8 +299,15 @@ async def generate_cases_from_template(
     try:
         # 2. 若指定了大模型，为每条用例生成更详细说明，并按用量扣积分
         if llm_model_id:
-            # 预估（仅用于提示，可选）
-            _ = estimate_credits_for_apis(llm_model_id, api_count=len(cases))
+            # 先按接口数预估一次大模型积分，用于余额校验与提示
+            est = estimate_credits_for_apis(llm_model_id, api_count=len(cases))
+            est_credits = int((est or {}).get("estimated_credits") or 0)
+            if est_credits > 0 and current_user.credits < est_credits:
+                # 在实际调用前直接提示余额不足，避免跑到一半才失败
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail=f"积分不足，本次预计需 {est_credits} 积分，当前 {current_user.credits}",
+                )
 
             system_prompt = (
                 "你是一名资深接口测试工程师，擅长根据 OpenAPI 文档设计高质量接口测试用例。"
