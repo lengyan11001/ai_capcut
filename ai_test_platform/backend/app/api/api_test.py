@@ -170,6 +170,12 @@ async def run_api_test(
     - 对比期望状态码
     - 返回响应内容片段，便于排查
     """
+    # 要求邮箱已验证
+    if not getattr(current_user, "is_email_verified", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="请先完成邮箱验证后再使用接口测试功能",
+        )
     # 简单计费策略：每次调用扣 1 积分
     need = credits_for_api_test()
     if current_user.credits < need:
@@ -701,6 +707,13 @@ async def generate_tests_from_doc(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiFromDocResult:
+    # 要求邮箱已验证
+    if not getattr(current_user, "is_email_verified", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="请先完成邮箱验证后再使用该功能",
+        )
+
     urls = payload.resolved_urls
     if not urls:
         raise HTTPException(

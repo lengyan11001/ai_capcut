@@ -1,6 +1,7 @@
 import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
+import random
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from ..core.config import settings
 from ..db import get_db
-from ..models import User
+from ..models import EmailVerificationCode, User
+from ..core.email_sender import email_sender
 
 
 router = APIRouter()
@@ -34,6 +36,7 @@ class UserOut(BaseModel):
     id: int
     email: EmailStr
     credits: int
+    is_email_verified: bool
 
 
 class Token(BaseModel):
@@ -113,12 +116,20 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
         credits=100,
+        is_email_verified=False,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
+    # 发送邮箱验证码（若已配置邮件服务）
+    _create_and_send_verification_code(db, user)
     # 显式构造返回，避免 ORM 序列化问题
-    return UserOut(id=user.id, email=user.email, credits=user.credits)
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        credits=user.credits,
+        is_email_verified=user.is_email_verified,
+    )
 
 
 @router.post("/login", response_model=Token, summary="登录并获取访问令牌")
@@ -136,7 +147,12 @@ def login(
 
 @router.get("/me", response_model=UserOut, summary="当前用户信息与剩余积分")
 def get_me(current_user: User = Depends(get_current_user)):
-    return UserOut(id=current_user.id, email=current_user.email, credits=current_user.credits)
+    return UserOut(
+        id=current_user.id,
+        email=current_user.email,
+        credits=current_user.credits,
+        is_email_verified=current_user.is_email_verified,
+    )
 
 
 @router.get("/pricing", summary="计费规则（积分单价，公开）")
@@ -150,4 +166,100 @@ def get_pricing():
             {"name": "from_doc_generate", "credits": CREDITS_PER_CALL["from_doc_generate"], "desc": "仅生成用例不执行"},
         ],
     }
+
+
+class VerifyEmailIn(BaseModel):
+    email: EmailStr
+    code: str
+
+
+def _generate_code() -> str:
+    return f"{random.randint(0, 999999):06d}"
+
+
+def _create_and_send_verification_code(db: Session, user: User) -> None:
+    """为用户创建一条新的验证码记录并发送邮件（若配置了 SMTP）。"""
+    code = _generate_code()
+    now = datetime.utcnow()
+    expires_at = now + timedelta(minutes=15)
+    rec = EmailVerificationCode(
+        user_id=user.id,
+        email=user.email,
+        code=code,
+        expires_at=expires_at,
+        used_at=None,
+        created_at=now,
+    )
+    db.add(rec)
+    db.commit()
+    # 发送邮件（若未配置，将静默返回）
+    try:
+        email_sender.send_verification_code(user.email, code)
+    except Exception:
+        # 邮件失败不阻断注册流程，可在日志中观测
+        pass
+
+
+@router.post("/verify-email", summary="验证邮箱验证码")
+def verify_email(payload: VerifyEmailIn, db: Session = Depends(get_db)):
+    user = get_user_by_email(db, payload.email)
+    if not user:
+        raise HTTPException(status_code=400, detail="用户不存在")
+
+    # 查找最新一条验证码
+    rec = (
+        db.query(EmailVerificationCode)
+        .filter(
+            EmailVerificationCode.user_id == user.id,
+            EmailVerificationCode.email == payload.email,
+        )
+        .order_by(EmailVerificationCode.created_at.desc())
+        .first()
+    )
+    now = datetime.utcnow()
+    if (
+        not rec
+        or rec.used_at is not None
+        or rec.expires_at < now
+        or rec.code != payload.code
+    ):
+        raise HTTPException(status_code=400, detail="验证码错误或已过期")
+
+    rec.used_at = now
+    user.is_email_verified = True
+    db.add_all([rec, user])
+    db.commit()
+
+    return {"detail": "邮箱验证成功"}
+
+
+class ResendVerifyEmailIn(BaseModel):
+    email: EmailStr
+
+
+@router.post("/resend-verification", summary="重新发送邮箱验证码")
+def resend_verification(payload: ResendVerifyEmailIn, db: Session = Depends(get_db)):
+    user = get_user_by_email(db, payload.email)
+    if not user:
+        raise HTTPException(status_code=400, detail="用户不存在")
+    if user.is_email_verified:
+        raise HTTPException(status_code=400, detail="该邮箱已完成验证")
+
+    # 简单限流：距离上次发送不足 60 秒则拒绝
+    last = (
+        db.query(EmailVerificationCode)
+        .filter(
+            EmailVerificationCode.user_id == user.id,
+            EmailVerificationCode.email == payload.email,
+        )
+        .order_by(EmailVerificationCode.created_at.desc())
+        .first()
+    )
+    now = datetime.utcnow()
+    if last and (now - last.created_at).total_seconds() < 60:
+        raise HTTPException(status_code=429, detail="发送过于频繁，请稍后再试")
+
+    _create_and_send_verification_code(db, user)
+    return {"detail": "验证码已重新发送，如未收到请检查垃圾邮箱或稍后重试"}
+
 

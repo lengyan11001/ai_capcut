@@ -33,9 +33,32 @@ def _ensure_accounts_columns():
         pass
 
 
+def _ensure_user_email_columns():
+    """为已有数据库补充 users 表的 is_email_verified 列（旧库兼容）。"""
+    from sqlalchemy import text
+
+    try:
+        with engine.begin() as conn:
+            if "sqlite" in (engine.url.drivername or ""):
+                rp = conn.execute(text("PRAGMA table_info(users)"))
+                rows = rp.fetchall()
+                columns = [row[1] for row in rows] if rows else []
+                if "is_email_verified" not in columns:
+                    # 使用 INTEGER 存储布尔值，默认 0（未验证）
+                    conn.execute(
+                        text(
+                            "ALTER TABLE users ADD COLUMN is_email_verified INTEGER NOT NULL DEFAULT 0"
+                        )
+                    )
+    except Exception:
+        # 兼容旧库失败时不影响服务启动
+        pass
+
+
 def create_app() -> FastAPI:
     Base.metadata.create_all(bind=engine)
     _ensure_accounts_columns()
+    _ensure_user_email_columns()
 
     app = FastAPI(
         title="AI 测试平台 API",
