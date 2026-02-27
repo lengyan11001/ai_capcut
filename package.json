@@ -1,0 +1,28 @@
+{
+  "name": "ai_capcut",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "npx remotion studio src/index.ts",
+    "render": "npx remotion render src/index.ts",
+    "render:explainer": "npx remotion render src/index.ts RemotionExplainer out/remotion-explainer.mp4",
+    "render:all": "npx remotion render src/index.ts RemotionExplainer out/remotion-explainer.mp4 && npx remotion render src/index.ts HelloWorld out/hello.mp4 && npx remotion render src/index.ts TextAnimation out/text.mp4 && npx remotion render src/index.ts AIVideoDemo out/demo.mp4"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@remotion/cli": "4.0.427",
+    "@remotion/lottie": "^4.0.427",
+    "@remotion/player": "4.0.427",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "lottie-web": "^5.12.2",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "remotion": "4.0.427",
+    "typescript": "5.9.3"
+  }
+}

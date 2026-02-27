@@ -1,0 +1,126 @@
+{
+  "title": "如何高效学习",
+  "fps": 30,
+  "totalFrames": 1804,
+  "segments": [
+    {
+      "id": "hook",
+      "narration": "你还在死记硬背？",
+      "lottieFile": "segment-01.json",
+      "audioFile": "segment-01.mp3",
+      "durationFrames": 81
+    },
+    {
+      "id": "better-way",
+      "narration": "科学家找到了更好的办法",
+      "lottieFile": "segment-02.json",
+      "audioFile": "segment-02.mp3",
+      "durationFrames": 98
+    },
+    {
+      "id": "problem-reading",
+      "narration": "反复阅读，只能记住百分之十",
+      "lottieFile": "segment-03.json",
+      "audioFile": "segment-03.mp3",
+      "durationFrames": 121
+    },
+    {
+      "id": "problem-highlight",
+      "narration": "划重点？那是假的安全感",
+      "lottieFile": "segment-04.json",
+      "audioFile": "segment-04.mp3",
+      "durationFrames": 129
+    },
+    {
+      "id": "method1-intro",
+      "narration": "第一招，主动回忆",
+      "lottieFile": "segment-05.json",
+      "audioFile": "segment-05.mp3",
+      "durationFrames": 95
+    },
+    {
+      "id": "method1-how",
+      "narration": "合上书，逼自己想起来",
+      "lottieFile": "segment-06.json",
+      "audioFile": "segment-06.mp3",
+      "durationFrames": 105
+    },
+    {
+      "id": "method1-data",
+      "narration": "记忆留存率直接翻八倍",
+      "lottieFile": "segment-07.json",
+      "audioFile": "segment-07.mp3",
+      "durationFrames": 101
+    },
+    {
+      "id": "method2-intro",
+      "narration": "第二招，间隔重复",
+      "lottieFile": "segment-08.json",
+      "audioFile": "segment-08.mp3",
+      "durationFrames": 97
+    },
+    {
+      "id": "method2-how",
+      "narration": "今天学，明天复习，一周后再来",
+      "lottieFile": "segment-09.json",
+      "audioFile": "segment-09.mp3",
+      "durationFrames": 129
+    },
+    {
+      "id": "method2-data",
+      "narration": "比临时抱佛脚强两倍",
+      "lottieFile": "segment-10.json",
+      "audioFile": "segment-10.mp3",
+      "durationFrames": 99
+    },
+    {
+      "id": "method3-intro",
+      "narration": "第三招，教给别人",
+      "lottieFile": "segment-11.json",
+      "audioFile": "segment-11.mp3",
+      "durationFrames": 94
+    },
+    {
+      "id": "method3-how",
+      "narration": "讲不出来，说明你没真懂",
+      "lottieFile": "segment-12.json",
+      "audioFile": "segment-12.mp3",
+      "durationFrames": 109
+    },
+    {
+      "id": "method3-data",
+      "narration": "记忆留存率高达百分之九十",
+      "lottieFile": "segment-13.json",
+      "audioFile": "segment-13.mp3",
+      "durationFrames": 121
+    },
+    {
+      "id": "tip-focus",
+      "narration": "每次只专注二十五分钟",
+      "lottieFile": "segment-14.json",
+      "audioFile": "segment-14.mp3",
+      "durationFrames": 105
+    },
+    {
+      "id": "tip-write",
+      "narration": "手写笔记比打字更好",
+      "lottieFile": "segment-15.json",
+      "audioFile": "segment-15.mp3",
+      "durationFrames": 104
+    },
+    {
+      "id": "tip-sleep",
+      "narration": "学完一定要好好睡一觉",
+      "lottieFile": "segment-16.json",
+      "audioFile": "segment-16.mp3",
+      "durationFrames": 93
+    },
+    {
+      "id": "closing",
+      "narration": "今晚就试试，合上书自己回忆",
+      "lottieFile": "segment-17.json",
+      "audioFile": "segment-17.mp3",
+      "durationFrames": 123
+    }
+  ]
+}

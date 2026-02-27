@@ -1,0 +1,175 @@
+{
+  "title": "Cursor 使用技巧：三个快捷键让编程效率翻倍",
+  "fps": 30,
+  "totalFrames": 2741,
+  "segments": [
+    {
+      "id": "hook",
+      "narration": "写代码太慢？",
+      "lottieFile": "segment-01.json",
+      "audioFile": "segment-01.mp3",
+      "durationFrames": 74
+    },
+    {
+      "id": "pain",
+      "narration": "翻文档，查Stack Overflow，来回复制粘贴",
+      "lottieFile": "segment-02.json",
+      "audioFile": "segment-02.mp3",
+      "durationFrames": 154
+    },
+    {
+      "id": "pain2",
+      "narration": "一个小功能，折腾半天",
+      "lottieFile": "segment-03.json",
+      "audioFile": "segment-03.mp3",
+      "durationFrames": 104
+    },
+    {
+      "id": "pivot",
+      "narration": "有个神器，效率直接翻倍",
+      "lottieFile": "segment-04.json",
+      "audioFile": "segment-04.mp3",
+      "durationFrames": 118
+    },
+    {
+      "id": "intro",
+      "narration": "它叫Cursor，AI原生代码编辑器",
+      "lottieFile": "segment-05.json",
+      "audioFile": "segment-05.mp3",
+      "durationFrames": 136
+    },
+    {
+      "id": "bridge-core",
+      "narration": "三个快捷键就够了",
+      "lottieFile": "segment-06.json",
+      "audioFile": "segment-06.mp3",
+      "durationFrames": 88
+    },
+    {
+      "id": "cmd-k",
+      "narration": "Cmd加K，就地改代码",
+      "lottieFile": "segment-07.json",
+      "audioFile": "segment-07.mp3",
+      "durationFrames": 121
+    },
+    {
+      "id": "cmd-k-detail",
+      "narration": "选中代码，告诉AI怎么改，秒搞定",
+      "lottieFile": "segment-08.json",
+      "audioFile": "segment-08.mp3",
+      "durationFrames": 148
+    },
+    {
+      "id": "bridge-l",
+      "narration": "还有更强的",
+      "lottieFile": "segment-09.json",
+      "audioFile": "segment-09.mp3",
+      "durationFrames": 78
+    },
+    {
+      "id": "cmd-l",
+      "narration": "Cmd加L，打开AI对话",
+      "lottieFile": "segment-10.json",
+      "audioFile": "segment-10.mp3",
+      "durationFrames": 139
+    },
+    {
+      "id": "cmd-l-detail",
+      "narration": "不懂的代码直接问，秒回答",
+      "lottieFile": "segment-11.json",
+      "audioFile": "segment-11.mp3",
+      "durationFrames": 120
+    },
+    {
+      "id": "bridge-i",
+      "narration": "最厉害的来了",
+      "lottieFile": "segment-12.json",
+      "audioFile": "segment-12.mp3",
+      "durationFrames": 78
+    },
+    {
+      "id": "cmd-i",
+      "narration": "Cmd加I，开启Agent模式",
+      "lottieFile": "segment-13.json",
+      "audioFile": "segment-13.mp3",
+      "durationFrames": 131
+    },
+    {
+      "id": "cmd-i-detail",
+      "narration": "一句话需求，自动改十个文件",
+      "lottieFile": "segment-14.json",
+      "audioFile": "segment-14.mp3",
+      "durationFrames": 121
+    },
+    {
+      "id": "bridge-at",
+      "narration": "但这还不够",
+      "lottieFile": "segment-15.json",
+      "audioFile": "segment-15.mp3",
+      "durationFrames": 74
+    },
+    {
+      "id": "at-symbol",
+      "narration": "用@符号，精准给AI上下文",
+      "lottieFile": "segment-16.json",
+      "audioFile": "segment-16.mp3",
+      "durationFrames": 145
+    },
+    {
+      "id": "at-detail",
+      "narration": "引用文件、代码库、甚至官方文档",
+      "lottieFile": "segment-17.json",
+      "audioFile": "segment-17.mp3",
+      "durationFrames": 144
+    },
+    {
+      "id": "at-result",
+      "narration": "准确率从六成飙到九成",
+      "lottieFile": "segment-18.json",
+      "audioFile": "segment-18.mp3",
+      "durationFrames": 113
+    },
+    {
+      "id": "bridge-tip",
+      "narration": "再教你一个绝招",
+      "lottieFile": "segment-19.json",
+      "audioFile": "segment-19.mp3",
+      "durationFrames": 80
+    },
+    {
+      "id": "tip1",
+      "narration": "先让AI出计划，别急着写代码",
+      "lottieFile": "segment-20.json",
+      "audioFile": "segment-20.mp3",
+      "durationFrames": 120
+    },
+    {
+      "id": "tip2",
+      "narration": "小步提交，逐个验证",
+      "lottieFile": "segment-21.json",
+      "audioFile": "segment-21.mp3",
+      "durationFrames": 106
+    },
+    {
+      "id": "tip3",
+      "narration": "把好用的规则写进项目配置",
+      "lottieFile": "segment-22.json",
+      "audioFile": "segment-22.mp3",
+      "durationFrames": 111
+    },
+    {
+      "id": "bridge-close",
+      "narration": "说到底就一件事",
+      "lottieFile": "segment-23.json",
+      "audioFile": "segment-23.mp3",
+      "durationFrames": 84
+    },
+    {
+      "id": "closing",
+      "narration": "今晚打开Cursor，试一次Cmd加I",
+      "lottieFile": "segment-24.json",
+      "audioFile": "segment-24.mp3",
+      "durationFrames": 154
+    }
+  ]
+}

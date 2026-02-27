@@ -1,0 +1,1422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 测试平台 · 对话式接口测试</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --bg-card: rgba(18, 18, 24, 0.9);
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #e4e4e7;
+      --text-muted: #a1a1aa;
+      --accent: #06b6d4;
+      --accent-hover: #22d3ee;
+      --success: #10b981;
+      --error: #ef4444;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+    .page {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 3rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .logo span { color: var(--accent); }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    /* Hero */
+    .hero {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    .hero h1 {
+      font-size: clamp(1.75rem, 4vw, 2.25rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+    }
+    .hero p {
+      color: var(--text-muted);
+      font-size: 1rem;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    /* Auth card */
+    .auth-card {
+      max-width: 400px;
+      margin: 0 auto 2rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+      backdrop-filter: blur(10px);
+    }
+    .tabs {
+      display: flex;
+      gap: 0.25rem;
+      margin-bottom: 1.5rem;
+      padding: 4px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: var(--radius-sm);
+    }
+    .tabs button {
+      flex: 1;
+      padding: 0.6rem 1rem;
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      background: transparent;
+      transition: color 0.2s, background 0.2s;
+    }
+    .tabs button:hover { color: var(--text); }
+    .tabs button.active {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .auth-card form { display: none; }
+    .auth-card form.visible { display: block; }
+    .auth-card label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+    .auth-card input {
+      width: 100%;
+      padding: 0.65rem 0.9rem;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .auth-card input::placeholder { color: var(--text-muted); opacity: 0.7; }
+    .auth-card input:focus { border-color: var(--accent); }
+    .auth-card button[type="submit"] {
+      width: 100%;
+      margin-top: 0.25rem;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #0a0a0f;
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .auth-card button[type="submit"]:hover { background: var(--accent-hover); }
+    .msg {
+      margin-top: 1rem;
+      padding: 0.65rem 0.9rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.875rem;
+      display: none;
+    }
+    .msg.err { background: rgba(239, 68, 68, 0.15); color: #fca5a5; display: block; }
+    .msg.ok { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; display: block; }
+    /* Dashboard */
+    .dashboard { display: none; }
+    .dashboard.visible { display: block; }
+    .dashboard h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1.25rem;
+      color: var(--text);
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      backdrop-filter: blur(10px);
+    }
+    .card-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.35rem;
+    }
+    .card-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .card-value.accent { color: var(--accent); }
+    .card-actions {
+      margin-top: 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.6rem 1rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      border-radius: var(--radius-sm);
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: background 0.2s, color 0.2s;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #0a0a0f;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-ghost {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: rgba(255, 255, 255, 0.1); }
+    #logout.btn-ghost { color: var(--text-muted); }
+    .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+    .dashboard-footer {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+    .doc-test-card {
+      margin-top: 2rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      backdrop-filter: blur(10px);
+    }
+    .doc-test-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--text);
+    }
+    .doc-test-card label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.3rem;
+    }
+    .doc-test-card input[type="text"],
+    .doc-test-card input[type="url"],
+    .doc-test-card textarea {
+      width: 100%;
+      padding: 0.55rem 0.8rem;
+      margin-bottom: 0.9rem;
+      font-size: 0.9rem;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      outline: none;
+      font-family: inherit;
+    }
+    .doc-test-card textarea { resize: vertical; min-height: 4em; }
+    .doc-test-card input:focus { border-color: var(--accent); }
+    .doc-test-card .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .doc-test-card .opt-block {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .doc-test-card .opt-block summary { cursor: pointer; color: var(--text-muted); font-size: 0.9rem; }
+    .doc-test-card .opt-block.open summary { color: var(--accent); }
+    .doc-test-card #fromDocMsg { margin-top: 0.75rem; }
+    .doc-test-card #fromDocResult {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      background: rgba(255,255,255,0.04);
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .dash-tabs { display: flex; gap: 0.25rem; margin: 1.5rem 0 1rem; padding: 4px; background: rgba(255,255,255,0.04); border-radius: var(--radius-sm); flex-wrap: wrap; }
+    .dash-tabs button { padding: 0.5rem 1rem; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 0.9rem; }
+    .dash-tabs button:hover { color: var(--text); }
+    .dash-tabs button.active { background: rgba(255,255,255,0.08); color: var(--text); }
+    .dash-panel { display: none; }
+    .dash-panel.visible { display: block; }
+    .list-item { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 0.5rem; }
+    .list-item .title { font-weight: 500; }
+    .list-item .meta { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem; }
+    .list-item .acts { display: flex; gap: 0.5rem; }
+    .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; display: none; align-items: center; justify-content: center; }
+    .modal-mask.visible { display: flex; }
+    .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; max-width: 400px; width: 90%; }
+    .modal h4 { margin-bottom: 1rem; }
+    .modal input { width: 100%; padding: 0.5rem; margin-bottom: 0.75rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; color: var(--text); }
+    .modal .btns { display: flex; gap: 0.5rem; margin-top: 1rem; }
+    .modal-section { margin-bottom: 1.25rem; }
+    .modal-section:last-of-type { margin-bottom: 0; }
+    .modal-section .section-title { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.02em; }
+    .modal-field { margin-bottom: 0.75rem; }
+    .modal-field:last-child { margin-bottom: 0; }
+    .modal-field label { display: block; font-size: 0.85rem; margin-bottom: 0.35rem; color: var(--text); }
+    .modal-field input[type="text"], .modal-field input[type="number"], .modal-field input[type="url"], .modal-field textarea { width: 100%; padding: 0.5rem 0.6rem; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: var(--text); font-size: 0.9rem; box-sizing: border-box; }
+    .modal-field textarea { min-height: 2.5rem; resize: vertical; font-family: monospace; font-size: 0.85rem; }
+    .modal-field .hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
+    .modal-edit-case { max-height: 90vh; overflow-y: auto; }
+    .table-wrap { overflow-x: auto; margin: 1rem 0; }
+    .table-wrap table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .table-wrap th, .table-wrap td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+    .table-wrap input { width: 100%; padding: 0.35rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem; }
+    .execute-result-block { padding: 1rem; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    .execute-result-stats { font-weight: 500; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+    .execute-result-list { display: flex; flex-direction: column; gap: 0.75rem; }
+    .execute-result-item { padding: 0.75rem; background: rgba(0,0,0,0.2); border-radius: 6px; font-size: 0.85rem; }
+    .execute-result-item h5 { margin: 0 0 0.5rem; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem; }
+    .execute-result-item .req { margin-top: 0.5rem; color: var(--text-muted); }
+    .execute-result-item .req pre { margin: 0.25rem 0 0; padding: 0.5rem; background: rgba(0,0,0,0.3); border-radius: 4px; white-space: pre-wrap; word-break: break-all; font-size: 0.8rem; max-height: 120px; overflow-y: auto; }
+    .execute-result-login { border-left: 3px solid var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="logo">AI<span>测试平台</span></div>
+      <div class="header-actions" id="headerActions">
+        <span id="headerCredits" class="text-muted" style="font-size: 0.9rem; color: var(--text-muted); display: none;"></span>
+      </div>
+    </header>
+
+    <section class="hero">
+      <h1>对话式接口测试</h1>
+      <p>接入 Swagger/OpenAPI，一键生成用例并执行，按积分计费，开放 API 与 MCP</p>
+    </section>
+
+    <div id="authPanel">
+      <div class="auth-card">
+        <div class="tabs">
+          <button type="button" data-tab="login" class="active">登录</button>
+          <button type="button" data-tab="register">注册</button>
+        </div>
+        <form id="loginForm" class="visible">
+          <label>邮箱</label>
+          <input type="email" name="username" required placeholder="your@email.com">
+          <label>密码</label>
+          <input type="password" name="password" required placeholder="••••••••">
+          <button type="submit">登录</button>
+          <div id="loginMsg" class="msg"></div>
+        </form>
+        <form id="registerForm">
+          <label>邮箱</label>
+          <input type="email" name="email" required placeholder="your@email.com">
+          <label>密码</label>
+          <input type="password" name="password" required minlength="6" placeholder="至少 6 位">
+          <button type="submit">注册</button>
+          <div id="registerMsg" class="msg"></div>
+        </form>
+      </div>
+    </div>
+
+    <div id="dashboard" class="dashboard">
+      <h2>控制台</h2>
+      <div class="cards">
+        <div class="card">
+          <div class="card-label">当前账号</div>
+          <div class="card-value" id="userEmail">-</div>
+        </div>
+        <div class="card">
+          <div class="card-label">剩余积分</div>
+          <div class="card-value accent" id="userCredits">0</div>
+        </div>
+      </div>
+      <div class="card-actions">
+        <a href="/docs" target="_blank" rel="noopener" class="btn btn-primary">打开 API 文档</a>
+        <button type="button" id="logout" class="btn btn-ghost">退出登录</button>
+      </div>
+
+      <div class="dash-tabs">
+        <button type="button" data-panel="panel-templates" class="active">文档模版</button>
+        <button type="button" data-panel="panel-libraries">用例库</button>
+        <button type="button" data-panel="panel-accounts">账号列表</button>
+        <button type="button" data-panel="panel-quick">快捷测试</button>
+      </div>
+
+      <div id="panel-templates" class="dash-panel visible">
+        <h3 style="margin-bottom: 0.75rem;">文档模版</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">保存接口文档地址，点击「生成用例」可生成用例库（可多次生成，每次新建一个用例库）。</p>
+        <div class="doc-test-card" style="max-width: none;">
+          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">新建模版</h4>
+          <form id="templateForm">
+            <label>模版名称</label>
+            <input type="text" name="name" required placeholder="例如：项目A 接口文档">
+            <label>文档地址（每行一个）</label>
+            <textarea name="schema_urls" rows="3" placeholder="https://s.apifox.cn/xxx/api-1&#10;https://s.apifox.cn/xxx/api-2"></textarea>
+            <label>base_url（可选）</label>
+            <input type="text" name="base_url" placeholder="https://api.example.com">
+            <button type="submit" class="btn btn-primary">保存模版</button>
+          </form>
+        </div>
+        <div id="templateList" style="margin-top: 1.5rem;"></div>
+      </div>
+
+      <div id="panel-libraries" class="dash-panel">
+        <h3 style="margin-bottom: 0.75rem;">用例库</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">从模版生成、上传 OpenAPI 文件或直接维护用例，可编辑后点击「执行」并选择账号运行。</p>
+        <div class="doc-test-card" style="max-width: none; margin-bottom: 1rem;">
+          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">上传 OpenAPI 文件</h4>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">支持 Apifox 导出的 OpenAPI (Swagger) JSON/YAML，上传后直接生成用例库（不扣积分）。</p>
+          <form id="uploadOpenApiForm">
+            <label>用例库名称</label>
+            <input type="text" name="library_name" required placeholder="例如：项目A-导出">
+            <label>OpenAPI 文件（.json / .yaml / .yml）</label>
+            <input type="file" name="file" accept=".json,.yaml,.yml" required>
+            <label>base_url（可选）</label>
+            <input type="text" name="base_url" placeholder="https://api.example.com">
+            <button type="submit" class="btn btn-primary">上传并生成用例库</button>
+          </form>
+          <div id="uploadOpenApiMsg" class="msg" style="margin-top: 0.5rem;"></div>
+        </div>
+        <div id="libraryList"></div>
+        <div id="libraryDetail" style="display: none; margin-top: 1rem;">
+          <h4 id="libraryDetailTitle"></h4>
+          <div id="executeResult" class="execute-result-block" style="display: none; margin-bottom: 1rem;">
+            <div id="executeResultStats" class="execute-result-stats"></div>
+            <div id="executeResultList" class="execute-result-list"></div>
+          </div>
+          <div class="table-wrap"><table id="casesTable"><thead><tr><th style="width:2.5rem;"><input type="checkbox" id="selectAllCases" title="全选"></th><th>名称</th><th>Method</th><th>Path</th><th>期望</th><th>操作</th></tr></thead><tbody></tbody></table></div>
+          <div class="card-actions" style="margin-top: 0.75rem;">
+            <button type="button" id="reloadCasesBtn" class="btn btn-ghost">重新加载</button>
+            <button type="button" id="batchExecuteCasesBtn" class="btn btn-primary" title="先勾选要执行的用例">批量执行</button>
+            <button type="button" id="batchDeleteCasesBtn" class="btn btn-ghost">批量删除</button>
+            <button type="button" id="executeLibraryBtn" class="btn btn-primary">全部执行</button>
+            <button type="button" id="backToListBtn" class="btn btn-ghost">返回列表</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="panel-accounts" class="dash-panel">
+        <h3 style="margin-bottom: 0.75rem;">账号列表</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">维护测试账号（登录型或固定 Token），执行用例库时选择其一。</p>
+        <div class="doc-test-card" style="max-width: none;">
+          <h4 id="accountFormTitle" style="font-size: 0.95rem; margin-bottom: 0.75rem;">新建账号</h4>
+          <form id="accountForm">
+            <label>账号名称</label>
+            <input type="text" name="name" required placeholder="例如：测试环境-张三">
+            <label>类型</label>
+            <select name="account_type" id="accountTypeSelect">
+              <option value="login">登录（先调登录接口取 Token）</option>
+              <option value="static">固定 Token / Header</option>
+            </select>
+            <div id="accountLoginFields" style="margin-top: 0.75rem;">
+              <label>登录地址</label>
+              <input type="url" name="login_url" placeholder="https://api.example.com/auth/login">
+              <label>账号</label>
+              <input type="text" name="username" placeholder="username">
+              <label>密码</label>
+              <input type="password" name="password" placeholder="不修改请留空（仅编辑时）">
+              <label>Token 响应路径</label>
+              <input type="text" name="token_response_path" value="access_token" placeholder="data.token 或 $.data.accessToken">
+              <label>Token 写入的 Header 名</label>
+              <input type="text" name="token_header_name" placeholder="access-token 或 Authorization（默认）">
+              <label>Token 值前缀</label>
+              <input type="text" name="token_header_prefix" placeholder="留空则无前缀，或填 Bearer ">
+              <label>自定义登录 Body（JSON，可选）</label>
+              <textarea name="login_body" rows="2" placeholder='留空则用 {"username","password"}；可写 {"mobile":"{{username}}","code":"{{password}}"}'></textarea>
+            </div>
+            <div id="accountStaticFields" style="margin-top: 0.75rem; display: none;">
+              <label>Header（JSON）</label>
+              <input type="text" name="static_headers" placeholder='{"Authorization": "Bearer xxx"}'>
+            </div>
+            <div style="margin-top: 0.5rem;">
+              <button type="submit" class="btn btn-primary" id="accountSubmitBtn">保存账号</button>
+              <button type="button" class="btn btn-ghost" id="accountCancelEditBtn" style="display: none;">取消编辑</button>
+            </div>
+          </form>
+        </div>
+        <div id="accountList" style="margin-top: 1.5rem;"></div>
+      </div>
+
+      <div id="panel-quick" class="dash-panel">
+      <div class="doc-test-card">
+        <h3>从文档地址测试</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+          支持多个文档地址：每行一个链接，会合并所有接口后一起生成/执行。可填登录账号或固定 Header，执行时自动注入。
+        </p>
+        <form id="fromDocForm">
+          <label>文档地址（必填，可多行）</label>
+          <textarea name="schema_urls" id="schemaUrlsInput" rows="4" placeholder="每行一个链接，例如：&#10;https://s.apifox.cn/xxx/api-251382054&#10;https://s.apifox.cn/xxx/api-415865434"></textarea>
+          <div class="row2">
+            <div>
+              <label>测试环境 base_url（可选）</label>
+              <input type="text" name="base_url" placeholder="https://api.example.com">
+            </div>
+            <div>
+              <label>仅生成用例不执行（不扣积分）</label>
+              <input type="checkbox" name="only_generate" id="onlyGenerate" style="width: auto; margin-top: 0.5rem;">
+            </div>
+          </div>
+          <details class="opt-block" id="authBlock">
+            <summary>认证：先登录再跑（可选）</summary>
+            <label style="margin-top: 0.75rem;">登录接口完整 URL</label>
+            <input type="url" name="login_url" placeholder="https://api.example.com/auth/login">
+            <div class="row2" style="margin-top: 0.5rem;">
+              <div>
+                <label>账号</label>
+                <input type="text" name="auth_username" placeholder="测试账号">
+              </div>
+              <div>
+                <label>密码</label>
+                <input type="password" name="auth_password" placeholder="测试密码">
+              </div>
+            </div>
+            <label>Token 在响应中的路径</label>
+            <input type="text" name="token_response_path" placeholder="data.token 或 access_token" value="access_token">
+          </details>
+          <details class="opt-block" id="headersBlock">
+            <summary>固定 Header（可选）</summary>
+            <label style="margin-top: 0.75rem;">Header 键值（如 Authorization: Bearer xxx）</label>
+            <input type="text" name="extra_headers_raw" placeholder='{"Authorization": "Bearer your-token"}' style="font-family: monospace;">
+          </details>
+          <button type="submit" class="btn btn-primary" style="margin-top: 0.5rem;">生成并执行</button>
+          <div id="fromDocMsg" class="msg"></div>
+          <pre id="fromDocResult"></pre>
+        </form>
+      </div>
+      </div>
+
+      <p class="dashboard-footer">
+        在 API 文档中可进行单次接口测试、从 Swagger/OpenAPI 地址生成并执行用例；每次调用将按规则扣除积分。
+      </p>
+    </div>
+
+    <div id="modalGenerateCases" class="modal-mask">
+      <div class="modal">
+        <h4>生成用例库</h4>
+        <label>用例库名称</label>
+        <input type="text" id="generateLibraryName" placeholder="例如：项目A-202502">
+        <div class="btns">
+          <button type="button" id="confirmGenerateCases" class="btn btn-primary">生成</button>
+          <button type="button" id="cancelGenerateCases" class="btn btn-ghost">取消</button>
+        </div>
+      </div>
+    </div>
+    <div id="modalSelectAccount" class="modal-mask">
+      <div class="modal">
+        <h4>选择执行账号</h4>
+        <label>账号</label>
+        <select id="executeAccountSelect"></select>
+        <div class="btns">
+          <button type="button" id="confirmExecute" class="btn btn-primary">执行</button>
+          <button type="button" id="cancelExecute" class="btn btn-ghost">取消</button>
+        </div>
+      </div>
+    </div>
+    <div id="modalEditCase" class="modal-mask">
+      <div class="modal modal-edit-case" style="max-width: 560px;">
+        <h4 id="modalEditCaseTitle">编辑用例</h4>
+        <input type="hidden" id="editCaseIndex" value="">
+        <div class="modal-section">
+          <div class="section-title">基本信息</div>
+          <div class="modal-field">
+            <label>名称</label>
+            <input type="text" id="editCaseName" placeholder="用例名称">
+          </div>
+          <div class="modal-field">
+            <label>Method</label>
+            <input type="text" id="editCaseMethod" placeholder="GET" style="width:5rem">
+          </div>
+          <div class="modal-field">
+            <label>Path</label>
+            <input type="text" id="editCasePath" placeholder="/api/xxx">
+          </div>
+          <div class="modal-field">
+            <label>完整 URL</label>
+            <input type="text" id="editCaseFullUrl" placeholder="https://api.example.com/xxx">
+          </div>
+          <div class="modal-field">
+            <label>期望状态码</label>
+            <input type="number" id="editCaseExpect" value="200" style="width:5rem">
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="section-title">请求参数</div>
+          <div class="modal-field">
+            <label>Query 参数（JSON，URL 问号后的参数）</label>
+            <textarea id="editCaseQuery" rows="2" placeholder='{"page": 1, "size": 10}'></textarea>
+            <div class="hint">合法 JSON，如 {"key": "value"}</div>
+          </div>
+          <div class="modal-field">
+            <label>Body（JSON，POST/PUT 时作为请求体）</label>
+            <textarea id="editCaseBody" rows="4" placeholder='{"username": "xxx", "password": "xxx"}'></textarea>
+            <div class="hint">合法 JSON 对象</div>
+          </div>
+          <div class="modal-field">
+            <label>Header（JSON，本用例额外请求头）</label>
+            <textarea id="editCaseHeaders" rows="2" placeholder='{"access-token": "{{token}}"}'></textarea>
+            <div class="hint">支持 {{变量名}}，会替换为前序用例提取的值；与账号登录注入的 Header 合并</div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="section-title">响应提取（供后续用例使用）</div>
+          <div class="modal-field">
+            <label>从本接口响应提取变量</label>
+            <textarea id="editCaseExtract" rows="2" placeholder="每行：变量名=JSON路径&#10;例：task_id=$.data.task_id&#10;token=$.data.accessToken"></textarea>
+            <div class="hint">后续用例的 URL / Query / Body / Header 中可用 {{变量名}} 引用</div>
+          </div>
+        </div>
+        <div class="btns">
+          <button type="button" id="confirmEditCase" class="btn btn-primary">保存</button>
+          <button type="button" id="cancelEditCase" class="btn btn-ghost">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var API_BASE = '';
+    var token = localStorage.getItem('token');
+
+    function showMsg(el, text, isErr) {
+      el.textContent = text;
+      el.className = 'msg ' + (isErr ? 'err' : 'ok');
+      el.style.display = 'block';
+    }
+
+    document.querySelectorAll('.tabs button').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.tabs button').forEach(function(b) { b.classList.remove('active'); });
+        document.querySelectorAll('#authPanel form').forEach(function(f) { f.classList.remove('visible'); });
+        btn.classList.add('active');
+        var form = btn.dataset.tab === 'login' ? document.getElementById('loginForm') : document.getElementById('registerForm');
+        if (form) form.classList.add('visible');
+      });
+    });
+
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(this);
+      var body = new URLSearchParams({ username: fd.get('username'), password: fd.get('password') });
+      var msgEl = document.getElementById('loginMsg');
+      fetch(API_BASE + '/auth/login', { method: 'POST', body, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          if (x.ok) {
+            token = x.data.access_token;
+            localStorage.setItem('token', token);
+            showMsg(msgEl, '登录成功', false);
+            loadDashboard();
+          } else { showMsg(msgEl, x.data.detail || '登录失败', true); }
+        })
+        .catch(function() { showMsg(msgEl, '网络错误', true); });
+    });
+
+    document.getElementById('registerForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(this);
+      var msgEl = document.getElementById('registerMsg');
+      fetch(API_BASE + '/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: fd.get('email'), password: fd.get('password') })
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          if (x.ok) { showMsg(msgEl, '注册成功，请登录', false); }
+          else { showMsg(msgEl, x.data.detail || '注册失败', true); }
+        })
+        .catch(function() { showMsg(msgEl, '网络错误', true); });
+    });
+
+    function loadDashboard() {
+      if (!token) {
+        document.getElementById('authPanel').style.display = 'block';
+        document.getElementById('dashboard').classList.remove('visible');
+        document.getElementById('headerCredits').style.display = 'none';
+        return;
+      }
+      fetch(API_BASE + '/auth/me', { headers: { 'Authorization': 'Bearer ' + token } })
+        .then(function(r) {
+          if (r.status === 401) { token = null; localStorage.removeItem('token'); loadDashboard(); return null; }
+          return r.json();
+        })
+        .then(function(d) {
+          if (!d) return;
+          document.getElementById('userEmail').textContent = d.email;
+          document.getElementById('userCredits').textContent = d.credits;
+          document.getElementById('headerCredits').textContent = d.credits + ' 积分';
+          document.getElementById('headerCredits').style.display = 'inline';
+          document.getElementById('authPanel').style.display = 'none';
+          document.getElementById('dashboard').classList.add('visible');
+          loadTemplates();
+        });
+    }
+
+    document.getElementById('logout').addEventListener('click', function() {
+      token = null;
+      localStorage.removeItem('token');
+      document.getElementById('dashboard').classList.remove('visible');
+      document.getElementById('authPanel').style.display = 'block';
+      document.getElementById('headerCredits').style.display = 'none';
+    });
+
+    function authHeaders() {
+      return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token };
+    }
+
+    var templateIdForGenerate = null;
+    var currentLibraryId = null;
+    var currentLibraryCases = [];
+    var currentEditingAccountId = null;
+
+    document.querySelectorAll('.dash-tabs button').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.dash-tabs button').forEach(function(b) { b.classList.remove('active'); });
+        document.querySelectorAll('.dash-panel').forEach(function(p) { p.classList.remove('visible'); });
+        btn.classList.add('active');
+        var panel = document.getElementById(btn.dataset.panel);
+        if (panel) panel.classList.add('visible');
+        if (btn.dataset.panel === 'panel-templates') loadTemplates();
+        if (btn.dataset.panel === 'panel-libraries') loadLibraries();
+        if (btn.dataset.panel === 'panel-accounts') loadAccounts();
+      });
+    });
+
+    function loadTemplates() {
+      fetch(API_BASE + '/templates', { headers: authHeaders() })
+        .then(function(r) {
+          if (r.status === 401) { token = null; localStorage.removeItem('token'); loadDashboard(); return null; }
+          return r.json();
+        })
+        .then(function(list) {
+          if (!list) return;
+          var el = document.getElementById('templateList');
+          if (!list.length) { el.innerHTML = '<p class="meta">暂无模版，请先新建。</p>'; return; }
+          el.innerHTML = list.map(function(t) {
+            var urls = (t.schema_urls || []).length;
+            return '<div class="list-item" data-id="' + t.id + '">' +
+              '<div><div class="title">' + escapeHtml(t.name) + '</div><div class="meta">' + urls + ' 个文档地址</div></div>' +
+              '<div class="acts"><button type="button" class="btn btn-primary btn-generate">生成用例</button></div></div>';
+          }).join('');
+          el.querySelectorAll('.btn-generate').forEach(function(b) {
+            b.addEventListener('click', function() {
+              templateIdForGenerate = parseInt(b.closest('.list-item').dataset.id, 10);
+              document.getElementById('generateLibraryName').value = '';
+              document.getElementById('modalGenerateCases').classList.add('visible');
+            });
+          });
+        })
+        .catch(function() { document.getElementById('templateList').innerHTML = '<p class="msg err">加载失败</p>'; });
+    }
+
+    document.getElementById('templateForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(this);
+      var urlsText = (fd.get('schema_urls') || '').trim();
+      var urls = urlsText.split(/\r?\n/).map(function(s) { return s.trim(); }).filter(Boolean);
+      if (!urls.length) { alert('请至少填写一个文档地址'); return; }
+      fetch(API_BASE + '/templates', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ name: fd.get('name'), schema_urls: urls, base_url: fd.get('base_url') || null })
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          if (x.ok) { this.reset(); loadTemplates(); }
+          else { alert(x.data.detail || '保存失败'); }
+        }.bind(this))
+        .catch(function() { alert('网络错误'); });
+    });
+
+    document.getElementById('confirmGenerateCases').addEventListener('click', function() {
+      var name = document.getElementById('generateLibraryName').value.trim();
+      if (!name) { alert('请输入用例库名称'); return; }
+      if (!templateIdForGenerate) return;
+      fetch(API_BASE + '/templates/' + templateIdForGenerate + '/generate-cases', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ library_name: name })
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          document.getElementById('modalGenerateCases').classList.remove('visible');
+          templateIdForGenerate = null;
+          if (x.ok) {
+            loadLibraries();
+            document.querySelector('.dash-tabs button[data-panel="panel-libraries"]').click();
+          } else { alert(x.data.detail || '生成失败'); }
+        })
+        .catch(function() { alert('网络错误'); });
+    });
+    document.getElementById('cancelGenerateCases').addEventListener('click', function() {
+      document.getElementById('modalGenerateCases').classList.remove('visible');
+      templateIdForGenerate = null;
+    });
+
+    function loadLibraries() {
+      fetch(API_BASE + '/case-libraries', { headers: authHeaders() })
+        .then(function(r) {
+          if (r.status === 401) { token = null; localStorage.removeItem('token'); loadDashboard(); return null; }
+          return r.json();
+        })
+        .then(function(list) {
+          if (!list) return;
+          var listEl = document.getElementById('libraryList');
+          var detailEl = document.getElementById('libraryDetail');
+          detailEl.style.display = 'none';
+          listEl.style.display = 'block';
+          if (!list.length) { listEl.innerHTML = '<p class="meta">暂无用例库，可从文档模版「生成用例」或上方上传 OpenAPI 文件。</p>'; return; }
+          listEl.innerHTML = list.map(function(l) {
+            var up = (l.updated_at || '').slice(0, 16);
+            return '<div class="list-item" data-id="' + l.id + '">' +
+              '<div><div class="title">' + escapeHtml(l.name) + '</div><div class="meta">' + (l.cases_count || 0) + ' 条用例 · ' + up + '</div></div>' +
+              '<div class="acts"><button type="button" class="btn btn-primary btn-edit-lib">编辑</button> <button type="button" class="btn btn-primary btn-exec-lib">执行</button> <button type="button" class="btn btn-ghost btn-delete-lib">删除</button></div></div>';
+          }).join('');
+          listEl.querySelectorAll('.btn-delete-lib').forEach(function(b) {
+            b.addEventListener('click', function() {
+              var id = parseInt(b.closest('.list-item').dataset.id, 10);
+              if (!confirm('确定删除该用例库？其中用例将一并删除。')) return;
+              fetch(API_BASE + '/case-libraries/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } })
+                .then(function(r) {
+                  if (r.status === 204) loadLibraries();
+                  else return r.json().then(function(d) { alert(d.detail || '删除失败'); });
+                })
+                .catch(function() { alert('网络错误'); });
+            });
+          });
+          listEl.querySelectorAll('.btn-edit-lib').forEach(function(b) {
+            b.addEventListener('click', function() {
+              var id = parseInt(b.closest('.list-item').dataset.id, 10);
+              openLibraryDetail(id);
+            });
+          });
+          listEl.querySelectorAll('.btn-exec-lib').forEach(function(b) {
+            b.addEventListener('click', function() {
+              var id = parseInt(b.closest('.list-item').dataset.id, 10);
+              openExecuteModal(id);
+            });
+          });
+        })
+        .catch(function() { document.getElementById('libraryList').innerHTML = '<p class="msg err">加载失败</p>'; });
+    }
+
+    document.getElementById('uploadOpenApiForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(this);
+      var name = fd.get('library_name');
+      var file = fd.get('file');
+      if (!name || !file || !file.size) {
+        showMsg(document.getElementById('uploadOpenApiMsg'), '请填写用例库名称并选择文件', true);
+        return;
+      }
+      var body = new FormData();
+      body.append('file', file);
+      body.append('library_name', name);
+      var baseUrl = fd.get('base_url');
+      if (baseUrl && baseUrl.trim()) body.append('base_url', baseUrl.trim());
+      var msgEl = document.getElementById('uploadOpenApiMsg');
+      msgEl.style.display = 'none';
+      fetch(API_BASE + '/case-libraries/from-upload', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body: body
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          if (x.ok) {
+            showMsg(msgEl, '已生成用例库「' + x.data.name + '」，共 ' + x.data.cases_count + ' 条用例', false);
+            msgEl.style.display = 'block';
+            this.reset();
+            loadLibraries();
+          } else {
+            showMsg(msgEl, x.data.detail || '上传失败', true);
+            msgEl.style.display = 'block';
+          }
+        }.bind(this))
+        .catch(function() {
+          showMsg(msgEl, '网络错误', true);
+          msgEl.style.display = 'block';
+        });
+    });
+
+    var selectedCaseIndices = [];
+    function renderCasesTable(cases) {
+      currentLibraryCases = cases;
+      selectedCaseIndices = [];
+      var tbody = document.querySelector('#casesTable tbody');
+      tbody.innerHTML = cases.map(function(c, i) {
+        var pathShort = truncate(c.path || c.full_url || '', 48);
+        var pathTitle = (c.path || c.full_url || '');
+        return '<tr data-i="' + i + '">' +
+          '<td><input type="checkbox" class="case-row-cb" data-i="' + i + '"></td>' +
+          '<td title="' + escapeAttr(c.name || '') + '">' + escapeHtml(truncate(c.name || '', 28)) + '</td>' +
+          '<td>' + escapeHtml(c.method || 'GET') + '</td>' +
+          '<td title="' + escapeAttr(pathTitle) + '">' + escapeHtml(pathShort) + '</td>' +
+          '<td>' + (c.expect_status ?? 200) + '</td>' +
+          '<td class="acts">' +
+          '<button type="button" class="btn btn-ghost btn-sm btn-move-up" title="上移">↑</button> ' +
+          '<button type="button" class="btn btn-ghost btn-sm btn-move-down" title="下移">↓</button> ' +
+          '<button type="button" class="btn btn-ghost btn-sm btn-edit-case">编辑</button> ' +
+          '<button type="button" class="btn btn-ghost btn-sm btn-copy-case">复制</button> ' +
+          '<button type="button" class="btn btn-ghost btn-sm btn-delete-case">删除</button> ' +
+          '<button type="button" class="btn btn-primary btn-sm btn-run-one">执行</button></td></tr>';
+      }).join('');
+      var selectAllCb = document.getElementById('selectAllCases');
+      if (selectAllCb) selectAllCb.checked = false;
+      tbody.querySelectorAll('.case-row-cb').forEach(function(cb) {
+        cb.addEventListener('change', function() {
+          var i = parseInt(this.dataset.i, 10);
+          if (this.checked) {
+            if (selectedCaseIndices.indexOf(i) < 0) selectedCaseIndices.push(i);
+          } else {
+            selectedCaseIndices = selectedCaseIndices.filter(function(x) { return x !== i; });
+          }
+          selectAllCb.checked = tbody.querySelectorAll('.case-row-cb').length === selectedCaseIndices.length;
+        });
+      });
+      if (selectAllCb) {
+        selectAllCb.onclick = function() {
+          var checked = this.checked;
+          selectedCaseIndices = checked ? cases.map(function(_, i) { return i; }) : [];
+          tbody.querySelectorAll('.case-row-cb').forEach(function(c) { c.checked = checked; });
+        };
+      }
+      tbody.querySelectorAll('.btn-edit-case').forEach(function(btn) {
+        btn.addEventListener('click', function() { openEditCaseModal(parseInt(btn.closest('tr').dataset.i, 10)); });
+      });
+      tbody.querySelectorAll('.btn-delete-case').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var i = parseInt(btn.closest('tr').dataset.i, 10);
+          if (!confirm('确定删除这条用例？')) return;
+          var next = currentLibraryCases.slice(0, i).concat(currentLibraryCases.slice(i + 1));
+          patchCasesAndRender(next);
+        });
+      });
+      tbody.querySelectorAll('.btn-run-one').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          openExecuteModal(currentLibraryId, parseInt(btn.closest('tr').dataset.i, 10));
+        });
+      });
+      tbody.querySelectorAll('.btn-move-up').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var i = parseInt(btn.closest('tr').dataset.i, 10);
+          if (i <= 0) return;
+          var arr = currentLibraryCases.slice();
+          arr[i] = arr.splice(i - 1, 1, arr[i])[0];
+          patchCasesAndRender(arr);
+        });
+      });
+      tbody.querySelectorAll('.btn-move-down').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var i = parseInt(btn.closest('tr').dataset.i, 10);
+          if (i >= currentLibraryCases.length - 1) return;
+          var arr = currentLibraryCases.slice();
+          var t = arr[i];
+          arr[i] = arr[i + 1];
+          arr[i + 1] = t;
+          patchCasesAndRender(arr);
+        });
+      });
+      tbody.querySelectorAll('.btn-copy-case').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var i = parseInt(btn.closest('tr').dataset.i, 10);
+          var copy = JSON.parse(JSON.stringify(currentLibraryCases[i]));
+          copy.name = (copy.name || '') + ' (副本)';
+          var arr = currentLibraryCases.slice(0, i + 1).concat([copy]).concat(currentLibraryCases.slice(i + 1));
+          patchCasesAndRender(arr);
+        });
+      });
+    }
+
+    function patchCasesAndRender(cases) {
+      if (!currentLibraryId) return;
+      fetch(API_BASE + '/case-libraries/' + currentLibraryId, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify({ cases: cases })
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          if (x.ok) { renderCasesTable(cases); }
+          else { alert(x.data.detail || '保存失败'); }
+        })
+        .catch(function() { alert('网络错误'); });
+    }
+
+    function openEditCaseModal(index) {
+      var c = currentLibraryCases[index] || {};
+      document.getElementById('editCaseIndex').value = index;
+      document.getElementById('editCaseName').value = c.name || '';
+      document.getElementById('editCaseMethod').value = c.method || 'GET';
+      document.getElementById('editCasePath').value = c.path || '';
+      document.getElementById('editCaseFullUrl').value = c.full_url || '';
+      document.getElementById('editCaseExpect').value = c.expect_status ?? 200;
+      document.getElementById('editCaseQuery').value = (c.query && typeof c.query === 'object') ? JSON.stringify(c.query, null, 2) : (c.query || '{}');
+      document.getElementById('editCaseBody').value = (c.body && typeof c.body === 'object') ? JSON.stringify(c.body, null, 2) : (c.body || '{}');
+      document.getElementById('editCaseHeaders').value = (c.headers && typeof c.headers === 'object') ? JSON.stringify(c.headers, null, 2) : (c.headers || '{}');
+      var ext = c.extract;
+      if (ext && typeof ext === 'object') {
+        document.getElementById('editCaseExtract').value = Object.keys(ext).map(function(k) { return k + '=' + (ext[k] || ''); }).join('\n');
+      } else {
+        document.getElementById('editCaseExtract').value = '';
+      }
+      document.getElementById('modalEditCase').classList.add('visible');
+    }
+    document.getElementById('confirmEditCase').addEventListener('click', function() {
+      var i = parseInt(document.getElementById('editCaseIndex').value, 10);
+      if (i < 0 || i >= currentLibraryCases.length) return;
+      var qStr = document.getElementById('editCaseQuery').value.trim();
+      var bStr = document.getElementById('editCaseBody').value.trim();
+      var hStr = document.getElementById('editCaseHeaders').value.trim();
+      var query = null, body = null, headers = null;
+      try { query = qStr ? JSON.parse(qStr) : null; } catch (e) { alert('Query 不是合法 JSON'); return; }
+      if (bStr) {
+        try { body = JSON.parse(bStr); } catch (e) {
+          if (bStr.indexOf('{{') >= 0) { body = bStr; }
+          else { alert('Body 不是合法 JSON'); return; }
+        }
+      }
+      try { headers = hStr ? JSON.parse(hStr) : null; if (headers && typeof headers !== 'object') headers = null; } catch (e) { alert('Header 不是合法 JSON'); return; }
+      var extractLines = document.getElementById('editCaseExtract').value.split('\n');
+      var extract = {};
+      extractLines.forEach(function(line) {
+        line = line.trim();
+        if (!line) return;
+        var eq = line.indexOf('=');
+        if (eq > 0) {
+          var key = line.slice(0, eq).trim();
+          var path = line.slice(eq + 1).trim();
+          if (key) extract[key] = path || '$.';
+        }
+      });
+      currentLibraryCases[i] = {
+        name: document.getElementById('editCaseName').value.trim() || currentLibraryCases[i].name,
+        method: (document.getElementById('editCaseMethod').value || 'GET').trim().toUpperCase(),
+        path: document.getElementById('editCasePath').value.trim() || currentLibraryCases[i].path,
+        full_url: document.getElementById('editCaseFullUrl').value.trim() || currentLibraryCases[i].full_url,
+        expect_status: parseInt(document.getElementById('editCaseExpect').value, 10) || 200,
+        query: query,
+        body: body,
+        headers: headers && Object.keys(headers).length ? headers : undefined,
+        extract: Object.keys(extract).length ? extract : undefined
+      };
+      document.getElementById('modalEditCase').classList.remove('visible');
+      patchCasesAndRender(currentLibraryCases);
+    });
+    document.getElementById('cancelEditCase').addEventListener('click', function() {
+      document.getElementById('modalEditCase').classList.remove('visible');
+    });
+
+    function openLibraryDetail(id, keepResult) {
+      currentLibraryId = id;
+      fetch(API_BASE + '/case-libraries/' + id, { headers: authHeaders() })
+        .then(function(r) { return r.json(); })
+        .then(function(lib) {
+          document.getElementById('libraryList').style.display = 'none';
+          document.getElementById('libraryDetail').style.display = 'block';
+          document.getElementById('libraryDetailTitle').textContent = lib.name + ' — 用例列表';
+          var cases = lib.cases || [];
+          renderCasesTable(cases);
+          if (!keepResult) {
+            document.getElementById('executeResult').style.display = 'none';
+            document.getElementById('executeResultStats').textContent = '';
+            document.getElementById('executeResultList').innerHTML = '';
+          }
+        })
+        .catch(function() { alert('加载失败'); });
+    }
+
+    document.getElementById('backToListBtn').addEventListener('click', function() {
+      document.getElementById('libraryDetail').style.display = 'none';
+      document.getElementById('libraryList').style.display = 'block';
+      currentLibraryId = null;
+      loadLibraries();
+    });
+
+    document.getElementById('reloadCasesBtn').addEventListener('click', function() {
+      if (!currentLibraryId) return;
+      fetch(API_BASE + '/case-libraries/' + currentLibraryId, { headers: authHeaders() })
+        .then(function(r) { return r.json(); })
+        .then(function(lib) { renderCasesTable(lib.cases || []); })
+        .catch(function() { alert('加载失败'); });
+    });
+
+    var libraryIdForExecute = null;
+    var caseIndexForExecute = null;
+    var caseIndicesForExecute = null;
+    function openExecuteModal(libraryId, caseIndex, caseIndices) {
+      libraryIdForExecute = libraryId;
+      caseIndexForExecute = caseIndex != null ? caseIndex : null;
+      caseIndicesForExecute = (caseIndices && caseIndices.length) ? caseIndices.slice().sort(function(a, b) { return a - b; }) : null;
+      fetch(API_BASE + '/accounts', { headers: authHeaders() })
+        .then(function(r) { return r.json(); })
+        .then(function(accounts) {
+          var sel = document.getElementById('executeAccountSelect');
+          sel.innerHTML = '<option value="">请选择账号</option>' + (accounts || []).map(function(a) {
+            return '<option value="' + a.id + '">' + escapeHtml(a.name) + ' (' + (a.account_type === 'login' ? '登录' : '固定Token') + ')</option>';
+          }).join('');
+          document.getElementById('modalSelectAccount').classList.add('visible');
+        })
+        .catch(function() { alert('加载账号列表失败'); });
+    }
+    document.getElementById('confirmExecute').addEventListener('click', function() {
+      var accountId = document.getElementById('executeAccountSelect').value;
+      if (!accountId || !libraryIdForExecute) return;
+      accountId = parseInt(accountId, 10);
+      document.getElementById('modalSelectAccount').classList.remove('visible');
+      var blockEl = document.getElementById('executeResult');
+      var statsEl = document.getElementById('executeResultStats');
+      var listEl = document.getElementById('executeResultList');
+      blockEl.style.display = 'block';
+      statsEl.textContent = '执行中…';
+      listEl.innerHTML = '';
+      var libId = libraryIdForExecute;
+      var caseIdx = caseIndexForExecute;
+      var caseIndices = caseIndicesForExecute;
+      libraryIdForExecute = null;
+      caseIndexForExecute = null;
+      caseIndicesForExecute = null;
+      var body = { account_id: accountId };
+      if (caseIndices && caseIndices.length) body.case_indices = caseIndices;
+      else if (caseIdx != null) body.case_index = caseIdx;
+      fetch(API_BASE + '/case-libraries/' + libId + '/execute', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(body)
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, status: r.status, data: d }; }); })
+        .then(function(x) {
+          if (x.ok) {
+            var d = x.data;
+            statsEl.textContent = '通过 ' + d.passed + ' / ' + d.total + '，失败 ' + d.failed + '，消耗积分 ' + d.credits_used + '，剩余 ' + d.credits_left;
+            var parts = [];
+            if (d.login_result) {
+              var lr = d.login_result;
+              var loginStatus = lr.success ? '✓ 成功' : '✗ 失败';
+              var loginCode = lr.status_code != null ? ' (' + lr.status_code + ')' : '';
+              var loginPreview = (lr.response_preview || '').trim() ? escapeHtml((lr.response_preview || '').slice(0, 500)) : '(无)';
+              parts.push('<div class="execute-result-item execute-result-login">' +
+                '<h5>前置登录 — ' + loginStatus + loginCode + '</h5>' +
+                '<div class="req"><span>登录响应预览</span><pre>' + loginPreview + '</pre></div></div>');
+            }
+            parts.push((d.results || []).map(function(r) {
+              var name = (r.case && r.case.name) ? escapeHtml(r.case.name) : '';
+              var status = r.passed ? '✓ 通过' : '✗ 失败';
+              var statusCode = r.status_code != null ? ' → ' + r.status_code : '';
+              if (r.error) statusCode += ' ' + escapeHtml(r.error);
+              var reqUrl = r.request_url != null ? String(r.request_url) : '';
+              var reqParams = r.request_params && Object.keys(r.request_params).length ? JSON.stringify(r.request_params, null, 2) : '';
+              var reqBody = r.request_body != null && (typeof r.request_body !== 'object' || Object.keys(r.request_body).length) ? (typeof r.request_body === 'object' ? JSON.stringify(r.request_body, null, 2) : String(r.request_body)) : '';
+              var reqHeaders = r.request_headers && typeof r.request_headers === 'object' && Object.keys(r.request_headers).length ? JSON.stringify(r.request_headers, null, 2) : '(无)';
+              var resp = (r.response_snippet || '');
+              var reqBlock = '';
+              if (reqUrl) reqBlock += '<div class="req"><span>请求 URL</span><pre>' + escapeHtml(reqUrl) + '</pre></div>';
+              reqBlock += '<div class="req"><span>当前请求 Header</span><pre>' + escapeHtml(reqHeaders) + '</pre></div>';
+              if (reqParams) reqBlock += '<div class="req"><span>Query 参数</span><pre>' + escapeHtml(reqParams) + '</pre></div>';
+              if (reqBody) reqBlock += '<div class="req"><span>Body 参数</span><pre>' + escapeHtml(reqBody) + '</pre></div>';
+              reqBlock += '<div class="req"><span>返回值</span><pre>' + escapeHtml(resp || '(无)') + '</pre></div>';
+              return '<div class="execute-result-item">' +
+                '<h5>' + (r.passed ? '✓' : '✗') + ' ' + name + ' — ' + status + statusCode + '</h5>' + reqBlock + '</div>';
+            }).join(''));
+            listEl.innerHTML = parts.join('');
+            loadDashboard();
+            var listHidden = document.getElementById('libraryList').style.display === 'none';
+            if (!listHidden) openLibraryDetail(libId, true);
+          } else {
+            statsEl.textContent = x.data.detail || x.data.message || '执行失败';
+            listEl.innerHTML = '';
+          }
+        })
+        .catch(function(err) {
+          statsEl.textContent = '网络错误: ' + (err.message || '');
+          listEl.innerHTML = '';
+        });
+    });
+    document.getElementById('cancelExecute').addEventListener('click', function() {
+      document.getElementById('modalSelectAccount').classList.remove('visible');
+      libraryIdForExecute = null;
+      caseIndexForExecute = null;
+    });
+    document.getElementById('executeLibraryBtn').addEventListener('click', function() {
+      if (currentLibraryId) openExecuteModal(currentLibraryId);
+    });
+    document.getElementById('batchExecuteCasesBtn').addEventListener('click', function() {
+      if (!currentLibraryId) return;
+      if (selectedCaseIndices.length === 0) { alert('请先勾选要执行的用例'); return; }
+      openExecuteModal(currentLibraryId, null, selectedCaseIndices);
+    });
+    document.getElementById('batchDeleteCasesBtn').addEventListener('click', function() {
+      if (selectedCaseIndices.length === 0) { alert('请先勾选要删除的用例'); return; }
+      if (!confirm('确定删除选中的 ' + selectedCaseIndices.length + ' 条用例？')) return;
+      var indices = selectedCaseIndices.slice().sort(function(a, b) { return b - a; });
+      var next = currentLibraryCases.slice();
+      indices.forEach(function(i) { next.splice(i, 1); });
+      selectedCaseIndices = [];
+      patchCasesAndRender(next);
+    });
+
+    function loadAccounts() {
+      fetch(API_BASE + '/accounts', { headers: authHeaders() })
+        .then(function(r) {
+          if (r.status === 401) { token = null; localStorage.removeItem('token'); loadDashboard(); return null; }
+          return r.json();
+        })
+        .then(function(list) {
+          if (!list) return;
+          var el = document.getElementById('accountList');
+          if (!list.length) { el.innerHTML = '<p class="meta">暂无账号，请先新建。</p>'; return; }
+          el.innerHTML = list.map(function(a) {
+            return '<div class="list-item" data-id="' + a.id + '">' +
+              '<div><div class="title">' + escapeHtml(a.name) + '</div><div class="meta">' + (a.account_type === 'login' ? '登录' : '固定Token') + '</div></div>' +
+              '<div class="acts"><button type="button" class="btn btn-ghost btn-edit-account">编辑</button> <button type="button" class="btn btn-ghost btn-delete-account">删除</button></div></div>';
+          }).join('');
+          el.querySelectorAll('.btn-edit-account').forEach(function(b) {
+            b.addEventListener('click', function() {
+              var id = parseInt(b.closest('.list-item').dataset.id, 10);
+              fetch(API_BASE + '/accounts/' + id, { headers: authHeaders() })
+                .then(function(r) { return r.json(); })
+                .then(function(a) {
+                  if (a.detail) { alert(a.detail); return; }
+                  currentEditingAccountId = id;
+                  document.getElementById('accountFormTitle').textContent = '编辑账号';
+                  document.getElementById('accountSubmitBtn').textContent = '保存修改';
+                  document.getElementById('accountCancelEditBtn').style.display = 'inline-block';
+                  var f = document.getElementById('accountForm');
+                  f.querySelector('[name="name"]').value = a.name || '';
+                  f.querySelector('[name="account_type"]').value = a.account_type || 'login';
+                  f.querySelector('[name="login_url"]').value = a.login_url || '';
+                  f.querySelector('[name="username"]').value = a.username || '';
+                  f.querySelector('[name="password"]').value = '';
+                  f.querySelector('[name="token_response_path"]').value = a.token_response_path || 'access_token';
+                  f.querySelector('[name="token_header_name"]').value = a.token_header_name || '';
+                  f.querySelector('[name="token_header_prefix"]').value = a.token_header_prefix || '';
+                  f.querySelector('[name="login_body"]').value = (a.login_body && typeof a.login_body === 'object') ? JSON.stringify(a.login_body, null, 2) : (a.login_body || '');
+                  f.querySelector('[name="static_headers"]').value = (a.static_headers && typeof a.static_headers === 'object') ? JSON.stringify(a.static_headers) : (a.static_headers || '');
+                  document.getElementById('accountLoginFields').style.display = (a.account_type === 'login') ? 'block' : 'none';
+                  document.getElementById('accountStaticFields').style.display = (a.account_type === 'static') ? 'block' : 'none';
+                })
+                .catch(function() { alert('加载失败'); });
+            });
+          });
+          el.querySelectorAll('.btn-delete-account').forEach(function(b) {
+            b.addEventListener('click', function() {
+              if (!confirm('确定删除该账号？')) return;
+              var id = parseInt(b.closest('.list-item').dataset.id, 10);
+              fetch(API_BASE + '/accounts/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } })
+                .then(function(r) {
+                  if (r.status === 204) loadAccounts();
+                  else r.json().then(function(d) { alert(d.detail || '删除失败'); });
+                })
+                .catch(function() { alert('网络错误'); });
+            });
+          });
+        })
+        .catch(function() { document.getElementById('accountList').innerHTML = '<p class="msg err">加载失败</p>'; });
+    }
+
+    document.getElementById('accountTypeSelect').addEventListener('change', function() {
+      var isLogin = this.value === 'login';
+      document.getElementById('accountLoginFields').style.display = isLogin ? 'block' : 'none';
+      document.getElementById('accountStaticFields').style.display = isLogin ? 'none' : 'block';
+    });
+
+    function exitAccountEditMode() {
+      currentEditingAccountId = null;
+      document.getElementById('accountFormTitle').textContent = '新建账号';
+      document.getElementById('accountSubmitBtn').textContent = '保存账号';
+      document.getElementById('accountCancelEditBtn').style.display = 'none';
+      document.getElementById('accountForm').reset();
+      document.getElementById('accountLoginFields').style.display = 'block';
+      document.getElementById('accountStaticFields').style.display = 'none';
+    }
+    document.getElementById('accountCancelEditBtn').addEventListener('click', function() {
+      exitAccountEditMode();
+      loadAccounts();
+    });
+    document.getElementById('accountForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(this);
+      var payload = {
+        name: fd.get('name'),
+        account_type: fd.get('account_type'),
+        login_url: fd.get('login_url') || null,
+        username: fd.get('username') || null,
+        password: fd.get('password') || null,
+        token_response_path: fd.get('token_response_path') || 'access_token',
+        token_header_name: fd.get('token_header_name') && fd.get('token_header_name').trim() ? fd.get('token_header_name').trim() : null,
+        token_header_prefix: fd.get('token_header_prefix') && fd.get('token_header_prefix').trim() ? fd.get('token_header_prefix').trim() : null,
+        login_body: null,
+        static_headers: null
+      };
+      var loginBodyRaw = fd.get('login_body');
+      if (loginBodyRaw && loginBodyRaw.trim()) {
+        try { payload.login_body = JSON.parse(loginBodyRaw); } catch (err) { alert('自定义登录 Body 必须是合法 JSON'); return; }
+      }
+      var raw = fd.get('static_headers');
+      if (payload.account_type === 'static' && raw && raw.trim()) {
+        try { payload.static_headers = JSON.parse(raw); } catch (err) { alert('Header 必须是合法 JSON'); return; }
+      }
+      if (currentEditingAccountId != null) {
+        if (!payload.password || payload.password === '') delete payload.password;
+        fetch(API_BASE + '/accounts/' + currentEditingAccountId, {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: JSON.stringify(payload)
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (x.ok) { exitAccountEditMode(); loadAccounts(); }
+            else { alert(x.data.detail || '保存失败'); }
+          })
+          .catch(function() { alert('网络错误'); });
+      } else {
+        fetch(API_BASE + '/accounts', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify(payload)
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (x.ok) { exitAccountEditMode(); loadAccounts(); }
+            else { alert(x.data.detail || '保存失败'); }
+          })
+          .catch(function() { alert('网络错误'); });
+      }
+    });
+
+    function escapeHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function escapeAttr(s) { return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function truncate(s, len) { s = (s || '').trim(); return s.length <= len ? s : s.slice(0, len) + '…'; }
+
+    document.getElementById('fromDocForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(this);
+      var urlsText = document.getElementById('schemaUrlsInput').value || '';
+      var urls = urlsText.split(/\r?\n/).map(function(s) { return s.trim(); }).filter(Boolean);
+      if (!urls.length) {
+        document.getElementById('fromDocMsg').textContent = '请至少填写一个文档地址';
+        document.getElementById('fromDocMsg').className = 'msg err';
+        document.getElementById('fromDocMsg').style.display = 'block';
+        return;
+      }
+      var base_url = fd.get('base_url') || null;
+      var only_generate = document.getElementById('onlyGenerate').checked;
+      var body = {
+        base_url: base_url || undefined,
+        only_generate: only_generate,
+        max_cases_per_api: 1
+      };
+      if (urls.length === 1) { body.schema_url = urls[0]; } else { body.schema_urls = urls; }
+      var login_url = fd.get('login_url');
+      if (login_url) {
+        body.auth = {
+          login_url: login_url,
+          method: 'POST',
+          username: fd.get('auth_username') || undefined,
+          password: fd.get('auth_password') || undefined,
+          token_response_path: fd.get('token_response_path') || 'access_token',
+          header_name: 'Authorization',
+          header_prefix: 'Bearer '
+        };
+      }
+      var raw = fd.get('extra_headers_raw');
+      if (raw && raw.trim()) {
+        try {
+          body.extra_headers = JSON.parse(raw);
+        } catch (err) {
+          document.getElementById('fromDocMsg').textContent = '固定 Header 必须是合法 JSON';
+          document.getElementById('fromDocMsg').className = 'msg err';
+          document.getElementById('fromDocMsg').style.display = 'block';
+          document.getElementById('fromDocResult').textContent = '';
+          return;
+        }
+      }
+      var msgEl = document.getElementById('fromDocMsg');
+      var resultEl = document.getElementById('fromDocResult');
+      msgEl.style.display = 'none';
+      resultEl.textContent = '请求中…';
+      fetch(API_BASE + '/api-test/from-doc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify(body)
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, status: r.status, data: d }; }); })
+        .then(function(x) {
+          if (x.ok) {
+            var d = x.data;
+            var lines = ['接口数: ' + d.total_apis, '用例数: ' + d.total_cases, '已执行: ' + (d.executed ? '是' : '否')];
+            if (d.results && d.results.length) {
+              var pass = d.results.filter(function(r) { return r.passed; }).length;
+              lines.push('通过: ' + pass + ' / ' + d.results.length);
+              d.results.forEach(function(r, i) {
+                lines.push((r.passed ? '✓' : '✗') + ' ' + r.case.method + ' ' + r.case.path + ' → ' + r.status_code + (r.error ? ' ' + r.error : ''));
+              });
+            }
+            resultEl.textContent = lines.join('\n');
+            msgEl.textContent = d.executed ? '执行完成，已扣积分' : '已生成用例（未执行不扣积分）';
+            msgEl.className = 'msg ok';
+            msgEl.style.display = 'block';
+            loadDashboard();
+          } else {
+            msgEl.textContent = x.data.detail || x.data.message || '请求失败';
+            msgEl.className = 'msg err';
+            msgEl.style.display = 'block';
+            resultEl.textContent = typeof x.data === 'object' ? JSON.stringify(x.data, null, 2) : '';
+          }
+        })
+        .catch(function(err) {
+          msgEl.textContent = '网络错误';
+          msgEl.className = 'msg err';
+          msgEl.style.display = 'block';
+          resultEl.textContent = err.message || '';
+        });
+    });
+
+    if (token) loadDashboard();
+  </script>
+</body>
+</html>

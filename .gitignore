@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build / output
+out/
+dist/
+build/
+*.log
+
+# macOS
+.DS_Store
+
+# IDE / agent 配置与缓存（不推）
+.agent/
+.agents/
+.claude/
+.cursor/
+.iflow/
+.kiro/
+.trae/
+.vscode/
+.windsurf/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.so
+.env
+.env.local
+*.db
+*.sqlite
+*.sqlite3
+*.egg-info/
+.eggs/
+
+# 生成媒体（按需放开注释）
+# *.mp4
+# *.mov
+# *.webp
+# *.jpg
+# *.png

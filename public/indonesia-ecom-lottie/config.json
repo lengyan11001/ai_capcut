@@ -1,0 +1,147 @@
+{
+  "title": "印尼跨境电商实战指南：从零开店月销破万",
+  "fps": 30,
+  "totalFrames": 2324,
+  "segments": [
+    {
+      "id": "hook",
+      "narration": "想赚印尼人的钱？",
+      "lottieFile": "segment-01.json",
+      "audioFile": "segment-01.mp3",
+      "durationFrames": 88
+    },
+    {
+      "id": "market-size",
+      "narration": "2.7亿人口，网购渗透率64%",
+      "lottieFile": "segment-02.json",
+      "audioFile": "segment-02.mp3",
+      "durationFrames": 147
+    },
+    {
+      "id": "market-value",
+      "narration": "2025年市场规模突破430亿美元",
+      "lottieFile": "segment-03.json",
+      "audioFile": "segment-03.mp3",
+      "durationFrames": 148
+    },
+    {
+      "id": "pain",
+      "narration": "但很多人卡在第一步，不知从哪进",
+      "lottieFile": "segment-04.json",
+      "audioFile": "segment-04.mp3",
+      "durationFrames": 117
+    },
+    {
+      "id": "pivot",
+      "narration": "别急，门槛没你想的高",
+      "lottieFile": "segment-05.json",
+      "audioFile": "segment-05.mp3",
+      "durationFrames": 100
+    },
+    {
+      "id": "platform-intro",
+      "narration": "先搞清楚，在哪个平台卖",
+      "lottieFile": "segment-06.json",
+      "audioFile": "segment-06.mp3",
+      "durationFrames": 102
+    },
+    {
+      "id": "shopee",
+      "narration": "Shopee，印尼市场份额第一",
+      "lottieFile": "segment-07.json",
+      "audioFile": "segment-07.mp3",
+      "durationFrames": 125
+    },
+    {
+      "id": "tiktok",
+      "narration": "TikTok Shop，内容带货爆单神器",
+      "lottieFile": "segment-08.json",
+      "audioFile": "segment-08.mp3",
+      "durationFrames": 121
+    },
+    {
+      "id": "bridge-product",
+      "narration": "平台选好了，再说卖什么",
+      "lottieFile": "segment-09.json",
+      "audioFile": "segment-09.mp3",
+      "durationFrames": 102
+    },
+    {
+      "id": "product-beauty",
+      "narration": "美妆个护，转化率最高的类目",
+      "lottieFile": "segment-10.json",
+      "audioFile": "segment-10.mp3",
+      "durationFrames": 120
+    },
+    {
+      "id": "product-fashion",
+      "narration": "时尚服装、3C配件也很好卖",
+      "lottieFile": "segment-11.json",
+      "audioFile": "segment-11.mp3",
+      "durationFrames": 125
+    },
+    {
+      "id": "halal",
+      "narration": "穆斯林市场大，记得做清真认证",
+      "lottieFile": "segment-12.json",
+      "audioFile": "segment-12.mp3",
+      "durationFrames": 118
+    },
+    {
+      "id": "bridge-entry",
+      "narration": "选品搞定，来说怎么入驻",
+      "lottieFile": "segment-13.json",
+      "audioFile": "segment-13.mp3",
+      "durationFrames": 109
+    },
+    {
+      "id": "license",
+      "narration": "营业执照注册超14天就能申请",
+      "lottieFile": "segment-14.json",
+      "audioFile": "segment-14.mp3",
+      "durationFrames": 126
+    },
+    {
+      "id": "deposit",
+      "narration": "保证金低至90美元，不到700块",
+      "lottieFile": "segment-15.json",
+      "audioFile": "segment-15.mp3",
+      "durationFrames": 132
+    },
+    {
+      "id": "benefit",
+      "narration": "新店前90天佣金全免",
+      "lottieFile": "segment-16.json",
+      "audioFile": "segment-16.mp3",
+      "durationFrames": 109
+    },
+    {
+      "id": "bridge-warning",
+      "narration": "有个坑，提前告诉你",
+      "lottieFile": "segment-17.json",
+      "audioFile": "segment-17.mp3",
+      "durationFrames": 95
+    },
+    {
+      "id": "tax-warning",
+      "narration": "印尼关税起征点几乎为零",
+      "lottieFile": "segment-18.json",
+      "audioFile": "segment-18.mp3",
+      "durationFrames": 111
+    },
+    {
+      "id": "pricing",
+      "narration": "定价时把税费算进去，别亏本",
+      "lottieFile": "segment-19.json",
+      "audioFile": "segment-19.mp3",
+      "durationFrames": 120
+    },
+    {
+      "id": "closing",
+      "narration": "今天就去注册一个Shopee账号",
+      "lottieFile": "segment-20.json",
+      "audioFile": "segment-20.mp3",
+      "durationFrames": 109
+    }
+  ]
+}
