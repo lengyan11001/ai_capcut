@@ -710,6 +710,99 @@ async def fetch_urls_and_build_case_dicts(
     return [c.model_dump() for c in cases]
 
 
+async def fetch_urls_and_get_merged_content(
+    urls: List[str],
+    base_url_override: Optional[str],
+) -> Tuple[str, str]:
+    """拉取多个 OpenAPI 文档地址，合并 paths 后返回 (JSON 字符串, base_url)。供大模型分析文档用。"""
+    merged_paths: Dict[str, Any] = {}
+    first_servers: List[Any] = []
+    got_html_no_spec = False
+    last_html_url: Optional[str] = None
+    is_apifox_url = False
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        for one_url in urls:
+            resp = await client.get(one_url)
+            resp.raise_for_status()
+            doc = _parse_doc_response(resp)
+            if not doc:
+                if _is_html_response(resp):
+                    got_html_no_spec = True
+                    last_html_url = one_url
+                    is_apifox_url = "apifox" in one_url.lower()
+                continue
+            paths = doc.get("paths") or {}
+            for path, methods in paths.items():
+                if not isinstance(methods, dict):
+                    continue
+                if path not in merged_paths:
+                    merged_paths[path] = {}
+                merged_paths[path].update(methods)
+            if not first_servers and doc.get("servers"):
+                first_servers = doc["servers"]
+    merged_doc: Dict[str, Any] = {"paths": merged_paths, "servers": first_servers}
+    if not merged_paths and got_html_no_spec and last_html_url:
+        raise ValueError(_openapi_fetch_error_message(last_html_url, is_apifox_url))
+    auto_base = _detect_base_url_from_openapi(merged_doc) or ""
+    base = (base_url_override or auto_base) or ""
+    return json.dumps(merged_doc, ensure_ascii=False), base
+
+
+def _count_apis_from_openapi_content(content: str) -> int:
+    """从 OpenAPI 文件内容（JSON 或 YAML 字符串）解析并返回接口数量。用于预估积分。"""
+    text = (content or "").strip()
+    doc: Optional[Dict[str, Any]] = None
+    try:
+        doc = json.loads(text)
+    except (ValueError, json.JSONDecodeError):
+        pass
+    if doc is None:
+        try:
+            doc = yaml.safe_load(text)
+        except yaml.YAMLError:
+            pass
+    if not doc or not isinstance(doc, dict):
+        return 0
+    return len(_extract_apis_from_doc(doc))
+
+
+def normalize_llm_cases(cases: List[Dict[str, Any]], base_url: str) -> List[Dict[str, Any]]:
+    """规范化大模型输出的用例列表：补全 full_url、必填字段与类型。"""
+    base = (base_url or "").rstrip("/")
+    out: List[Dict[str, Any]] = []
+    for c in cases:
+        if not isinstance(c, dict):
+            continue
+        path = (c.get("path") or "").strip()
+        full_url = (c.get("full_url") or "").strip()
+        if not full_url and path:
+            full_url = (base + "/" + path.lstrip("/")) if base else path
+        method = (c.get("method") or "GET").upper()
+        if method not in ("GET", "POST", "PUT", "DELETE", "PATCH"):
+            method = "GET"
+        expect_status = c.get("expect_status")
+        if expect_status is not None:
+            try:
+                expect_status = int(expect_status)
+            except (TypeError, ValueError):
+                expect_status = 200
+        else:
+            expect_status = 200
+        out.append({
+            "name": c.get("name") or f"{method} {path or full_url}",
+            "method": method,
+            "path": path or full_url,
+            "full_url": full_url or path,
+            "description": c.get("description") or "",
+            "expect_status": expect_status,
+            "query": c.get("query") if isinstance(c.get("query"), dict) else None,
+            "body": c.get("body") if isinstance(c.get("body"), dict) else None,
+            "headers": c.get("headers") if isinstance(c.get("headers"), dict) else None,
+            "extract": c.get("extract") if isinstance(c.get("extract"), dict) else None,
+        })
+    return out
+
+
 @router.post(
     "/api-test/from-doc",
     response_model=ApiFromDocResult,

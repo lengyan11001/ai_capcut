@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 from ..db import SessionLocal, get_db
 from ..models import CaseGenerateRecord, CaseLibrary, DocumentTemplate, User
 from .auth import get_current_user
-from .api_test import fetch_urls_and_build_case_dicts, parse_openapi_content_to_cases
+from .api_test import (
+    fetch_urls_and_build_case_dicts,
+    fetch_urls_and_get_merged_content,
+    _count_apis_from_openapi_content,
+    normalize_llm_cases,
+    parse_openapi_content_to_cases,
+)
 from ..core.llm_client import call_llm, estimate_credits_for_apis
 
 router = APIRouter(prefix="/templates", tags=["templates"])
@@ -236,45 +242,69 @@ async def generate_cases_from_template(
 ):
     """根据模版拉取文档并生成用例库。
 
-    - 默认仅按规则解析 OpenAPI 文档生成用例库（不扣积分）
-    - 若指定 llm_model_id，则会调用大模型生成更详细的用例说明，并按实际用量扣积分
+    - 未指定大模型：仅按规则解析 OpenAPI 生成用例库（不扣积分）
+    - 指定 llm_model_id：由大模型以测试专家身份设计完整用例（调用顺序、参数传递、用例数量由模型决定），按实际用量扣积分
     """
     t = db.query(DocumentTemplate).filter(DocumentTemplate.id == template_id, DocumentTemplate.user_id == current_user.id).first()
     if not t:
         raise HTTPException(status_code=404, detail="模版不存在")
-    # 1. 从模版获取接口用例（规则生成）
-    cases: List[dict]
-    urls = [u.strip() for u in (t.schema_urls or []) if u and str(u).strip()]
-    if urls:
-        try:
-            cases = await fetch_urls_and_build_case_dicts(urls, t.base_url)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"拉取文档失败：{e}")
-    else:
-        content = getattr(t, "file_content", None)
-        if not content:
-            raise HTTPException(status_code=400, detail="模版下没有有效的文档地址或文件内容")
-        try:
-            cases = parse_openapi_content_to_cases(content, base_url_override=t.base_url or None)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-
-    if not cases:
-        raise HTTPException(status_code=400, detail="未从文档中解析出任何接口")
 
     llm_model_id = payload.llm_model_id or None
+    urls = [u.strip() for u in (t.schema_urls or []) if u and str(u).strip()]
+    file_content = getattr(t, "file_content", None)
+    base_url = t.base_url or ""
 
-    # 仅预估：根据接口数估算大模型积分，不调用模型、不创建用例库
+    # 使用大模型时：获取 OpenAPI 全文供模型分析；否则按规则解析得到 cases
+    use_llm = bool(llm_model_id)
+    openapi_content: Optional[str] = None
+    cases: Optional[List[dict]] = None
+
+    if use_llm:
+        if urls:
+            try:
+                openapi_content, base_url = await fetch_urls_and_get_merged_content(urls, t.base_url)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=502, detail=f"拉取文档失败：{e}")
+        elif file_content:
+            openapi_content = file_content
+        else:
+            raise HTTPException(status_code=400, detail="模版下没有有效的文档地址或文件内容")
+        if not openapi_content or not openapi_content.strip():
+            raise HTTPException(status_code=400, detail="未获取到有效文档内容")
+        api_count = _count_apis_from_openapi_content(openapi_content)
+        if api_count == 0:
+            raise HTTPException(status_code=400, detail="文档中未解析出任何接口")
+    else:
+        if urls:
+            try:
+                cases = await fetch_urls_and_build_case_dicts(urls, t.base_url)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=502, detail=f"拉取文档失败：{e}")
+        else:
+            if not file_content:
+                raise HTTPException(status_code=400, detail="模版下没有有效的文档地址或文件内容")
+            try:
+                cases = parse_openapi_content_to_cases(file_content, base_url_override=t.base_url or None)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        if not cases:
+            raise HTTPException(status_code=400, detail="未从文档中解析出任何接口")
+
+    # 仅预估：不调用模型、不创建用例库
     if payload.estimate_only:
         llm_estimate: Optional[dict] = None
-        if llm_model_id:
-            llm_estimate = estimate_credits_for_apis(llm_model_id, api_count=len(cases))
+        total_apis = api_count if use_llm else len(cases)
+        total_cases_approx = (max(api_count * 2, 10) if use_llm else len(cases))
+        if use_llm:
+            llm_estimate = estimate_credits_for_apis(llm_model_id, api_count=total_cases_approx)
         return {
             "estimate_only": True,
-            "total_apis": len(cases),
-            "total_cases": len(cases),
+            "total_apis": total_apis,
+            "total_cases": total_cases_approx,
             "llm_model_id": llm_model_id,
             "llm_estimate": llm_estimate,
         }
@@ -282,7 +312,6 @@ async def generate_cases_from_template(
     if not payload.library_name or not payload.library_name.strip():
         raise HTTPException(status_code=400, detail="请填写用例库名称")
 
-    # 创建一条生成记录（成功或失败都会更新原因给用户看）
     record = CaseGenerateRecord(
         user_id=current_user.id,
         template_id=t.id,
@@ -297,22 +326,29 @@ async def generate_cases_from_template(
     db.refresh(record)
 
     try:
-        # 若指定了大模型，先按接口数预估一次大模型积分，用于余额校验与提示
-        if llm_model_id:
-            est = estimate_credits_for_apis(llm_model_id, api_count=len(cases))
+        if use_llm:
+            est = estimate_credits_for_apis(llm_model_id, api_count=max(api_count * 2, 10))
             est_credits = int((est or {}).get("estimated_credits") or 0)
             if est_credits > 0 and current_user.credits < est_credits:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=f"积分不足，本次预计需 {est_credits} 积分，当前 {current_user.credits}",
                 )
-
-        # 将真正的生成流程放到后台任务中执行（调用大模型 + 创建用例库 + 更新记录）
-        background_tasks.add_task(
-            _run_generate_cases_job,
-            record_id=record.id,
-            cases=cases,
-        )
+            background_tasks.add_task(
+                _run_generate_cases_job,
+                record_id=record.id,
+                cases=None,
+                openapi_content=openapi_content,
+                base_url=base_url,
+            )
+        else:
+            background_tasks.add_task(
+                _run_generate_cases_job,
+                record_id=record.id,
+                cases=cases,
+                openapi_content=None,
+                base_url=None,
+            )
 
         return {
             "task_record_id": record.id,
@@ -320,7 +356,6 @@ async def generate_cases_from_template(
             "message": "已创建生成任务，可在下方用例生成记录中查看进度",
         }
     except Exception as e:
-        # 更新记录：失败原因展示给用户看
         detail = getattr(e, "detail", str(e))
         record.status = "failed"
         record.message = (detail if isinstance(detail, str) else str(detail))[:2000]
@@ -330,8 +365,13 @@ async def generate_cases_from_template(
         raise
 
 
-def _run_generate_cases_job(record_id: int, cases: List[dict]) -> None:
-    """后台任务：调用大模型（可选）并创建用例库，最终更新生成记录状态。"""
+def _run_generate_cases_job(
+    record_id: int,
+    cases: Optional[List[dict]] = None,
+    openapi_content: Optional[str] = None,
+    base_url: Optional[str] = None,
+) -> None:
+    """后台任务：若提供 openapi_content 则由大模型设计完整用例并入库，否则直接使用 cases 入库。"""
     db = SessionLocal()
     try:
         record = db.query(CaseGenerateRecord).filter(CaseGenerateRecord.id == record_id).first()
@@ -350,63 +390,65 @@ def _run_generate_cases_job(record_id: int, cases: List[dict]) -> None:
 
         llm_model_id = record.llm_model_id
         llm_credits_used: Optional[int] = None
+        final_cases: List[dict] = []
 
         try:
-            # 1. 若指定了大模型，为每条用例生成更详细说明，并按用量扣积分
-            if llm_model_id:
+            if openapi_content and base_url is not None and llm_model_id:
+                # 方案二：大模型以测试专家身份设计完整用例（调用顺序、参数传递、用例数量由模型决定）
                 system_prompt = (
-                    "你是一名资深接口测试工程师，擅长根据 OpenAPI 文档设计高质量接口测试用例。"
-                    "现在给你一组基于文档自动解析的初始用例，请你为每条用例生成更详细的中文说明，"
-                    "包括覆盖的场景、关键参数、边界条件等。"
+                    "你是一名资深接口测试专家，擅长根据 OpenAPI 文档设计完整、可执行的接口测试用例。\n"
+                    "请完成以下工作：\n"
+                    "1. 分析接口文档中的接口依赖与调用顺序（例如先登录再创建再查询），按执行顺序设计用例。\n"
+                    "2. 明确参数传递：若某接口依赖前面接口的返回值（如 id、token），在响应中通过 extract 抽取变量，在后续用例的 path/query/body/headers 中用 {{变量名}} 引用。\n"
+                    "3. 自行决定需要多少条用例：可对同一接口设计多条（正常、参数错误、无权限、边界等），不必一接口一条。\n"
+                    "输出格式：仅输出一个 JSON 对象，且包含键 \"cases\"，值为用例数组。每条用例需包含：name, method, path, description, expect_status；可选：full_url, query, body, headers, extract。\n"
+                    "extract 格式为对象，键为变量名，值为从该接口响应中取值的 JSON 路径，如 \"$.data.access_token\"。path/query/body/headers 中可用 {{变量名}} 引用前面步骤 extract 的变量。\n"
+                    "只输出该 JSON，不要 markdown 包裹或多余说明。"
                 )
-                simple_cases = [
-                    {
-                        "index": idx,
-                        "name": c.get("name"),
-                        "method": c.get("method"),
-                        "path": c.get("path"),
-                        "full_url": c.get("full_url"),
-                        "expect_status": c.get("expect_status", 200),
-                    }
-                    for idx, c in enumerate(cases)
-                ]
+                # 截断过长文档，避免超出模型上下文
+                content_for_llm = (openapi_content or "").strip()
+                if len(content_for_llm) > 120000:
+                    content_for_llm = content_for_llm[:120000] + "\n\n... (文档已截断)"
                 user_prompt = (
-                    "下面是根据接口文档自动解析出的初始测试用例列表（JSON）：\n"
-                    f"{json.dumps(simple_cases, ensure_ascii=False, indent=2)}\n\n"
-                    "请你生成一个 JSON 数组，数组中的每一项对应一条用例，格式为：\n"
-                    '{ "index": number, "description": string }\n'
-                    "其中 index 对应上面列表中的 index 字段，description 为该用例的详细中文说明。\n"
-                    "只输出 JSON，不要输出多余文字。"
+                    "以下是一份 OpenAPI 文档（JSON），基础地址 base_url 为："
+                    + (base_url or "")
+                    + "\n\n请以测试专家身份设计完整测试用例集，输出格式为 {\"cases\": [ {...}, ... ]}。\n\n"
+                    "文档内容：\n"
+                    + content_for_llm
                 )
                 llm_result = call_llm(
                     model_id=llm_model_id,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
-                    temperature=0.2,
+                    temperature=0.3,
                 )
-                content = str(llm_result.get("content") or "").strip()
+                raw = str(llm_result.get("content") or "").strip()
                 llm_credits_used = int(llm_result.get("credits_used") or 0)
-                # 解析返回 JSON，按 index 覆盖 description
-                try:
-                    parsed = json.loads(content)
-                    if isinstance(parsed, list):
-                        desc_map: Dict[int, str] = {}
-                        for item in parsed:
-                            if not isinstance(item, dict):
-                                continue
-                            idx = item.get("index")
-                            desc = item.get("description")
-                            if isinstance(idx, int) and isinstance(desc, str):
-                                desc_map[idx] = desc.strip()
-                        for i, c in enumerate(cases):
-                            if i in desc_map and desc_map[i]:
-                                c["description"] = desc_map[i]
-                except (ValueError, json.JSONDecodeError):
-                    # 解析失败则忽略，仅保留原始 cases
-                    pass
 
-                # 扣除大模型积分（再次防御，避免并发修改）
-                if llm_credits_used and llm_credits_used > 0:
+                # 尝试从 markdown 代码块中取出 JSON
+                if "```" in raw:
+                    for part in raw.split("```"):
+                        part = part.strip()
+                        if part.startswith("json"):
+                            part = part[4:].strip()
+                        if part.startswith("{"):
+                            raw = part
+                            break
+                parsed: Optional[dict] = None
+                try:
+                    parsed = json.loads(raw)
+                except (ValueError, json.JSONDecodeError):
+                    pass
+                if not parsed or not isinstance(parsed, dict):
+                    raise RuntimeError("大模型返回的不是有效 JSON 对象，无法解析用例列表")
+                raw_cases = parsed.get("cases")
+                if not isinstance(raw_cases, list):
+                    raise RuntimeError("大模型返回的 JSON 中缺少 cases 数组")
+                final_cases = normalize_llm_cases(raw_cases, base_url or "")
+                if not final_cases:
+                    raise RuntimeError("大模型未生成任何有效用例")
+
+                if llm_credits_used > 0:
                     if user.credits < llm_credits_used:
                         raise RuntimeError(
                             f"积分不足，本次大模型生成需 {llm_credits_used} 积分，当前 {user.credits}"
@@ -414,21 +456,29 @@ def _run_generate_cases_job(record_id: int, cases: List[dict]) -> None:
                     user.credits -= llm_credits_used
                     db.add(user)
                     db.commit()
+            else:
+                # 未使用大模型：直接使用规则解析的 cases
+                if not cases:
+                    record.status = "failed"
+                    record.message = "未提供用例数据"
+                    record.finished_at = datetime.utcnow()
+                    db.add(record)
+                    db.commit()
+                    return
+                final_cases = cases
 
-            # 2. 创建用例库
             lib = CaseLibrary(
                 user_id=user.id,
                 name=record.library_name,
                 template_id=template.id,
-                cases=cases,
+                cases=final_cases,
             )
             db.add(lib)
             db.commit()
             db.refresh(lib)
 
-            # 3. 更新记录：成功
             record.status = "success"
-            msg = f"已生成用例库「{lib.name}」，共 {len(cases)} 条用例"
+            msg = f"已生成用例库「{lib.name}」，共 {len(final_cases)} 条用例"
             if llm_credits_used:
                 msg += f"，消耗大模型积分 {llm_credits_used}"
             record.message = msg
@@ -437,7 +487,6 @@ def _run_generate_cases_job(record_id: int, cases: List[dict]) -> None:
             db.add(record)
             db.commit()
         except Exception as e:  # noqa: BLE001
-            # 更新记录：失败原因展示给用户
             record.status = "failed"
             detail = str(e).strip() or repr(e)
             record.message = detail[:2000]
