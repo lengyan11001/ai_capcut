@@ -18,7 +18,7 @@ from .api_test import (
     normalize_llm_cases,
     parse_openapi_content_to_cases,
 )
-from ..core.llm_client import call_llm, estimate_credits_for_apis
+from ..core.llm_client import call_llm, estimate_credits_for_apis, estimate_credits_for_openapi_doc
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 
@@ -298,9 +298,11 @@ async def generate_cases_from_template(
     if payload.estimate_only:
         llm_estimate: Optional[dict] = None
         total_apis = api_count if use_llm else len(cases)
-        total_cases_approx = (max(api_count * 2, 10) if use_llm else len(cases))
+        total_cases_approx = (max(int(api_count * 2.5), 10) if use_llm else len(cases))
         if use_llm:
-            llm_estimate = estimate_credits_for_apis(llm_model_id, api_count=total_cases_approx)
+            llm_estimate = estimate_credits_for_openapi_doc(
+                llm_model_id, len(openapi_content or ""), api_count
+            )
         return {
             "estimate_only": True,
             "total_apis": total_apis,
@@ -327,7 +329,9 @@ async def generate_cases_from_template(
 
     try:
         if use_llm:
-            est = estimate_credits_for_apis(llm_model_id, api_count=max(api_count * 2, 10))
+            est = estimate_credits_for_openapi_doc(
+                llm_model_id, len(openapi_content or ""), api_count
+            )
             est_credits = int((est or {}).get("estimated_credits") or 0)
             if est_credits > 0 and current_user.credits < est_credits:
                 raise HTTPException(
@@ -398,9 +402,9 @@ def _run_generate_cases_job(
                 system_prompt = (
                     "你是一名资深接口测试专家，擅长根据 OpenAPI 文档设计完整、可执行的接口测试用例。\n"
                     "请完成以下工作：\n"
-                    "1. 分析接口文档中的接口依赖与调用顺序（例如先登录再创建再查询），按执行顺序设计用例。\n"
-                    "2. 明确参数传递：若某接口依赖前面接口的返回值（如 id、token），在响应中通过 extract 抽取变量，在后续用例的 path/query/body/headers 中用 {{变量名}} 引用。\n"
-                    "3. 自行决定需要多少条用例：可对同一接口设计多条（正常、参数错误、无权限、边界等），不必一接口一条。\n"
+                    "1. 必须覆盖文档中的每一个接口（每个 path+method 至少有一条用例），再在此基础上增加关键流程的多步骤用例与异常/边界用例。\n"
+                    "2. 分析接口依赖与调用顺序（例如先登录再创建再查询），按执行顺序输出用例数组。\n"
+                    "3. 明确参数传递：若某接口依赖前面接口的返回值（如 id、token），在响应中通过 extract 抽取变量，在后续用例的 path/query/body/headers 中用 {{变量名}} 引用。\n"
                     "输出格式：仅输出一个 JSON 对象，且包含键 \"cases\"，值为用例数组。每条用例需包含：name, method, path, description, expect_status；可选：full_url, query, body, headers, extract。\n"
                     "extract 格式为对象，键为变量名，值为从该接口响应中取值的 JSON 路径，如 \"$.data.access_token\"。path/query/body/headers 中可用 {{变量名}} 引用前面步骤 extract 的变量。\n"
                     "只输出该 JSON，不要 markdown 包裹或多余说明。"

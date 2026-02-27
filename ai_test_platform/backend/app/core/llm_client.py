@@ -198,10 +198,60 @@ def estimate_credits_for_apis(
 ) -> Dict[str, int]:
     """
     给定接口数量与模型 ID，返回一个预估的积分消耗：
-    - 仅用于 estimate_only=true 的预估展示
+    - 仅用于「规则生成」场景的预估（未用大模型设计完整用例时）
     - 真正扣费应以实际 usage 为准
     """
     usage = rough_token_estimate_for_apis(api_count)
+    credits = estimate_credits_for_usage(
+        model_id=model_id,
+        prompt_tokens=usage.get("prompt_tokens", 0),
+        completion_tokens=usage.get("completion_tokens", 0),
+    )
+    return {
+        "estimated_prompt_tokens": usage.get("prompt_tokens", 0),
+        "estimated_completion_tokens": usage.get("completion_tokens", 0),
+        "estimated_total_tokens": usage.get("total_tokens", 0),
+        "estimated_credits": credits,
+    }
+
+
+def rough_token_estimate_for_openapi_doc(
+    content_length: int,
+    api_count: int,
+) -> UsageLike:
+    """
+    方案二：大模型接收完整 OpenAPI 文档并输出完整用例列表时的 token 粗估。
+    - prompt：系统提示词 + 整份文档（按字符数粗算 token，约 1 字符 ≈ 0.25~0.33 token）
+    - completion：用例数量由模型决定，按接口数约 2~3 倍、每条用例约 400 token 估
+    """
+    if content_length <= 0 and api_count <= 0:
+        return UsageLike(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+    system_and_prefix = 1200
+    # 文档截断上限 120000 字符，按 1 字符 ≈ 0.3 token 估
+    doc_tokens = min(content_length, 120000) * 3 // 10
+    prompt_tokens = system_and_prefix + doc_tokens
+    # 用例数未知，按 api_count * 2.5 条、每条约 400 token
+    estimated_cases = max(int(api_count * 2.5), 10)
+    completion_tokens = estimated_cases * 400
+    total_tokens = prompt_tokens + completion_tokens
+    return UsageLike(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+    )
+
+
+def estimate_credits_for_openapi_doc(
+    model_id: str,
+    content_length: int,
+    api_count: int,
+) -> Dict[str, int]:
+    """
+    方案二（大模型设计完整用例）的积分预估：按文档长度 + 接口数估算 token，再换算积分。
+    - 仅用于 estimate_only 与扣费前余额校验
+    - 实际扣费仍以 API 返回的 usage 为准
+    """
+    usage = rough_token_estimate_for_openapi_doc(content_length, api_count)
     credits = estimate_credits_for_usage(
         model_id=model_id,
         prompt_tokens=usage.get("prompt_tokens", 0),
