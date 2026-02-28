@@ -1069,6 +1069,7 @@
           if (sub) sub.style.display = sub.style.display === 'none' ? 'block' : 'none';
           return;
         }
+        if (currentView === 'chat' && view !== 'chat' && typeof saveCurrentSessionToStore === 'function') saveCurrentSessionToStore();
         document.querySelectorAll('.nav-left-item').forEach(function(b) { b.classList.remove('active'); });
         if (view === 'chat') {
           document.getElementById('navSkillSub').style.display = 'none';
@@ -1128,7 +1129,9 @@
         if (Array.isArray(parsed)) {
           chatSessions = parsed;
           chatSessions.forEach(function(s) {
-            if (!s.messages) s.messages = s.history || [];
+            if (s.id != null) s.id = String(s.id);
+            var m = s.messages || s.history;
+            s.messages = Array.isArray(m) ? m : [];
           });
         }
       } catch (e) {}
@@ -1178,11 +1181,13 @@
       renderChatSessionList();
     }
     function switchChatSession(id) {
-      if (currentSessionId === id) return;
+      var sid = id != null ? String(id) : '';
+      if (currentSessionId === sid) return;
       saveCurrentSessionToStore();
-      currentSessionId = id;
-      var session = chatSessions.find(function(s) { return s.id === id; });
-      chatHistory = (session && (session.messages || session.history)) ? (session.messages || session.history).slice() : [];
+      currentSessionId = sid;
+      var session = chatSessions.find(function(s) { return String(s.id) === sid; });
+      var raw = session && (session.messages || session.history);
+      chatHistory = Array.isArray(raw) ? raw.slice() : [];
       var container = document.getElementById('chatMessages');
       if (container) {
         container.innerHTML = '';
@@ -1193,17 +1198,18 @@
     }
     function saveCurrentSessionToStore() {
       if (!currentSessionId) return;
-      var session = chatSessions.find(function(s) { return s.id === currentSessionId; });
+      var session = chatSessions.find(function(s) { return String(s.id) === String(currentSessionId); });
       if (session) {
-        session.messages = chatHistory.slice();
+        session.messages = Array.isArray(chatHistory) ? chatHistory.slice() : [];
         session.updatedAt = Date.now();
         if (session.messages.length) {
-          var firstUser = session.messages.find(function(m) { return m.role === 'user'; });
+          var firstUser = session.messages.find(function(m) { return m && m.role === 'user'; });
           if (firstUser && (firstUser.content || '').trim()) session.title = getSessionTitle(session);
         }
         saveChatSessionsToStorage();
       }
     }
+    window.addEventListener('beforeunload', function() { if (typeof saveCurrentSessionToStore === 'function') saveCurrentSessionToStore(); });
     function renderChatSessionList() {
       var listEl = document.getElementById('chatSessionList');
       var searchVal = (document.getElementById('chatSessionSearch') && document.getElementById('chatSessionSearch').value || '').trim().toLowerCase();
@@ -1229,7 +1235,7 @@
           '<div class="session-time">' + escapeHtml(time) + '</div></div>';
       }).join('');
       listEl.querySelectorAll('.chat-session-item').forEach(function(el) {
-        el.addEventListener('click', function() { switchChatSession(el.dataset.sessionId); });
+        el.addEventListener('click', function() { switchChatSession(el.getAttribute('data-session-id')); });
       });
     }
     function initChatSessions() {
