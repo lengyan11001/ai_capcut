@@ -1117,10 +1117,12 @@
     function loadChatSessionsFromStorage() {
       try {
         var raw = localStorage.getItem(CHAT_SESSIONS_KEY);
-        chatSessions = raw ? JSON.parse(raw) : [];
-        if (!Array.isArray(chatSessions)) chatSessions = [];
-      } catch (e) { chatSessions = []; }
+        if (!raw) return;
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) chatSessions = parsed;
+      } catch (e) {}
     }
+    loadChatSessionsFromStorage();
     function saveChatSessionsToStorage() {
       try {
         localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(chatSessions));
@@ -1228,7 +1230,11 @@
       if (!currentSessionId || !chatSessions.find(function(s) { return s.id === currentSessionId; })) {
         currentSessionId = chatSessions[0].id;
       }
-      switchChatSession(currentSessionId);
+      var sid = currentSessionId;
+      setTimeout(function() {
+        if (document.getElementById('chatMessages')) switchChatSession(sid);
+        renderChatSessionList();
+      }, 0);
     }
 
     function linkifyText(text) {
@@ -2060,6 +2066,10 @@
     function escapeHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
     function escapeAttr(s) { return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
     function truncate(s, len) { s = (s || '').trim(); return s.length <= len ? s : s.slice(0, len) + '…'; }
+
+    window.addEventListener('beforeunload', function() {
+      if (typeof saveCurrentSessionToStore === 'function') saveCurrentSessionToStore();
+    });
 
     if (token) loadDashboard();
   </script>
