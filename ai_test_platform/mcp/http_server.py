@@ -22,6 +22,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import httpx
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Route
@@ -361,4 +363,8 @@ async def mcp_endpoint(request: Request) -> Response:
 
 app = Starlette(
     routes=[Route("/mcp", mcp_endpoint, methods=["GET", "POST"])],
+    middleware=[
+        # 允许 localhost / 127.0.0.1 等，避免 OpenClaw 等同机访问时触发 Invalid Host header
+        Middleware(TrustedHostMiddleware, allowed_hosts=["*"]),
+    ],
 )
