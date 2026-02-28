@@ -364,6 +364,13 @@
     .header-dropdown-menu .dropdown-credits { padding: 0.35rem 1rem; font-size: 0.85rem; color: var(--accent); }
     .chat-msg a { color: var(--accent); text-decoration: underline; }
     .chat-msg a:hover { color: var(--accent-hover); }
+    .chat-msg.typing { opacity: 0.9; }
+    .chat-msg.typing .typing-dots { display: inline-flex; gap: 0.25rem; }
+    .chat-msg.typing .typing-dots span { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); animation: typingBounce 0.6s ease-in-out infinite; }
+    .chat-msg.typing .typing-dots span:nth-child(2) { animation-delay: 0.1s; }
+    .chat-msg.typing .typing-dots span:nth-child(3) { animation-delay: 0.2s; }
+    @keyframes typingBounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-4px); } }
+    .chat-msg-body { white-space: pre-wrap; word-break: break-word; }
     /* 智能对话：左侧聊天 + 右侧历史列表 */
     .chat-area-wrap { display: flex; gap: 1rem; min-height: 0; align-items: stretch; }
     .chat-main { flex: 1; min-width: 0; }
@@ -1252,6 +1259,53 @@
       container.appendChild(div);
       container.scrollTop = container.scrollHeight;
     }
+    function showChatTypingIndicator() {
+      var container = document.getElementById('chatMessages');
+      if (!container) return;
+      var div = document.createElement('div');
+      div.id = 'chatTypingIndicator';
+      div.className = 'chat-msg assistant typing';
+      div.innerHTML = '<div class="role">助手</div><div class="typing-dots"><span></span><span></span><span></span></div> <span class="typing-text">正在思考...</span>';
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+    function removeChatTypingIndicator() {
+      var el = document.getElementById('chatTypingIndicator');
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    }
+    function appendAssistantMessageReveal(fullText) {
+      var container = document.getElementById('chatMessages');
+      if (!container) return;
+      var text = (fullText || '').trim() || '（无内容）';
+      var lines = text.split('\n');
+      var div = document.createElement('div');
+      div.className = 'chat-msg assistant';
+      var roleDiv = document.createElement('div');
+      roleDiv.className = 'role';
+      roleDiv.textContent = '助手';
+      var bodyDiv = document.createElement('div');
+      bodyDiv.className = 'chat-msg-body';
+      div.appendChild(roleDiv);
+      div.appendChild(bodyDiv);
+      container.appendChild(div);
+      var lineDelay = 48;
+      var i = 0;
+      function showNext() {
+        if (i >= lines.length) {
+          container.scrollTop = container.scrollHeight;
+          return;
+        }
+        var line = lines[i];
+        var lineEl = document.createElement('div');
+        lineEl.innerHTML = linkifyText(line);
+        bodyDiv.appendChild(lineEl);
+        if (i < lines.length - 1) bodyDiv.appendChild(document.createElement('br'));
+        i++;
+        container.scrollTop = container.scrollHeight;
+        if (i < lines.length) setTimeout(showNext, lineDelay);
+      }
+      if (lines.length) setTimeout(showNext, lineDelay); else container.scrollTop = container.scrollHeight;
+    }
     function sendChatMessage() {
       var input = document.getElementById('chatInput');
       var btn = document.getElementById('chatSendBtn');
@@ -1268,6 +1322,8 @@
       saveCurrentSessionToStore();
       renderChatSessionList();
       btn.disabled = true;
+      input.disabled = true;
+      showChatTypingIndicator();
       fetch(API_BASE + '/chat', {
         method: 'POST',
         headers: authHeaders(),
@@ -1275,9 +1331,10 @@
       })
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, status: r.status, data: d }; }); })
         .then(function(x) {
+          removeChatTypingIndicator();
           if (x.ok) {
             var reply = (x.data && x.data.reply) ? x.data.reply : '';
-            appendChatMessage('assistant', reply);
+            appendAssistantMessageReveal(reply);
             chatHistory.push({ role: 'assistant', content: reply });
           } else {
             var errMsg = (x.data && x.data.detail) ? x.data.detail : ('请求失败 ' + (x.status || ''));
@@ -1287,11 +1344,12 @@
           renderChatSessionList();
         })
         .catch(function(e) {
+          removeChatTypingIndicator();
           appendChatMessage('assistant', '网络错误：' + (e && e.message ? e.message : '请稍后重试'));
           saveCurrentSessionToStore();
           renderChatSessionList();
         })
-        .finally(function() { btn.disabled = false; });
+        .finally(function() { btn.disabled = false; input.disabled = false; });
     }
     var chatSendBtn = document.getElementById('chatSendBtn');
     var chatInput = document.getElementById('chatInput');
