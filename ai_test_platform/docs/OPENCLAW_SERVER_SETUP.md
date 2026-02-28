@@ -254,7 +254,19 @@ OPENCLAW_GATEWAY_TOKEN=你在 openclaw.json 里配置的 token
 - **2G 内存是否够用**  
   仅跑 Gateway + 远程模型时一般够用；不要在本机再跑本地大模型（如 Ollama）。可限制 worker 数量（如 uvicorn `--workers 1`）。
 
-## 九、参考链接
+## 九、回复慢的定位与优化
+
+- **定位**  
+  - 本平台 `/chat` 会在后端打日志：`openclaw_chat duration_ms=xxx status=200`，并在响应头里返回 `X-OpenClaw-Duration-Ms`。看该耗时即可判断主要时间是否花在「本平台 → OpenClaw Gateway → 大模型」这一段。  
+  - 若 `duration_ms` 很大（例如数秒到十几秒），延迟主要来自 **OpenClaw Gateway + 大模型推理**（以及可能的 MCP 调用），而不是本平台内部。
+
+- **优化方向**  
+  1. **历史条数**：本平台已限制只带最近 20 条消息发给 OpenClaw，减少上下文长度，有利于降低首 token 延迟。  
+  2. **部署与网络**：Gateway 与本平台后端尽量同机或同区，避免跨公网、高延迟。  
+  3. **模型与配置**：在 OpenClaw 中选用响应更快的模型或调小 max_tokens；若会触发 MCP，工具调用也会增加耗时。  
+  4. **流式输出**：若 OpenClaw Gateway 支持 `stream: true`，可改为流式接口，前端边收边展示，体感会更快。
+
+## 十、参考链接
 
 - [OpenClaw Gateway 文档](https://docs.openclaw.ai/cli/gateway)
 - [OpenClaw 配置参考](https://docs.openclaw.ai/gateway/configuration-reference)
