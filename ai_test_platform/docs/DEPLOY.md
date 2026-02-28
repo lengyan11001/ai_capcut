@@ -215,3 +215,52 @@ docker compose up -d
 | 4 | 执行 `docker compose up -d --build` 启动后端 |
 | 5 | 可选：Nginx 反代 + certbot 配置 HTTPS |
 | 6 | 用户本机配置 MCP（BASE_URL 指向该服务器，token 为登录后获取） |
+
+---
+
+## 七、代码更新与发布流程
+
+拉取本次或后续代码更新后，在服务器上按以下步骤操作即可。
+
+### 7.1 拉取代码
+
+```bash
+cd /opt/ai_test_platform   # 或你实际部署的目录
+git pull
+```
+
+### 7.2 核对 / 新增环境变量（.env）
+
+若本次更新涉及新配置项，在 `.env` 中按需添加或修改（与 `.env.example` 对照）：
+
+- **管理端改价**：`ADMIN_SECRET=你的管理密钥`（请求头 `X-Admin-Token` 与此一致时可访问 `GET/PUT /auth/model-pricing`）。
+- **智能对话用量限制**（可选，0 表示不限制，前期内部用可放宽）：
+  - `CHAT_DAILY_CAP_PER_USER=100`  # 每用户每日最多 N 轮
+  - `CHAT_RATE_LIMIT_PER_MINUTE=30` # 每用户每分钟最多 N 次
+
+保存后无需改代码，重启即生效。
+
+### 7.3 重新构建并重启
+
+```bash
+docker compose up -d --build
+```
+
+应用启动时会自动执行：建表（若缺少 `model_pricing`、`usage_period` 等）、种子写入模型价格（仅当 `model_pricing` 表为空）。
+
+### 7.4 可选：验证
+
+- **健康检查**：`curl -s http://127.0.0.1:8000/health`
+- **模型价格列表**（需配置 `ADMIN_SECRET` 并在请求头带 `X-Admin-Token`）：
+  ```bash
+  curl -s -H "X-Admin-Token: 你的ADMIN_SECRET" http://127.0.0.1:8000/auth/model-pricing
+  ```
+- **智能对话**：登录后在前端发几条消息，确认计费与限流符合预期（超限时应返回 429）。
+
+### 7.5 本次更新涉及的能力摘要
+
+| 能力 | 说明 |
+|------|------|
+| 模型价格与用量 | 表 `model_pricing`、`usage_period`；智能对话 / testAI 按 token 与配置计费并落库 |
+| 管理 API | `GET/PUT /auth/model-pricing`，需 `X-Admin-Token` |
+| 智能对话限流 | 每用户每日次数上限 + 每分钟频率限制，防过度使用 |
