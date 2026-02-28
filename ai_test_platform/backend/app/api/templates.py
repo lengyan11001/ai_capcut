@@ -18,6 +18,7 @@ from .api_test import (
     _count_apis_from_openapi_content,
     normalize_llm_cases,
     parse_openapi_content_to_cases,
+    parse_openapi_content_to_doc_and_apis,
 )
 from ..core.llm_client import call_llm, estimate_credits_for_apis, estimate_credits_for_openapi_doc
 
@@ -301,9 +302,14 @@ async def generate_cases_from_template(
         total_apis = api_count if use_llm else len(cases)
         total_cases_approx = (max(int(api_count * 2.5), 10) if use_llm else len(cases))
         if use_llm:
-            llm_estimate = estimate_credits_for_openapi_doc(
+            est_one = estimate_credits_for_openapi_doc(
                 llm_model_id, len(openapi_content or ""), api_count
             )
+            num_chunks_est = max(1, (api_count + 14) // 15)
+            if num_chunks_est > 1 and est_one:
+                est_one = dict(est_one)
+                est_one["estimated_credits"] = int((est_one.get("estimated_credits") or 0) * num_chunks_est)
+            llm_estimate = est_one
         return {
             "estimate_only": True,
             "total_apis": total_apis,
@@ -333,11 +339,15 @@ async def generate_cases_from_template(
             est = estimate_credits_for_openapi_doc(
                 llm_model_id, len(openapi_content or ""), api_count
             )
-            est_credits = int((est or {}).get("estimated_credits") or 0)
+            est_credits_one = int((est or {}).get("estimated_credits") or 0)
+            # 接口多时按分块调用估算，每块约 15 个接口，避免单次输出被截断
+            chunk_size = 15
+            num_chunks = max(1, (api_count + chunk_size - 1) // chunk_size)
+            est_credits = est_credits_one * num_chunks
             if est_credits > 0 and current_user.credits < est_credits:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                    detail=f"积分不足，本次预计需 {est_credits} 积分，当前 {current_user.credits}",
+                    detail=f"积分不足，本次预计需 {est_credits} 积分（约 {num_chunks} 批），当前 {current_user.credits}",
                 )
             if est_credits > 0:
                 record.credits_reserved = est_credits
@@ -412,76 +422,103 @@ def _run_generate_cases_job(
 
         try:
             if openapi_content and base_url is not None and llm_model_id:
-                # 方案二：大模型以测试专家身份设计完整用例（调用顺序、参数传递、用例数量由模型决定）
+                # 方案二：按接口分块调用大模型，避免单次 max_tokens 截断（每块约 15 个接口）
+                doc, apis = parse_openapi_content_to_doc_and_apis(openapi_content)
+                if not apis:
+                    raise RuntimeError("文档中未解析出任何接口")
+                chunk_size = 15
+                chunks: List[List[dict]] = []
+                for i in range(0, len(apis), chunk_size):
+                    chunks.append(apis[i : i + chunk_size])
+
                 system_prompt = (
                     "你是一名资深接口测试专家，擅长根据 OpenAPI 文档设计完整、可执行的接口测试用例。\n"
                     "请完成以下工作：\n"
-                    "1. 必须覆盖文档中的每一个接口（每个 path+method 至少有一条用例），再在此基础上增加关键流程的多步骤用例与异常/边界用例。\n"
+                    "1. 必须覆盖本批文档中的每一个接口（每个 path+method 至少有一条用例），可增加关键流程与异常用例。\n"
                     "2. 分析接口依赖与调用顺序（例如先登录再创建再查询），按执行顺序输出用例数组。\n"
                     "3. 明确参数传递：若某接口依赖前面接口的返回值（如 id、token），在响应中通过 extract 抽取变量，在后续用例的 path/query/body/headers 中用 {{变量名}} 引用。\n"
                     "输出格式：仅输出一个 JSON 对象，且包含键 \"cases\"，值为用例数组。每条用例需包含：name, method, path, description, expect_status；可选：full_url, query, body, headers, extract。\n"
-                    "extract 格式为对象，键为变量名，值为从该接口响应中取值的 JSON 路径，如 \"$.data.access_token\"。path/query/body/headers 中可用 {{变量名}} 引用前面步骤 extract 的变量。\n"
+                    "extract 格式为对象，键为变量名，值为从该接口响应中取值的 JSON 路径。path/query/body/headers 中可用 {{变量名}} 引用前面步骤 extract 的变量。\n"
                     "只输出该 JSON，不要 markdown 包裹或多余说明。"
                 )
-                # 截断过长文档，避免超出模型上下文
-                content_for_llm = (openapi_content or "").strip()
-                if len(content_for_llm) > 120000:
-                    content_for_llm = content_for_llm[:120000] + "\n\n... (文档已截断)"
-                user_prompt = (
-                    "以下是一份 OpenAPI 文档（JSON），基础地址 base_url 为："
-                    + (base_url or "")
-                    + "\n\n请以测试专家身份设计完整测试用例集，输出格式为 {\"cases\": [ {...}, ... ]}。\n\n"
-                    "文档内容：\n"
-                    + content_for_llm
-                )
-                llm_result = call_llm(
-                    model_id=llm_model_id,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    temperature=0.3,
-                    max_tokens=8192,
-                )
-                raw = str(llm_result.get("content") or "").strip()
-                llm_credits_used = int(llm_result.get("credits_used") or 0)
-
-                # 尝试从 markdown 代码块中取出 JSON
-                if "```" in raw:
-                    for part in raw.split("```"):
-                        part = part.strip()
-                        if part.startswith("json"):
-                            part = part[4:].strip()
-                        if part.startswith("{"):
-                            raw = part
-                            break
-                parsed: Optional[dict] = None
-                try:
-                    parsed = json.loads(raw)
-                except (ValueError, json.JSONDecodeError):
-                    pass
-                if not parsed or not isinstance(parsed, dict):
-                    raise RuntimeError("大模型返回的不是有效 JSON 对象，无法解析用例列表")
-                raw_cases = parsed.get("cases")
-                if not isinstance(raw_cases, list):
-                    raise RuntimeError("大模型返回的 JSON 中缺少 cases 数组")
-                final_cases = normalize_llm_cases(raw_cases, base_url or "")
+                base_url_str = base_url or ""
+                total_credits_used = 0
+                for chunk_idx, chunk in enumerate(chunks):
+                    sub_paths: Dict[str, dict] = {}
+                    for api in chunk:
+                        path = api.get("path") or ""
+                        method = (api.get("method") or "GET").upper()
+                        op = api.get("operation") or {}
+                        if path not in sub_paths:
+                            sub_paths[path] = {}
+                        sub_paths[path][method] = op
+                    sub_doc = {"paths": sub_paths, "servers": doc.get("servers") if doc else []}
+                    content_chunk = json.dumps(sub_doc, ensure_ascii=False)
+                    if len(content_chunk) > 80000:
+                        content_chunk = content_chunk[:80000] + "\n\n... (本批已截断)"
+                    user_prompt = (
+                        "以下是一批 OpenAPI 接口（JSON），基础地址 base_url 为："
+                        + base_url_str
+                        + "\n\n请为本批接口设计完整测试用例，输出格式为 {\"cases\": [ {...}, ... ]}。\n\n"
+                        "文档内容：\n"
+                        + content_chunk
+                    )
+                    llm_result = call_llm(
+                        model_id=llm_model_id,
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        temperature=0.3,
+                        max_tokens=8192,
+                    )
+                    raw = str(llm_result.get("content") or "").strip()
+                    total_credits_used += int(llm_result.get("credits_used") or 0)
+                    if "```" in raw:
+                        for part in raw.split("```"):
+                            part = part.strip()
+                            if part.startswith("json"):
+                                part = part[4:].strip()
+                            if part.startswith("{"):
+                                raw = part
+                                break
+                    try:
+                        parsed = json.loads(raw)
+                    except (ValueError, json.JSONDecodeError):
+                        parsed = None
+                    if not parsed or not isinstance(parsed, dict):
+                        raise RuntimeError(f"第 {chunk_idx + 1} 批返回的不是有效 JSON，无法解析用例")
+                    raw_cases = parsed.get("cases")
+                    if not isinstance(raw_cases, list):
+                        raise RuntimeError(f"第 {chunk_idx + 1} 批返回中缺少 cases 数组")
+                    normalized = normalize_llm_cases(raw_cases, base_url_str)
+                    final_cases.extend(normalized)
+                llm_credits_used = total_credits_used
                 if not final_cases:
                     raise RuntimeError("大模型未生成任何有效用例")
 
-                # 预扣已在前置请求中完成，此处按实际消耗退款差额
                 credits_reserved = getattr(record, "credits_reserved", None) or 0
-                if credits_reserved > 0 and llm_credits_used is not None:
-                    refund = credits_reserved - llm_credits_used
-                    if refund > 0:
+                if credits_reserved > 0:
+                    if total_credits_used < credits_reserved:
+                        refund = credits_reserved - total_credits_used
                         add_credit_flow(
                             db,
                             user,
                             "refund",
                             refund,
-                            f"用例生成退款（预估 {credits_reserved}，实际消耗 {llm_credits_used}）",
+                            f"用例生成退款（预估 {credits_reserved}，实际消耗 {total_credits_used}）",
                             "case_generate",
                             record.id,
                         )
-                        db.commit()
+                    elif total_credits_used > credits_reserved:
+                        add_credit_flow(
+                            db,
+                            user,
+                            "deduct",
+                            total_credits_used - credits_reserved,
+                            f"用例生成补扣（实际消耗 {total_credits_used} 超过预估 {credits_reserved}）",
+                            "case_generate",
+                            record.id,
+                        )
+                    db.commit()
             else:
                 # 未使用大模型：直接使用规则解析的 cases
                 if not cases:

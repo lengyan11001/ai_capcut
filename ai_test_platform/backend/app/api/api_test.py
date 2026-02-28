@@ -748,22 +748,41 @@ async def fetch_urls_and_get_merged_content(
     return json.dumps(merged_doc, ensure_ascii=False), base
 
 
-def _count_apis_from_openapi_content(content: str) -> int:
-    """从 OpenAPI 文件内容（JSON 或 YAML 字符串）解析并返回接口数量。用于预估积分。"""
+def _parse_openapi_content_to_doc(content: str) -> Optional[Dict[str, Any]]:
+    """从 OpenAPI 文件内容（JSON 或 YAML）解析为文档字典，失败返回 None。"""
     text = (content or "").strip()
-    doc: Optional[Dict[str, Any]] = None
     try:
-        doc = json.loads(text)
+        return json.loads(text)
     except (ValueError, json.JSONDecodeError):
         pass
-    if doc is None:
-        try:
-            doc = yaml.safe_load(text)
-        except yaml.YAMLError:
-            pass
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError:
+        pass
+    return None
+
+
+def parse_openapi_content_to_doc_and_apis(content: str) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    """解析 OpenAPI 内容，返回 (doc, apis)。apis 已按登录/鉴权相关路径优先排序。"""
+    doc = _parse_openapi_content_to_doc(content)
     if not doc or not isinstance(doc, dict):
-        return 0
-    return len(_extract_apis_from_doc(doc))
+        return doc, []
+    apis = _extract_apis_from_doc(doc)
+
+    def _auth_priority(api: Dict[str, Any]) -> int:
+        path = (api.get("path") or "").lower()
+        if "login" in path or "auth" in path or "token" in path or "signin" in path:
+            return 0
+        return 1
+
+    apis.sort(key=_auth_priority)
+    return doc, apis
+
+
+def _count_apis_from_openapi_content(content: str) -> int:
+    """从 OpenAPI 文件内容（JSON 或 YAML 字符串）解析并返回接口数量。用于预估积分。"""
+    _, apis = parse_openapi_content_to_doc_and_apis(content)
+    return len(apis)
 
 
 def normalize_llm_cases(cases: List[Dict[str, Any]], base_url: str) -> List[Dict[str, Any]]:
