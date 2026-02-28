@@ -1,8 +1,9 @@
 """文档模版：保存文档地址，支持一键生成用例库"""
 import asyncio
 import json
+import re
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
@@ -23,6 +24,79 @@ from .api_test import (
 from ..core.llm_client import call_llm, estimate_credits_for_apis, estimate_credits_for_openapi_doc
 
 router = APIRouter(prefix="/templates", tags=["templates"])
+
+
+def _extract_cases_json_from_llm(raw: str) -> Tuple[Optional[dict], Optional[str]]:
+    """
+    从大模型返回文本中尽量解析出 {\"cases\": [...]}。
+    返回 (parsed_dict, error_message)。成功时 error_message 为 None。
+    """
+    text = (raw or "").strip()
+    if not text:
+        return None, "返回为空"
+
+    # 1. 去掉 markdown 代码块
+    if "```" in text:
+        for part in text.split("```"):
+            part = part.strip()
+            if part.startswith("json"):
+                part = part[4:].strip()
+            if part.startswith("{"):
+                text = part
+                break
+
+    # 2. 直接解析
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict) and isinstance(parsed.get("cases"), list):
+            return parsed, None
+    except (ValueError, json.JSONDecodeError):
+        pass
+
+    # 3. 找第一个 { 到最后一个匹配的 } 的子串再解析（兼容前后有说明文字）
+    start = text.find("{")
+    if start >= 0:
+        depth = 0
+        end = -1
+        for i in range(start, len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        if end > start:
+            try:
+                parsed = json.loads(text[start : end + 1])
+                if isinstance(parsed, dict) and isinstance(parsed.get("cases"), list):
+                    return parsed, None
+            except (ValueError, json.JSONDecodeError):
+                pass
+
+    # 4. 用正则尝试抽出 "cases": [...] 再包成对象解析
+    match = re.search(r'"cases"\s*:\s*\[', text)
+    if match:
+        begin = match.start()
+        # 从 "cases" 前的 { 开始
+        obj_start = text.rfind("{", 0, begin)
+        if obj_start >= 0:
+            depth = 0
+            for i in range(obj_start, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            parsed = json.loads(text[obj_start : i + 1])
+                            if isinstance(parsed, dict) and isinstance(parsed.get("cases"), list):
+                                return parsed, None
+                        except (ValueError, json.JSONDecodeError):
+                            pass
+                        break
+
+    return None, "无法从返回中解析出有效 JSON 或 cases 数组"
 
 
 class TemplateCreate(BaseModel):
@@ -472,20 +546,9 @@ def _run_generate_cases_job(
                     )
                     raw = str(llm_result.get("content") or "").strip()
                     total_credits_used += int(llm_result.get("credits_used") or 0)
-                    if "```" in raw:
-                        for part in raw.split("```"):
-                            part = part.strip()
-                            if part.startswith("json"):
-                                part = part[4:].strip()
-                            if part.startswith("{"):
-                                raw = part
-                                break
-                    try:
-                        parsed = json.loads(raw)
-                    except (ValueError, json.JSONDecodeError):
-                        parsed = None
-                    if not parsed or not isinstance(parsed, dict):
-                        raise RuntimeError(f"第 {chunk_idx + 1} 批返回的不是有效 JSON，无法解析用例")
+                    parsed, parse_err = _extract_cases_json_from_llm(raw)
+                    if not parsed:
+                        raise RuntimeError(f"第 {chunk_idx + 1} 批{parse_err or '返回的不是有效 JSON'}")
                     raw_cases = parsed.get("cases")
                     if not isinstance(raw_cases, list):
                         raise RuntimeError(f"第 {chunk_idx + 1} 批返回中缺少 cases 数组")
