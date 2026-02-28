@@ -2,7 +2,7 @@
 import asyncio
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..core.credit_flow import add_credit_flow
+from ..core import model_pricing
 from ..db import SessionLocal, get_db
 from ..models import CaseGenerateRecord, CaseLibrary, DocumentTemplate, User
 from .auth import get_current_user
@@ -377,7 +378,7 @@ async def generate_cases_from_template(
         total_cases_approx = (max(int(api_count * 2.5), 10) if use_llm else len(cases))
         if use_llm:
             est_one = estimate_credits_for_openapi_doc(
-                llm_model_id, len(openapi_content or ""), api_count
+                llm_model_id, len(openapi_content or ""), api_count, db=db
             )
             num_chunks_est = max(1, (api_count + 14) // 15)
             if num_chunks_est > 1 and est_one:
@@ -411,7 +412,7 @@ async def generate_cases_from_template(
     try:
         if use_llm:
             est = estimate_credits_for_openapi_doc(
-                llm_model_id, len(openapi_content or ""), api_count
+                llm_model_id, len(openapi_content or ""), api_count, db=db
             )
             est_credits_one = int((est or {}).get("estimated_credits") or 0)
             # 接口多时按分块调用估算，每块约 15 个接口，避免单次输出被截断
@@ -517,6 +518,7 @@ def _run_generate_cases_job(
                 )
                 base_url_str = base_url or ""
                 total_credits_used = 0
+                total_tokens_used = 0
                 for chunk_idx, chunk in enumerate(chunks):
                     sub_paths: Dict[str, dict] = {}
                     for api in chunk:
@@ -543,9 +545,14 @@ def _run_generate_cases_job(
                         user_prompt=user_prompt,
                         temperature=0.3,
                         max_tokens=8192,
+                        db=db,
                     )
                     raw = str(llm_result.get("content") or "").strip()
                     total_credits_used += int(llm_result.get("credits_used") or 0)
+                    usage = llm_result.get("usage") or {}
+                    total_tokens_used += usage.get("total_tokens") or (
+                        usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+                    )
                     parsed, parse_err = _extract_cases_json_from_llm(raw)
                     if not parsed:
                         raise RuntimeError(f"第 {chunk_idx + 1} 批{parse_err or '返回的不是有效 JSON'}")
@@ -580,6 +587,11 @@ def _run_generate_cases_job(
                             f"用例生成补扣（实际消耗 {total_credits_used} 超过预估 {credits_reserved}）",
                             "case_generate",
                             record.id,
+                        )
+                    if total_tokens_used > 0:
+                        period_start = date.today().replace(day=1)
+                        model_pricing.add_usage_period(
+                            db, user.id, llm_model_id, period_start, total_tokens_used
                         )
                     db.commit()
             else:

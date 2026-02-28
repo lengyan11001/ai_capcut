@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     default_credits_for_new_user: int = 30
     # 充值接口密钥：请求头 X-Recharge-Token 与此一致时才允许充值
     recharge_secret: str | None = None
+    # 管理接口密钥：请求头 X-Admin-Token 与此一致时才允许访问 /auth/model-pricing 等
+    admin_secret: str | None = None
+    # 智能对话用量限制（防过度使用，前期内部用可放宽；0 表示不限制）
+    chat_daily_cap_per_user: int = 100  # 每用户每日最多 N 轮对话
+    chat_rate_limit_per_minute: int = 30  # 每用户每分钟最多 N 次请求
 
     class Config:
         env_file = ".env"

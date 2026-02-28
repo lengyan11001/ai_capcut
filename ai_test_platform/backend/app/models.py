@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -106,6 +106,35 @@ class Account(Base):
     # static 型
     static_headers: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # {"Authorization": "Bearer xxx"}
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ModelPricing(Base):
+    """模型价格配置：可调，优先于代码默认。按 input/output 元/百万 token + margin 换算积分。"""
+    __tablename__ = "model_pricing"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    model_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    input_price_per_m: Mapped[float] = mapped_column(Float, nullable=False)
+    output_price_per_m: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)  # CNY / USD
+    margin_factor: Mapped[float] = mapped_column(Float, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class UsagePeriod(Base):
+    """用量统计：用户 × 模型 × 周期，为会员 token 上限预留。"""
+    __tablename__ = "usage_period"
+    __table_args__ = (UniqueConstraint("user_id", "model_id", "period_start", name="uq_usage_period_user_model_period"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    model_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    tokens_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class EmailVerificationCode(Base):

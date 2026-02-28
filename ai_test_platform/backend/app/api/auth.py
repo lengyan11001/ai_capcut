@@ -14,7 +14,7 @@ from ..core.config import settings
 from ..core.credit_flow import add_credit_flow
 from ..core.llm_client import public_llm_pricing
 from ..db import get_db
-from ..models import CreditFlow, EmailVerificationCode, User
+from ..models import CreditFlow, EmailVerificationCode, ModelPricing, User
 from ..core.email_sender import email_sender
 
 
@@ -226,6 +226,94 @@ def recharge(
     db.commit()
     db.refresh(user)
     return {"detail": "充值成功", "credits": user.credits}
+
+
+def _require_admin_token(x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token")):
+    """管理接口：请求头 X-Admin-Token 需与配置一致。"""
+    if not getattr(settings, "admin_secret", None) or (settings.admin_secret or "").strip() == "":
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="未配置管理密钥")
+    if x_admin_token != settings.admin_secret:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="管理密钥错误")
+
+
+class ModelPricingUpdate(BaseModel):
+    """更新模型价格（均为可选，只更新提供的字段）。"""
+    display_name: Optional[str] = None
+    provider: Optional[str] = None
+    input_price_per_m: Optional[float] = None
+    output_price_per_m: Optional[float] = None
+    currency: Optional[str] = None
+    margin_factor: Optional[float] = None
+    enabled: Optional[bool] = None
+
+
+@router.get("/model-pricing", summary="模型价格配置列表（管理端，需 X-Admin-Token）")
+def list_model_pricing(
+    model_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _admin: None = Depends(_require_admin_token),
+):
+    """查询 model_pricing 表。不传 model_id 时返回全部；传则按 model_id 过滤。"""
+    q = db.query(ModelPricing)
+    if model_id is not None and model_id.strip():
+        q = q.filter(ModelPricing.model_id == model_id.strip())
+    rows = q.order_by(ModelPricing.model_id).all()
+    return [
+        {
+            "id": r.id,
+            "model_id": r.model_id,
+            "display_name": r.display_name,
+            "provider": r.provider,
+            "input_price_per_m": r.input_price_per_m,
+            "output_price_per_m": r.output_price_per_m,
+            "currency": r.currency,
+            "margin_factor": r.margin_factor,
+            "enabled": r.enabled,
+            "created_at": r.created_at.isoformat() if r.created_at else "",
+            "updated_at": r.updated_at.isoformat() if r.updated_at else "",
+        }
+        for r in rows
+    ]
+
+
+@router.put("/model-pricing/{model_id}", summary="更新模型价格（管理端，需 X-Admin-Token）")
+def update_model_pricing(
+    model_id: str,
+    payload: ModelPricingUpdate,
+    db: Session = Depends(get_db),
+    _admin: None = Depends(_require_admin_token),
+):
+    """按 model_id 更新一条 model_pricing，仅更新请求体中提供的字段。"""
+    row = db.query(ModelPricing).filter(ModelPricing.model_id == model_id).first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="该 model_id 不存在")
+    if payload.display_name is not None:
+        row.display_name = payload.display_name
+    if payload.provider is not None:
+        row.provider = payload.provider
+    if payload.input_price_per_m is not None:
+        row.input_price_per_m = payload.input_price_per_m
+    if payload.output_price_per_m is not None:
+        row.output_price_per_m = payload.output_price_per_m
+    if payload.currency is not None:
+        row.currency = payload.currency
+    if payload.margin_factor is not None:
+        row.margin_factor = payload.margin_factor
+    if payload.enabled is not None:
+        row.enabled = payload.enabled
+    db.commit()
+    db.refresh(row)
+    return {
+        "model_id": row.model_id,
+        "display_name": row.display_name,
+        "provider": row.provider,
+        "input_price_per_m": row.input_price_per_m,
+        "output_price_per_m": row.output_price_per_m,
+        "currency": row.currency,
+        "margin_factor": row.margin_factor,
+        "enabled": row.enabled,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+    }
 
 
 @router.get("/pricing", summary="计费规则（积分单价，公开）")

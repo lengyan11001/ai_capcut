@@ -96,12 +96,52 @@ def _ensure_case_generate_record_credits_reserved():
         pass
 
 
+def _seed_model_pricing():
+    """首次部署或表为空时，将代码中的 LLM_MODELS 与 openclaw:default 写入 model_pricing。"""
+    from .core.llm_client import LLM_MODELS
+    from .db import SessionLocal
+    from .models import ModelPricing
+
+    db = SessionLocal()
+    try:
+        count = db.query(ModelPricing).count()
+        if count > 0:
+            return
+        for model_id, cfg in LLM_MODELS.items():
+            db.add(ModelPricing(
+                model_id=model_id,
+                display_name=cfg.display_name,
+                provider=cfg.provider,
+                input_price_per_m=cfg.input_price_per_m,
+                output_price_per_m=cfg.output_price_per_m,
+                currency=cfg.currency,
+                margin_factor=cfg.margin_factor,
+                enabled=True,
+            ))
+        db.add(ModelPricing(
+            model_id="openclaw:default",
+            display_name="OpenClaw 智能对话（默认）",
+            provider="openclaw",
+            input_price_per_m=0.28,
+            output_price_per_m=0.42,
+            currency="USD",
+            margin_factor=1.5,
+            enabled=True,
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
 def create_app() -> FastAPI:
     Base.metadata.create_all(bind=engine)
     _ensure_accounts_columns()
     _ensure_user_email_columns()
     _ensure_document_template_columns()
     _ensure_case_generate_record_credits_reserved()
+    _seed_model_pricing()
 
     app = FastAPI(
         title="OpenClaw 控制台 API",
