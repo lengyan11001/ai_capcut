@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..core.credit_flow import add_credit_flow
 from ..core.credits import credits_for_api_test, credits_for_from_doc
 from ..core.llm_client import call_llm, estimate_credits_for_apis
 from ..db import get_db
@@ -220,8 +221,7 @@ async def run_api_test(
 
     passed = resp.status_code == payload.expect_status
 
-    current_user.credits -= need
-    db.add(current_user)
+    add_credit_flow(db, current_user, "deduct", need, "单次接口测试", "api_test", None)
     db.commit()
 
     return ApiTestResult(
@@ -1052,19 +1052,24 @@ async def generate_tests_from_doc(
                     )
                 )
 
-    # 扣除执行用例所需积分
-    current_user.credits -= credits_needed
-
-    # 若存在大模型调用的积分消耗，一并扣除
+    add_credit_flow(
+        db, current_user, "deduct", credits_needed,
+        "从文档执行用例",
+        "from_doc_execute",
+        None,
+    )
     if llm_credits_used and llm_credits_used > 0:
         if current_user.credits < llm_credits_used:
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail=f"积分不足，大模型实际消耗 {llm_credits_used} 积分，当前剩余 {current_user.credits}",
             )
-        current_user.credits -= llm_credits_used
-
-    db.add(current_user)
+        add_credit_flow(
+            db, current_user, "deduct", llm_credits_used,
+            "从文档生成用例-大模型",
+            "from_doc_llm",
+            None,
+        )
     db.commit()
 
     executed = True

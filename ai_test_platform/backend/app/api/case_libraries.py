@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..core.credit_flow import add_credit_flow
 from ..core.credits import credits_for_from_doc
 from ..db import get_db
 from ..models import Account, CaseLibrary, User
@@ -380,8 +381,15 @@ async def execute_library(
                     "request_body": json_body,
                     "request_headers": merged_headers,
                 })
-    current_user.credits -= credits_needed
-    db.add(current_user)
+    add_credit_flow(
+        db,
+        current_user,
+        "deduct",
+        credits_needed,
+        f"执行用例库（{len(cases)} 条）",
+        "execute",
+        lib.id,
+    )
     db.commit()
     passed_count = sum(1 for r in results if r["passed"])
     return {

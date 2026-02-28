@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from ..core.config import settings
 from ..core.llm_client import public_llm_pricing
 from ..db import get_db
-from ..models import EmailVerificationCode, User
+from ..models import CreditFlow, EmailVerificationCode, User
 from ..core.email_sender import email_sender
 
 
@@ -161,6 +161,37 @@ def get_me(current_user: User = Depends(get_current_user)):
         credits=current_user.credits,
         is_email_verified=current_user.is_email_verified,
     )
+
+
+@router.get("/credit-flows", summary="积分资金流水（扣费、退款、充值）")
+def list_credit_flows(
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """当前用户的积分流水，按时间倒序。"""
+    rows = (
+        db.query(CreditFlow)
+        .filter(CreditFlow.user_id == current_user.id)
+        .order_by(CreditFlow.created_at.desc())
+        .offset(offset)
+        .limit(min(limit, 100))
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "flow_type": r.flow_type,
+            "amount": r.amount,
+            "balance_after": r.balance_after,
+            "description": r.description,
+            "related_type": r.related_type,
+            "related_id": r.related_id,
+            "created_at": r.created_at.isoformat() if r.created_at else "",
+        }
+        for r in rows
+    ]
 
 
 @router.get("/pricing", summary="计费规则（积分单价，公开）")

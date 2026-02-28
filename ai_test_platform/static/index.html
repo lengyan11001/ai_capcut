@@ -319,7 +319,7 @@
     <header class="header">
       <div class="logo">AI<span>测试平台</span></div>
       <div class="header-actions" id="headerActions">
-        <span id="headerCredits" class="text-muted" style="font-size: 0.9rem; color: var(--text-muted); display: none;"></span>
+        <span id="headerCredits" class="text-muted" style="font-size: 0.9rem; color: var(--text-muted); display: none; cursor: pointer; text-decoration: underline;" title="点击查看积分流水"></span>
       </div>
     </header>
 
@@ -369,7 +369,7 @@
           <div class="card-label">当前账号</div>
           <div class="card-value" id="userEmail">-</div>
         </div>
-        <div class="card">
+        <div class="card" id="creditsCard" style="cursor: pointer;" title="点击查看积分流水">
           <div class="card-label">剩余积分</div>
           <div class="card-value accent" id="userCredits">0</div>
         </div>
@@ -538,6 +538,23 @@
         <div class="btns">
           <button type="button" id="confirmExecute" class="btn btn-primary">执行</button>
           <button type="button" id="cancelExecute" class="btn btn-ghost">取消</button>
+        </div>
+      </div>
+    </div>
+    <div id="modalCreditFlows" class="modal-mask">
+      <div class="modal" style="max-width: 640px;">
+        <h4>积分流水</h4>
+        <p class="hint" style="margin-bottom: 0.75rem;">扣费、退款、充值记录</p>
+        <div id="creditFlowsList" style="max-height: 60vh; overflow-y: auto;">
+          <table class="records-table" style="width:100%; font-size: 0.85rem;">
+            <thead>
+              <tr><th>时间</th><th>类型</th><th>金额</th><th>余额</th><th>说明</th></tr>
+            </thead>
+            <tbody id="creditFlowsBody"></tbody>
+          </table>
+        </div>
+        <div class="btns" style="margin-top: 1rem;">
+          <button type="button" id="closeCreditFlows" class="btn btn-ghost">关闭</button>
         </div>
       </div>
     </div>
@@ -818,7 +835,57 @@
           loadTemplates();
           loadLlmModels();
           loadGenerateRecords();
+          bindCreditFlowsClick();
         });
+    }
+
+    function openCreditFlowsModal() {
+      document.getElementById('modalCreditFlows').classList.add('visible');
+      loadCreditFlows();
+    }
+    function loadCreditFlows() {
+      var tbody = document.getElementById('creditFlowsBody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted">加载中…</td></tr>';
+      fetch(API_BASE + '/auth/credit-flows?limit=100', { headers: authHeaders() })
+        .then(function(r) {
+          if (r.status === 401) { token = null; localStorage.removeItem('token'); loadDashboard(); return null; }
+          return r.json();
+        })
+        .then(function(list) {
+          if (!tbody) return;
+          if (!Array.isArray(list)) { tbody.innerHTML = '<tr><td colspan="5" class="text-muted">加载失败</td></tr>'; return; }
+          var typeLabel = { deduct: '扣费', refund: '退款', recharge: '充值' };
+          if (list.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="text-muted">暂无记录</td></tr>'; return; }
+          tbody.innerHTML = list.map(function(row) {
+            var type = typeLabel[row.flow_type] || row.flow_type;
+            var amountStr = row.flow_type === 'deduct' ? '-' + row.amount : '+' + row.amount;
+            var amountCls = row.flow_type === 'deduct' ? 'err' : 'ok';
+            var time = row.created_at ? new Date(row.created_at).toLocaleString() : '-';
+            return '<tr><td>' + time + '</td><td>' + type + '</td><td class="' + amountCls + '">' + amountStr + '</td><td>' + (row.balance_after != null ? row.balance_after : '-') + '</td><td>' + (row.description || '-') + '</td></tr>';
+          }).join('');
+        })
+        .catch(function() {
+          if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-muted">加载失败</td></tr>';
+        });
+    }
+    document.getElementById('closeCreditFlows').addEventListener('click', function() {
+      document.getElementById('modalCreditFlows').classList.remove('visible');
+    });
+    document.getElementById('modalCreditFlows').addEventListener('click', function(e) {
+      if (e.target === this) document.getElementById('modalCreditFlows').classList.remove('visible');
+    });
+    function bindCreditFlowsClick() {
+      var headerCredits = document.getElementById('headerCredits');
+      var creditsCard = document.getElementById('creditsCard');
+      if (headerCredits && !headerCredits._flowsBound) {
+        headerCredits._flowsBound = true;
+        headerCredits.addEventListener('click', openCreditFlowsModal);
+      }
+      if (creditsCard && !creditsCard._flowsBound) {
+        creditsCard._flowsBound = true;
+        creditsCard.addEventListener('click', openCreditFlowsModal);
+      }
     }
 
     document.getElementById('logout').addEventListener('click', function() {

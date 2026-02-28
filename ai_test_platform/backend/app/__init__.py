@@ -76,11 +76,32 @@ def _ensure_document_template_columns():
         pass
 
 
+def _ensure_case_generate_record_credits_reserved():
+    """为已有数据库补充 case_generate_records.credits_reserved 列。"""
+    from sqlalchemy import text
+
+    try:
+        with engine.begin() as conn:
+            if "sqlite" in (engine.url.drivername or ""):
+                rp = conn.execute(text("PRAGMA table_info(case_generate_records)"))
+                rows = rp.fetchall()
+                columns = [row[1] for row in rows] if rows else []
+                if "credits_reserved" not in columns:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE case_generate_records ADD COLUMN credits_reserved INTEGER"
+                        )
+                    )
+    except Exception:
+        pass
+
+
 def create_app() -> FastAPI:
     Base.metadata.create_all(bind=engine)
     _ensure_accounts_columns()
     _ensure_user_email_columns()
     _ensure_document_template_columns()
+    _ensure_case_generate_record_credits_reserved()
 
     app = FastAPI(
         title="AI 测试平台 API",

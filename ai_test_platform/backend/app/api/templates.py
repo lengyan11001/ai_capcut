@@ -8,6 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..core.credit_flow import add_credit_flow
 from ..db import SessionLocal, get_db
 from ..models import CaseGenerateRecord, CaseLibrary, DocumentTemplate, User
 from .auth import get_current_user
@@ -338,6 +339,19 @@ async def generate_cases_from_template(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=f"积分不足，本次预计需 {est_credits} 积分，当前 {current_user.credits}",
                 )
+            if est_credits > 0:
+                record.credits_reserved = est_credits
+                db.add(record)
+                add_credit_flow(
+                    db,
+                    current_user,
+                    "deduct",
+                    est_credits,
+                    "用例生成预扣（按预估上限，完成后按实际消耗退款）",
+                    "case_generate",
+                    record.id,
+                )
+                db.commit()
             background_tasks.add_task(
                 _run_generate_cases_job,
                 record_id=record.id,
@@ -453,14 +467,21 @@ def _run_generate_cases_job(
                 if not final_cases:
                     raise RuntimeError("大模型未生成任何有效用例")
 
-                if llm_credits_used > 0:
-                    if user.credits < llm_credits_used:
-                        raise RuntimeError(
-                            f"积分不足，本次大模型生成需 {llm_credits_used} 积分，当前 {user.credits}"
+                # 预扣已在前置请求中完成，此处按实际消耗退款差额
+                credits_reserved = getattr(record, "credits_reserved", None) or 0
+                if credits_reserved > 0 and llm_credits_used is not None:
+                    refund = credits_reserved - llm_credits_used
+                    if refund > 0:
+                        add_credit_flow(
+                            db,
+                            user,
+                            "refund",
+                            refund,
+                            f"用例生成退款（预估 {credits_reserved}，实际消耗 {llm_credits_used}）",
+                            "case_generate",
+                            record.id,
                         )
-                    user.credits -= llm_credits_used
-                    db.add(user)
-                    db.commit()
+                        db.commit()
             else:
                 # 未使用大模型：直接使用规则解析的 cases
                 if not cases:
@@ -497,6 +518,17 @@ def _run_generate_cases_job(
             record.message = detail[:2000]
             record.finished_at = datetime.utcnow()
             db.add(record)
+            credits_reserved = getattr(record, "credits_reserved", None) or 0
+            if credits_reserved > 0:
+                add_credit_flow(
+                    db,
+                    user,
+                    "refund",
+                    credits_reserved,
+                    "用例生成失败，预扣全额退款",
+                    "case_generate",
+                    record.id,
+                )
             db.commit()
     finally:
         db.close()

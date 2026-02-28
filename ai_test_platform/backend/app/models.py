@@ -67,8 +67,24 @@ class CaseGenerateRecord(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)  # running | success | failed
     message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 成功说明或失败原因
     library_id: Mapped[Optional[int]] = mapped_column(ForeignKey("case_libraries.id"), nullable=True)
+    credits_reserved: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 预扣积分（任务结束时按实际消耗退款）
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class CreditFlow(Base):
+    """积分资金流水：扣费、退款、充值等记录"""
+    __tablename__ = "credit_flows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    flow_type: Mapped[str] = mapped_column(String(32), nullable=False)  # deduct | refund | recharge
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)  # 正数：扣费为支出，退款/充值为收入
+    balance_after: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 变动后余额
+    description: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    related_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # case_generate | execute | api_test | recharge
+    related_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class Account(Base):
