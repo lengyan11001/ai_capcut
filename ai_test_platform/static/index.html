@@ -323,14 +323,66 @@
     .chat-input-row textarea { flex: 1; min-height: 2.5rem; padding: 0.6rem 0.8rem; font-size: 0.9rem; color: var(--text); background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: var(--radius-sm); resize: none; font-family: inherit; }
     .chat-input-row textarea:focus { outline: none; border-color: var(--accent); }
     .chat-input-row button:disabled { opacity: 0.6; cursor: not-allowed; }
+    /* 左侧导航 + 主内容布局 */
+    .dashboard-layout { display: flex; gap: 1.5rem; margin-top: 1rem; min-height: 0; }
+    .dashboard-main { flex: 1; min-width: 0; }
+    .content-block { display: none; }
+    .content-block.visible { display: block; }
+    .nav-left {
+      width: 210px; flex-shrink: 0;
+      display: flex; flex-direction: column; gap: 0.25rem;
+      padding: 0.5rem 0; border-right: 1px solid var(--border); padding-right: 1rem;
+    }
+    .nav-left-item {
+      padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); cursor: pointer;
+      font-size: 0.9rem; color: var(--text-muted); transition: color 0.2s, background 0.2s;
+    }
+    .nav-left-item:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+    .nav-left-item.active { color: var(--accent); background: rgba(6, 182, 212, 0.12); font-weight: 500; }
+    .nav-left-sub { margin-left: 0.75rem; margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.15rem; }
+    .nav-left-sub .nav-left-item { font-size: 0.85rem; }
+    /* 右上角用户下拉 */
+    .header-dropdown { position: relative; }
+    .header-dropdown-btn {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.4rem 0.75rem; font-size: 0.875rem; color: var(--text-muted);
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      cursor: pointer; transition: color 0.2s, background 0.2s;
+    }
+    .header-dropdown-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+    .header-dropdown-menu {
+      display: none; position: absolute; right: 0; top: 100%; margin-top: 0.35rem;
+      min-width: 200px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 0.5rem 0; box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 50;
+    }
+    .header-dropdown.open .header-dropdown-menu { display: block; }
+    .header-dropdown-menu a, .header-dropdown-menu button {
+      display: block; width: 100%; text-align: left; padding: 0.5rem 1rem;
+      font-size: 0.875rem; color: var(--text); background: none; border: none; cursor: pointer;
+      text-decoration: none; transition: background 0.2s;
+    }
+    .header-dropdown-menu a:hover, .header-dropdown-menu button:hover { background: rgba(255,255,255,0.06); }
+    .header-dropdown-menu .dropdown-email { color: var(--text-muted); font-size: 0.8rem; padding: 0.35rem 1rem; }
+    .header-dropdown-menu .dropdown-credits { padding: 0.35rem 1rem; font-size: 0.85rem; color: var(--accent); }
+    .chat-msg a { color: var(--accent); text-decoration: underline; }
+    .chat-msg a:hover { color: var(--accent-hover); }
   </style>
 </head>
 <body>
   <div class="page">
     <header class="header">
       <div class="logo">AI<span>测试平台</span></div>
-      <div class="header-actions" id="headerActions">
-        <span id="headerCredits" class="text-muted" style="font-size: 0.9rem; color: var(--text-muted); display: none; cursor: pointer; text-decoration: underline;" title="点击查看积分流水"></span>
+      <div class="header-actions" id="headerActions" style="display: none;">
+        <div class="header-dropdown" id="headerUserDropdown">
+          <button type="button" class="header-dropdown-btn" id="headerDropdownBtn"><span id="headerCredits">0 积分</span> &#9660;</button>
+          <div class="header-dropdown-menu">
+            <div class="dropdown-email" id="userEmail">-</div>
+            <div class="dropdown-credits">剩余 <span id="userCredits">0</span> 积分</div>
+            <button type="button" id="creditsFlowBtn">积分流水</button>
+            <a href="/docs" target="_blank" rel="noopener">打开 API 文档</a>
+            <button type="button" id="logout">退出登录</button>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -374,44 +426,34 @@
     </div>
 
     <div id="dashboard" class="dashboard">
-      <h2>控制台</h2>
-      <div class="cards">
-        <div class="card">
-          <div class="card-label">当前账号</div>
-          <div class="card-value" id="userEmail">-</div>
-        </div>
-        <div class="card" id="creditsCard" style="cursor: pointer;" title="点击查看积分流水">
-          <div class="card-label">剩余积分</div>
-          <div class="card-value accent" id="userCredits">0</div>
-        </div>
-      </div>
-      <div class="card-actions">
-        <a href="/docs" target="_blank" rel="noopener" class="btn btn-primary">打开 API 文档</a>
-        <button type="button" id="logout" class="btn btn-ghost">退出登录</button>
-      </div>
-
-      <div class="card mcp-card" style="margin-top: 1.25rem;">
-        <div class="card-label">Cursor MCP 接入</div>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">若服务端已起 <strong>HTTP MCP</strong>（<code>python -m ai_test_platform.mcp --http</code>），用「复制 HTTP 链接」粘贴到 Cursor 的 MCP 配置的 <code>url</code> 即可，无需 cwd/command。否则用「一键复制 MCP 配置」走 stdio，并将 <code>cwd</code> 改为本机 ai_test_platform 路径。</p>
-        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-          <span style="font-size: 0.9rem; color: var(--text-muted);">Token</span>
-          <span id="tokenMask" style="font-family: monospace; font-size: 0.9rem;">••••••••••••</span>
-        </div>
-        <div class="card-actions" style="margin-top: 0.5rem; margin-bottom: 0;">
-          <button type="button" id="copyTokenBtn" class="btn btn-ghost btn-sm">复制 Token</button>
-          <button type="button" id="copyHttpUrlBtn" class="btn btn-primary btn-sm">复制 HTTP 链接</button>
-          <button type="button" id="copyMcpConfigBtn" class="btn btn-ghost btn-sm">一键复制 MCP 配置（stdio）</button>
-        </div>
-      </div>
-
-      <div class="dash-tabs">
-        <button type="button" data-panel="panel-templates" class="active">文档模版</button>
-        <button type="button" data-panel="panel-libraries">用例库</button>
-        <button type="button" data-panel="panel-chat">智能对话</button>
-        <button type="button" data-panel="panel-accounts">账号列表</button>
-      </div>
-
-      <div id="panel-templates" class="dash-panel visible">
+      <div class="dashboard-layout">
+        <nav class="nav-left">
+          <div class="nav-left-item active" data-view="chat">智能对话</div>
+          <div class="nav-left-item" data-view="skill">Skill 库</div>
+          <div class="nav-left-sub" id="navSkillSub" style="display: none;">
+            <div class="nav-left-item" data-view="skill-testAI">testAI</div>
+            <div class="nav-left-item" data-view="skill-sutui">速推</div>
+          </div>
+        </nav>
+        <div class="dashboard-main">
+          <div id="content-chat" class="content-block visible">
+            <h3 style="margin-bottom: 0.5rem;">智能对话</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">通过自然语言描述需求，将自动调用 MCP 工具（接口测试、用例生成等）。需在服务端配置并启动 OpenClaw Gateway。</p>
+            <div class="chat-panel card" style="max-width: 720px;">
+              <div id="chatMessages" class="chat-messages"></div>
+              <div class="chat-input-row">
+                <textarea id="chatInput" rows="1" placeholder="输入消息，例如：帮我查一下当前积分"></textarea>
+                <button type="button" id="chatSendBtn" class="btn btn-primary">发送</button>
+              </div>
+            </div>
+          </div>
+          <div id="content-skill-testAI" class="content-block">
+            <div class="dash-tabs" style="margin-bottom: 1rem;">
+              <button type="button" data-skill-panel="panel-templates" class="active">文档模版</button>
+              <button type="button" data-skill-panel="panel-libraries">用例库</button>
+              <button type="button" data-skill-panel="panel-accounts">账号列表</button>
+            </div>
+            <div id="panel-templates" class="dash-panel visible">
         <h3 style="margin-bottom: 0.75rem;">文档模版</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">保存接口文档模版（在线链接或本地文件），在模版列表中选择模型后点击「生成用例」可生成用例库。</p>
         <div class="doc-test-card" style="max-width: none;">
@@ -445,18 +487,6 @@
           <h4 style="font-size: 0.95rem; margin-bottom: 0.5rem;">用例生成记录</h4>
           <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">每次创建用例（含使用大模型）都会记录，成功或失败原因在下方展示。</p>
           <div id="generateRecordsList" class="list-block"></div>
-        </div>
-      </div>
-
-      <div id="panel-chat" class="dash-panel">
-        <h3 style="margin-bottom: 0.5rem;">智能对话</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">通过自然语言描述需求，将自动调用 MCP 工具（接口测试、用例生成等）。需在服务端配置并启动 OpenClaw Gateway。</p>
-        <div class="chat-panel card" style="max-width: 720px;">
-          <div id="chatMessages" class="chat-messages"></div>
-          <div class="chat-input-row">
-            <textarea id="chatInput" rows="1" placeholder="输入消息，例如：帮我查一下当前积分"></textarea>
-            <button type="button" id="chatSendBtn" class="btn btn-primary">发送</button>
-          </div>
         </div>
       </div>
 
@@ -526,7 +556,32 @@
         <div id="accountList" style="margin-top: 1.5rem;"></div>
       </div>
 
-      <p class="dashboard-footer">
+            <div class="card mcp-card" style="margin-top: 1.5rem;">
+              <div class="card-label">Cursor MCP 接入</div>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">若服务端已起 <strong>HTTP MCP</strong>（<code>python -m ai_test_platform.mcp --http</code>），用「复制 HTTP 链接」粘贴到 Cursor 的 MCP 配置的 <code>url</code> 即可，无需 cwd/command。否则用「一键复制 MCP 配置」走 stdio，并将 <code>cwd</code> 改为本机 ai_test_platform 路径。</p>
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                <span style="font-size: 0.9rem; color: var(--text-muted);">Token</span>
+                <span id="tokenMask" style="font-family: monospace; font-size: 0.9rem;">••••••••••••</span>
+              </div>
+              <div class="card-actions" style="margin-top: 0.5rem; margin-bottom: 0;">
+                <button type="button" id="copyTokenBtn" class="btn btn-ghost btn-sm">复制 Token</button>
+                <button type="button" id="copyHttpUrlBtn" class="btn btn-primary btn-sm">复制 HTTP 链接</button>
+                <button type="button" id="copyMcpConfigBtn" class="btn btn-ghost btn-sm">一键复制 MCP 配置（stdio）</button>
+              </div>
+            </div>
+            <div class="card-actions" style="margin-top: 1rem;">
+              <a href="/docs" target="_blank" rel="noopener" class="btn btn-primary">打开 API 文档</a>
+            </div>
+          </div>
+          <div id="content-skill-sutui" class="content-block">
+            <h3 style="margin-bottom: 0.75rem;">速推</h3>
+            <p style="font-size: 0.9rem; color: var(--text); margin-bottom: 1rem;">速推已接入 OpenClaw，可在「智能对话」中通过自然语言使用画图、视频等能力。</p>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">了解更多与 API 接入请访问：</p>
+            <a href="https://ts-api.fyshark.com" target="_blank" rel="noopener noreferrer" class="btn btn-primary">速推开放平台</a>
+          </div>
+        </div>
+      </div>
+      <p class="dashboard-footer" style="margin-top: 1.5rem;">
         在 API 文档中可进行单次接口测试、从 Swagger/OpenAPI 地址生成并执行用例；每次调用将按规则扣除积分。
       </p>
     </div>
@@ -784,7 +839,7 @@
       if (!token) {
         document.getElementById('authPanel').style.display = 'block';
         document.getElementById('dashboard').classList.remove('visible');
-        document.getElementById('headerCredits').style.display = 'none';
+        document.getElementById('headerActions').style.display = 'none';
         return;
       }
       fetch(API_BASE + '/auth/me', { headers: { 'Authorization': 'Bearer ' + token } })
@@ -797,7 +852,7 @@
           document.getElementById('userEmail').textContent = d.email;
           document.getElementById('userCredits').textContent = d.credits;
           document.getElementById('headerCredits').textContent = d.credits + ' 积分';
-          document.getElementById('headerCredits').style.display = 'inline';
+          document.getElementById('headerActions').style.display = 'flex';
           document.getElementById('authPanel').style.display = 'none';
           document.getElementById('dashboard').classList.add('visible');
           var maskEl = document.getElementById('tokenMask');
@@ -900,24 +955,19 @@
       if (e.target === this) document.getElementById('modalCreditFlows').classList.remove('visible');
     });
     function bindCreditFlowsClick() {
-      var headerCredits = document.getElementById('headerCredits');
-      var creditsCard = document.getElementById('creditsCard');
-      if (headerCredits && !headerCredits._flowsBound) {
-        headerCredits._flowsBound = true;
-        headerCredits.addEventListener('click', openCreditFlowsModal);
-      }
-      if (creditsCard && !creditsCard._flowsBound) {
-        creditsCard._flowsBound = true;
-        creditsCard.addEventListener('click', openCreditFlowsModal);
+      var creditsFlowBtn = document.getElementById('creditsFlowBtn');
+      if (creditsFlowBtn && !creditsFlowBtn._flowsBound) {
+        creditsFlowBtn._flowsBound = true;
+        creditsFlowBtn.addEventListener('click', openCreditFlowsModal);
       }
     }
 
     document.getElementById('logout').addEventListener('click', function() {
       token = null;
       localStorage.removeItem('token');
-      document.getElementById('dashboard').classList.remove('visible');
+        document.getElementById('dashboard').classList.remove('visible');
       document.getElementById('authPanel').style.display = 'block';
-      document.getElementById('headerCredits').style.display = 'none';
+      document.getElementById('headerActions').style.display = 'none';
     });
 
     function authHeaders() {
@@ -929,27 +979,76 @@
     var currentLibraryCases = [];
     var currentEditingAccountId = null;
 
-    document.querySelectorAll('.dash-tabs button').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        document.querySelectorAll('.dash-tabs button').forEach(function(b) { b.classList.remove('active'); });
-        document.querySelectorAll('.dash-panel').forEach(function(p) { p.classList.remove('visible'); });
-        btn.classList.add('active');
-        var panel = document.getElementById(btn.dataset.panel);
-        if (panel) panel.classList.add('visible');
-        if (btn.dataset.panel === 'panel-templates') { loadTemplates(); loadGenerateRecords(); }
-        if (btn.dataset.panel === 'panel-libraries') { loadLibraries(); loadLlmModels(); }
-        if (btn.dataset.panel === 'panel-accounts') loadAccounts();
+    var currentView = 'chat';
+    var skillPanelLoaded = { templates: false, libraries: false, accounts: false };
+    document.querySelectorAll('.nav-left-item').forEach(function(el) {
+      el.addEventListener('click', function() {
+        var view = el.dataset.view;
+        if (!view) return;
+        if (view === 'skill') {
+          var sub = document.getElementById('navSkillSub');
+          if (sub) sub.style.display = sub.style.display === 'none' ? 'block' : 'none';
+          return;
+        }
+        document.querySelectorAll('.nav-left-item').forEach(function(b) { b.classList.remove('active'); });
+        if (view === 'chat') {
+          document.getElementById('navSkillSub').style.display = 'none';
+          el.classList.add('active');
+        } else {
+          document.querySelectorAll('.nav-left-item[data-view="skill"]').forEach(function(b) { b.classList.add('active'); });
+          document.getElementById('navSkillSub').style.display = 'block';
+          el.classList.add('active');
+        }
+        document.querySelectorAll('.content-block').forEach(function(p) { p.classList.remove('visible'); });
+        var contentId = view === 'chat' ? 'content-chat' : 'content-' + view;
+        var contentEl = document.getElementById(contentId);
+        if (contentEl) contentEl.classList.add('visible');
+        currentView = view;
+        if (view === 'skill-testAI') {
+          if (!skillPanelLoaded.templates) { loadTemplates(); loadGenerateRecords(); skillPanelLoaded.templates = true; }
+          if (!skillPanelLoaded.libraries) { loadLibraries(); loadLlmModels(); skillPanelLoaded.libraries = true; }
+          if (!skillPanelLoaded.accounts) { loadAccounts(); skillPanelLoaded.accounts = true; }
+        }
       });
     });
+    document.querySelectorAll('#content-skill-testAI .dash-tabs button[data-skill-panel]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var panelId = btn.dataset.skillPanel;
+        if (!panelId) return;
+        document.querySelectorAll('#content-skill-testAI .dash-tabs button').forEach(function(b) { b.classList.remove('active'); });
+        document.querySelectorAll('#content-skill-testAI .dash-panel').forEach(function(p) { p.classList.remove('visible'); });
+        btn.classList.add('active');
+        var panel = document.getElementById(panelId);
+        if (panel) panel.classList.add('visible');
+        if (panelId === 'panel-templates') { loadTemplates(); loadGenerateRecords(); }
+        if (panelId === 'panel-libraries') { loadLibraries(); loadLlmModels(); }
+        if (panelId === 'panel-accounts') loadAccounts();
+      });
+    });
+    (function initDropdown() {
+      var dropdown = document.getElementById('headerUserDropdown');
+      var btn = document.getElementById('headerDropdownBtn');
+      if (dropdown && btn) {
+        btn.addEventListener('click', function(e) { e.stopPropagation(); dropdown.classList.toggle('open'); });
+        document.addEventListener('click', function() { dropdown.classList.remove('open'); });
+      }
+      var creditsFlowBtn = document.getElementById('creditsFlowBtn');
+      if (creditsFlowBtn) creditsFlowBtn.addEventListener('click', function() { dropdown.classList.remove('open'); openCreditFlowsModal(); });
+    })();
 
     var chatHistory = [];
+    function linkifyText(text) {
+      var escaped = (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      return escaped.replace(/(https?:\/\/[^\s<>]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+    }
     function appendChatMessage(role, content) {
       var container = document.getElementById('chatMessages');
       if (!container) return;
       var div = document.createElement('div');
       div.className = 'chat-msg ' + role;
       var text = (content || '').trim() || '（无内容）';
-      div.innerHTML = '<div class="role">' + (role === 'user' ? '我' : '助手') + '</div>' + escapeHtml(text);
+      var html = linkifyText(text);
+      div.innerHTML = '<div class="role">' + (role === 'user' ? '我' : '助手') + '</div>' + html;
       container.appendChild(div);
       container.scrollTop = container.scrollHeight;
     }
