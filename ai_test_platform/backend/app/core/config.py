@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # OpenClaw Gateway：配置后 /chat 将代理到 OpenClaw 的 Chat Completions，实现会话 + MCP 调用
     openclaw_gateway_url: str | None = None  # 如 http://127.0.0.1:18789
     openclaw_gateway_token: str | None = None  # Gateway 鉴权 token
+    # 新用户注册赠送积分（控制成本）
+    default_credits_for_new_user: int = 30
+    # 充值接口密钥：请求头 X-Recharge-Token 与此一致时才允许充值
+    recharge_secret: str | None = None
 
     class Config:
         env_file = ".env"

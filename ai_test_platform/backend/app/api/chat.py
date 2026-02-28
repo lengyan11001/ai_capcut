@@ -14,7 +14,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from sqlalchemy.orm import Session
+
 from ..core.config import settings
+from ..core.credit_flow import add_credit_flow
+from ..core.credits import credits_for_chat
+from ..db import get_db
 from .auth import get_current_user
 from ..models import User
 
@@ -48,8 +53,18 @@ def _openclaw_available() -> bool:
 
 
 @router.post("/chat", response_model=ChatResponse, summary="智能对话（OpenClaw）")
-async def chat_endpoint(payload: ChatRequest, current_user: User = Depends(get_current_user)):
-    """将用户消息与历史转发到 OpenClaw Gateway 的 Chat Completions。"""
+async def chat_endpoint(
+    payload: ChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """将用户消息与历史转发到 OpenClaw Gateway 的 Chat Completions；每轮扣积分。"""
+    need = credits_for_chat()
+    if current_user.credits < need:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"积分不足，智能对话每轮需 {need} 积分，当前 {current_user.credits}，请充值后再试",
+        )
     if _openclaw_available():
         base = settings.openclaw_gateway_url.strip().rstrip("/")
         url = f"{base}/v1/chat/completions"
@@ -97,6 +112,10 @@ async def chat_endpoint(payload: ChatRequest, current_user: User = Depends(get_c
                 )
             msg = choices[0].get("message") or {}
             reply = msg.get("content") or ""
+            user = db.query(User).filter(User.id == current_user.id).first()
+            if user:
+                add_credit_flow(db, user, "deduct", need, "智能对话", "chat", None)
+                db.commit()
             out = ChatResponse(reply=reply.strip() or "（无回复内容）")
             return JSONResponse(
                 content=out.model_dump(),

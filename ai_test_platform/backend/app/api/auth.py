@@ -4,13 +4,14 @@ from typing import Optional
 import random
 
 import bcrypt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..core.credit_flow import add_credit_flow
 from ..core.llm_client import public_llm_pricing
 from ..db import get_db
 from ..models import CreditFlow, EmailVerificationCode, User
@@ -113,10 +114,11 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="该邮箱已注册")
 
+    default_credits = getattr(settings, "default_credits_for_new_user", 30)
     user = User(
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
-        credits=100,
+        credits=default_credits,
         is_email_verified=False,
     )
     db.add(user)
@@ -194,6 +196,38 @@ def list_credit_flows(
     ]
 
 
+class RechargeIn(BaseModel):
+    """充值请求：user_id 或 email 二选一，amount 为正整数。"""
+    user_id: Optional[int] = None
+    email: Optional[EmailStr] = None
+    amount: int = Field(..., gt=0, description="充值积分数量")
+
+
+@router.post("/recharge", summary="充值积分（需 X-Recharge-Token 与配置一致）")
+def recharge(
+    payload: RechargeIn,
+    db: Session = Depends(get_db),
+    x_recharge_token: Optional[str] = Header(None, alias="X-Recharge-Token"),
+):
+    """管理端或支付回调为指定用户增加积分。请求头 X-Recharge-Token 需与 .env 中 RECHARGE_SECRET 一致。"""
+    if not getattr(settings, "recharge_secret", None) or settings.recharge_secret.strip() == "":
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="未配置充值密钥")
+    if x_recharge_token != settings.recharge_secret:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="充值密钥错误")
+    if payload.user_id is not None:
+        user = db.query(User).filter(User.id == payload.user_id).first()
+    elif payload.email:
+        user = get_user_by_email(db, payload.email)
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请提供 user_id 或 email")
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+    add_credit_flow(db, user, "recharge", payload.amount, "充值", "recharge", None)
+    db.commit()
+    db.refresh(user)
+    return {"detail": "充值成功", "credits": user.credits}
+
+
 @router.get("/pricing", summary="计费规则（积分单价，公开）")
 def get_pricing():
     from ..core.credits import CREDITS_PER_CALL
@@ -203,6 +237,7 @@ def get_pricing():
             {"name": "run_api_test", "credits": CREDITS_PER_CALL["api_test"], "desc": "单次接口测试"},
             {"name": "from_doc_execute", "credits_per_case": CREDITS_PER_CALL["from_doc_execute"], "desc": "从文档执行每条用例"},
             {"name": "from_doc_generate", "credits": CREDITS_PER_CALL["from_doc_generate"], "desc": "仅生成用例不执行"},
+            {"name": "chat", "credits": CREDITS_PER_CALL.get("chat", 3), "desc": "智能对话每轮"},
         ],
         "llm": public_llm_pricing(),
     }

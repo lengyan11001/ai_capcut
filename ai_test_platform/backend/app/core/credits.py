@@ -7,13 +7,20 @@ from typing import Dict
 # 单次调用消耗积分（可后续改为从配置/数据库读取）
 CREDITS_PER_CALL: Dict[str, int] = {
     "api_test": 1,           # 单接口测试 1 次
-    "from_doc_generate": 0, # 仅从文档生成用例不执行：暂不扣费，或按文档大小扣
-    "from_doc_execute": 1,  # 从文档生成的每条用例执行：1 积分/条
+    "from_doc_generate": 0,  # 仅从文档生成用例不执行：暂不扣费
+    "from_doc_execute": 1,   # 从文档生成的每条用例执行：1 积分/条
+    "chat": 3,               # 智能对话每轮（1 条用户消息 + 1 条回复）
 }
 # 后续可加：report_export=10, playwright_run=5 等
 
+
 def credits_for_api_test() -> int:
     return CREDITS_PER_CALL["api_test"]
+
+
+def credits_for_chat() -> int:
+    return CREDITS_PER_CALL["chat"]
+
 
 def credits_for_from_doc(only_generate: bool, case_count: int) -> int:
     if only_generate:

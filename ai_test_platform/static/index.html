@@ -1352,6 +1352,12 @@
             var reply = (x.data && x.data.reply) ? x.data.reply : '';
             appendAssistantMessageReveal(reply);
             chatHistory.push({ role: 'assistant', content: reply });
+            fetch(API_BASE + '/auth/me', { headers: authHeaders() }).then(function(r) { return r.json(); }).then(function(d) {
+              if (d && d.credits != null) {
+                var el = document.getElementById('userCredits'); if (el) el.textContent = d.credits;
+                var h = document.getElementById('headerCredits'); if (h) h.textContent = d.credits + ' 积分';
+              }
+            }).catch(function() {});
           } else {
             var errMsg = (x.data && x.data.detail) ? x.data.detail : ('请求失败 ' + (x.status || ''));
             appendChatMessage('assistant', '错误：' + errMsg);
