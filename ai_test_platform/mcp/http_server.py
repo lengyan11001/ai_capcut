@@ -5,13 +5,13 @@
 - 传输：符合 MCP Streamable HTTP 规范的最简实现：
   - 只实现 POST JSON 响应，不实现 SSE（GET /mcp 返回 405）
   - 仅支持 initialize / tools/list / tools/call，其他方法返回 -32601
-- 鉴权：从 query 参数 `token`（或 `api_key`）读取平台 JWT，转发到测试平台后端。
+- 鉴权：从 query 参数 `token`（或 `api_key`）读取用户 JWT，转发到控制台后端。
 
 Cursor / Claude 等客户端的配置示例：
 
   "mcpServers": {
     "ai-test-platform": {
-      "url": "http://host:8001/mcp?token=用户平台JWT"
+      "url": "http://host:8001/mcp?token=用户JWT"
     }
   }
 """
@@ -170,7 +170,7 @@ def _tool_definitions() -> List[Dict[str, Any]]:
 
 
 async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str]) -> Tuple[List[Dict[str, Any]], bool]:
-    """根据工具名调用测试平台后端，返回 (content, is_error)。"""
+    """根据工具名调用控制台后端，返回 (content, is_error)。"""
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             if name == "run_api_test":
@@ -288,7 +288,7 @@ async def _handle_single_message(msg: Dict[str, Any], request: Request) -> Optio
                 "name": "ai-test-platform-http-mcp",
                 "version": "0.1.0",
             },
-            "instructions": "调用测试平台 API：单接口测试、从 OpenAPI 文档生成/执行用例、查积分与计费。",
+            "instructions": "调用控制台 API：API 测试、从 OpenAPI 文档生成/执行用例、查积分与计费。",
         }
         return {
             "jsonrpc": "2.0",

@@ -1,4 +1,4 @@
-"""对话接口：代理到 OpenClaw Gateway Chat Completions，实现会话理解意图并调用 MCP。"""
+"""对话接口：代理到 OpenClaw Gateway Chat Completions。"""
 from typing import Any, List, Optional
 
 import httpx
@@ -35,9 +35,9 @@ def _openclaw_available() -> bool:
     )
 
 
-@router.post("/chat", response_model=ChatResponse, summary="智能对话（OpenClaw + MCP）")
+@router.post("/chat", response_model=ChatResponse, summary="智能对话（OpenClaw）")
 async def chat_endpoint(payload: ChatRequest, current_user: User = Depends(get_current_user)):
-    """将用户消息与历史转发到 OpenClaw Gateway 的 Chat Completions，由 OpenClaw 理解意图并调用 MCP 工具。"""
+    """将用户消息与历史转发到 OpenClaw Gateway 的 Chat Completions。"""
     if _openclaw_available():
         base = settings.openclaw_gateway_url.strip().rstrip("/")
         url = f"{base}/v1/chat/completions"
@@ -85,11 +85,10 @@ async def chat_endpoint(payload: ChatRequest, current_user: User = Depends(get_c
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=f"无法连接 OpenClaw Gateway: {e!s}",
             ) from e
-    # 未配置 OpenClaw 时返回占位说明
+    # 未启用智能对话时返回占位说明
     reply = (
         f"你说的是：{payload.message}\n\n"
-        "当前未配置 OpenClaw Gateway，对话能力为占位。\n"
-        "请在服务器配置 OPENCLAW_GATEWAY_URL 与 OPENCLAW_GATEWAY_TOKEN，并启动 OpenClaw Gateway，"
-        "即可通过会话理解意图并调用 MCP（接口测试、用例生成等）。详见文档 OPENCLAW_SERVER_SETUP.md。"
+        "当前未启用智能对话。\n"
+        "请联系管理员启用 OpenClaw 服务后再试。"
     )
     return ChatResponse(reply=reply)

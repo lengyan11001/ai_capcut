@@ -1,1 +1,1 @@
-# MCP Server for AI 测试平台
+# MCP Server for OpenClaw 控制台

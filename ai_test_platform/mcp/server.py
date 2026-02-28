@@ -1,4 +1,4 @@
-"""MCP Server：暴露测试平台能力给 Cursor 等 MCP 客户端。"""
+"""MCP Server：暴露工具能力给 MCP 客户端。"""
 import json
 from typing import Any, Dict, List, Optional
 
@@ -7,8 +7,8 @@ from mcp.server.fastmcp import FastMCP
 from . import client
 
 mcp = FastMCP(
-    name="AI 测试平台",
-    instructions="调用测试平台 API：单接口测试、从 OpenAPI 文档生成/执行用例、查积分与计费。需配置 AI_TEST_PLATFORM_BASE_URL 与 AI_TEST_PLATFORM_TOKEN。",
+    name="OpenClaw 控制台",
+    instructions="提供一组工具能力：API 测试、从 OpenAPI 文档生成/执行用例、查积分与计费。需配置 AI_TEST_PLATFORM_BASE_URL 与 AI_TEST_PLATFORM_TOKEN。",
 )
 
 

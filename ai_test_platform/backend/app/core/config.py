@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    app_name: str = "AI 测试平台"
+    app_name: str = "OpenClaw 控制台"
     environment: str = "dev"
     debug: bool = True
     secret_key: str = "CHANGE_ME_TO_A_RANDOM_SECRET_IN_PRODUCTION"

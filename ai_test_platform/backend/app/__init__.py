@@ -104,9 +104,9 @@ def create_app() -> FastAPI:
     _ensure_case_generate_record_credits_reserved()
 
     app = FastAPI(
-        title="AI 测试平台 API",
+        title="OpenClaw 控制台 API",
         version="0.1.0",
-        description="对话式测试平台后端（起步阶段）",
+        description="OpenClaw 控制台后端",
     )
 
     app.add_middleware(

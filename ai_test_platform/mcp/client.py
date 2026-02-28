@@ -1,4 +1,4 @@
-"""HTTP 客户端：调用测试平台后端 API，鉴权用 Bearer token。"""
+"""HTTP 客户端：调用控制台后端 API，鉴权用 Bearer token。"""
 import os
 from typing import Any, Dict, Optional
 

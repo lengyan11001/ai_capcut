@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI 测试平台 · 对话式接口测试</title>
+  <title>OpenClaw 控制台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -436,7 +436,7 @@
 <body>
   <div class="page">
     <header class="header">
-      <div class="logo">AI<span>测试平台</span></div>
+      <div class="logo">OpenClaw<span>控制台</span></div>
       <div class="header-actions" id="headerActions" style="display: none;">
         <div class="header-dropdown" id="headerUserDropdown">
           <button type="button" class="header-dropdown-btn" id="headerDropdownBtn"><span id="headerCredits">0 积分</span> &#9660;</button>
@@ -452,8 +452,8 @@
     </header>
 
     <section class="hero">
-      <h1>对话式接口测试</h1>
-      <p>接入 Swagger/OpenAPI，一键生成用例并执行，按积分计费，开放 API 与 MCP</p>
+      <h1>多工具智能工作台</h1>
+      <p>统一管理已接入的能力与服务，用对话完成任务</p>
     </section>
 
     <div id="authPanel">
@@ -505,7 +505,7 @@
             <div class="chat-area-wrap">
               <div class="chat-main">
                 <h3 style="margin-bottom: 0.5rem;">智能对话</h3>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">通过自然语言描述需求，将自动调用 MCP 工具（接口测试、用例生成等）。需在服务端配置并启动 OpenClaw Gateway。</p>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">用自然语言描述你想完成的任务，助手会自动选择并调用已接入的能力。</p>
                 <div class="chat-panel card" style="max-width: 720px;">
                   <div id="chatMessages" class="chat-messages"></div>
                   <div class="chat-input-row">
@@ -631,8 +631,8 @@
       </div>
 
             <div class="card mcp-card" style="margin-top: 1.5rem;">
-              <div class="card-label">Cursor MCP 接入</div>
-              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">若服务端已起 <strong>HTTP MCP</strong>（<code>python -m ai_test_platform.mcp --http</code>），用「复制 HTTP 链接」粘贴到 Cursor 的 MCP 配置的 <code>url</code> 即可，无需 cwd/command。否则用「一键复制 MCP 配置」走 stdio，并将 <code>cwd</code> 改为本机 ai_test_platform 路径。</p>
+              <div class="card-label">Cursor 接入</div>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">若服务端已提供 HTTP 工具入口（<code>python -m ai_test_platform.mcp --http</code>），可直接使用「复制 HTTP 链接」填入 Cursor 配置的 <code>url</code>。否则可用「一键复制配置（stdio）」并将 <code>cwd</code> 改为本机 ai_test_platform 路径。</p>
               <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
                 <span style="font-size: 0.9rem; color: var(--text-muted);">Token</span>
                 <span id="tokenMask" style="font-family: monospace; font-size: 0.9rem;">••••••••••••</span>
@@ -646,7 +646,7 @@
             <div class="card-actions" style="margin-top: 1rem;">
               <a href="/docs" target="_blank" rel="noopener" class="btn btn-primary">打开 API 文档</a>
             </div>
-            <p class="skill-testai-footer">在 API 文档中可进行单次接口测试、从 Swagger/OpenAPI 地址生成并执行用例；每次调用将按规则扣除积分。</p>
+            <p class="skill-testai-footer">testAI 提供 API 测试与用例生成等能力，按积分计费。</p>
           </div>
           <div id="content-skill-sutui" class="content-block">
             <h3 style="margin-bottom: 0.75rem;">速推</h3>
