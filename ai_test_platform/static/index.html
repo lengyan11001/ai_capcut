@@ -221,12 +221,9 @@
     .btn-ghost:hover { background: rgba(255, 255, 255, 0.1); }
     #logout.btn-ghost { color: var(--text-muted); }
     .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
-    .dashboard-footer {
-      margin-top: 2rem;
-      padding-top: 1.5rem;
-      border-top: 1px solid var(--border);
-      font-size: 0.875rem;
-      color: var(--text-muted);
+    .skill-testai-footer {
+      margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);
+      font-size: 0.8rem; color: var(--text-muted);
     }
     .doc-test-card {
       margin-top: 2rem;
@@ -317,8 +314,9 @@
     .chat-messages { flex: 1; overflow-y: auto; padding: 0.75rem 0; display: flex; flex-direction: column; gap: 0.75rem; }
     .chat-msg { max-width: 85%; padding: 0.65rem 0.9rem; border-radius: var(--radius-sm); font-size: 0.9rem; white-space: pre-wrap; word-break: break-word; }
     .chat-msg.user { align-self: flex-end; background: var(--accent); color: #0a0a0f; }
+    .chat-msg.user .role { font-size: 0.8rem; font-weight: 600; color: rgba(0,0,0,0.75); margin-bottom: 0.25rem; }
     .chat-msg.assistant { align-self: flex-start; background: var(--bg-card); border: 1px solid var(--border); }
-    .chat-msg .role { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem; }
+    .chat-msg.assistant .role { font-size: 0.8rem; font-weight: 600; color: var(--accent); margin-bottom: 0.25rem; }
     .chat-input-row { display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border); flex-shrink: 0; }
     .chat-input-row textarea { flex: 1; min-height: 2.5rem; padding: 0.6rem 0.8rem; font-size: 0.9rem; color: var(--text); background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: var(--radius-sm); resize: none; font-family: inherit; }
     .chat-input-row textarea:focus { outline: none; border-color: var(--accent); }
@@ -366,6 +364,73 @@
     .header-dropdown-menu .dropdown-credits { padding: 0.35rem 1rem; font-size: 0.85rem; color: var(--accent); }
     .chat-msg a { color: var(--accent); text-decoration: underline; }
     .chat-msg a:hover { color: var(--accent-hover); }
+    /* 智能对话：左侧聊天 + 右侧历史列表 */
+    .chat-area-wrap { display: flex; gap: 1rem; min-height: 0; align-items: stretch; }
+    .chat-main { flex: 1; min-width: 0; }
+    .chat-history-sidebar {
+      width: 260px; flex-shrink: 0;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 0.75rem; display: flex; flex-direction: column; min-height: 420px;
+    }
+    .chat-history-sidebar .search-input {
+      width: 100%; padding: 0.45rem 0.65rem; margin-bottom: 0.5rem;
+      font-size: 0.85rem; color: var(--text); background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border); border-radius: var(--radius-sm); outline: none;
+    }
+    .chat-history-sidebar .search-input::placeholder { color: var(--text-muted); }
+    .chat-history-sidebar .btn-new-session {
+      width: 100%; margin-bottom: 0.75rem; padding: 0.5rem 0.75rem;
+      font-size: 0.875rem; justify-content: center;
+    }
+    .chat-session-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.25rem; }
+    .chat-session-item {
+      padding: 0.5rem 0.6rem; border-radius: var(--radius-sm); cursor: pointer;
+      border: 1px solid transparent; transition: background 0.2s, border-color 0.2s;
+    }
+    .chat-session-item:hover { background: rgba(255,255,255,0.05); }
+    .chat-session-item.active { background: rgba(6, 182, 212, 0.12); border-color: var(--accent); }
+    .chat-session-item .session-title {
+      font-size: 0.875rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .chat-session-item .session-preview {
+      font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .chat-session-item .session-time { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.15rem; }
+
+    /* 手机端适配 */
+    @media (max-width: 768px) {
+      .page { padding: 1rem 0.75rem; }
+      .header { margin-bottom: 1.5rem; padding-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem; }
+      .logo { font-size: 1.15rem; }
+      .hero { margin-bottom: 1.5rem; }
+      .hero h1 { font-size: 1.5rem; }
+      .hero p { font-size: 0.9rem; }
+      .dashboard-layout { flex-direction: column; margin-top: 0.75rem; }
+      .nav-left {
+        width: 100%; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border);
+        padding: 0.5rem 0 0.75rem; margin-bottom: 0.5rem;
+      }
+      .nav-left-item { flex: 1; min-width: 0; text-align: center; padding: 0.5rem 0.35rem; font-size: 0.85rem; }
+      .nav-left-sub { margin-left: 0; margin-top: 0.35rem; width: 100%; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 0.25rem; }
+      .nav-left-sub .nav-left-item { flex: none; }
+      .chat-area-wrap { flex-direction: column; }
+      .chat-history-sidebar { width: 100%; min-height: 200px; max-height: 280px; }
+      .chat-main h3 { font-size: 1rem; }
+      .chat-panel { height: 360px; }
+      .chat-panel.card { max-width: none; }
+      .chat-input-row { flex-wrap: wrap; }
+      .chat-input-row textarea { min-height: 2.2rem; }
+      .header-dropdown-menu { left: 0; right: auto; min-width: 180px; }
+      .card-actions { flex-wrap: wrap; }
+      .btn { padding: 0.5rem 0.85rem; font-size: 0.85rem; }
+      .cards { grid-template-columns: 1fr; }
+      .doc-test-card { padding: 1rem; }
+      .doc-test-card .row2 { grid-template-columns: 1fr; }
+      .modal { width: 95%; max-width: none; padding: 1rem; }
+      .table-wrap { font-size: 0.8rem; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .table-wrap th, .table-wrap td { padding: 0.4rem 0.5rem; }
+    }
   </style>
 </head>
 <body>
@@ -437,13 +502,22 @@
         </nav>
         <div class="dashboard-main">
           <div id="content-chat" class="content-block visible">
-            <h3 style="margin-bottom: 0.5rem;">智能对话</h3>
-            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">通过自然语言描述需求，将自动调用 MCP 工具（接口测试、用例生成等）。需在服务端配置并启动 OpenClaw Gateway。</p>
-            <div class="chat-panel card" style="max-width: 720px;">
-              <div id="chatMessages" class="chat-messages"></div>
-              <div class="chat-input-row">
-                <textarea id="chatInput" rows="1" placeholder="输入消息，例如：帮我查一下当前积分"></textarea>
-                <button type="button" id="chatSendBtn" class="btn btn-primary">发送</button>
+            <div class="chat-area-wrap">
+              <div class="chat-main">
+                <h3 style="margin-bottom: 0.5rem;">智能对话</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">通过自然语言描述需求，将自动调用 MCP 工具（接口测试、用例生成等）。需在服务端配置并启动 OpenClaw Gateway。</p>
+                <div class="chat-panel card" style="max-width: 720px;">
+                  <div id="chatMessages" class="chat-messages"></div>
+                  <div class="chat-input-row">
+                    <textarea id="chatInput" rows="1" placeholder="输入消息，例如：帮我查一下当前积分"></textarea>
+                    <button type="button" id="chatSendBtn" class="btn btn-primary">发送</button>
+                  </div>
+                </div>
+              </div>
+              <div class="chat-history-sidebar">
+                <input type="text" class="search-input" id="chatSessionSearch" placeholder="搜索对话...">
+                <button type="button" class="btn btn-primary btn-new-session" id="chatNewSessionBtn">新会话</button>
+                <div class="chat-session-list" id="chatSessionList"></div>
               </div>
             </div>
           </div>
@@ -572,6 +646,7 @@
             <div class="card-actions" style="margin-top: 1rem;">
               <a href="/docs" target="_blank" rel="noopener" class="btn btn-primary">打开 API 文档</a>
             </div>
+            <p class="skill-testai-footer">在 API 文档中可进行单次接口测试、从 Swagger/OpenAPI 地址生成并执行用例；每次调用将按规则扣除积分。</p>
           </div>
           <div id="content-skill-sutui" class="content-block">
             <h3 style="margin-bottom: 0.75rem;">速推</h3>
@@ -581,9 +656,6 @@
           </div>
         </div>
       </div>
-      <p class="dashboard-footer" style="margin-top: 1.5rem;">
-        在 API 文档中可进行单次接口测试、从 Swagger/OpenAPI 地址生成并执行用例；每次调用将按规则扣除积分。
-      </p>
     </div>
 
     <div id="modalGenerateCases" class="modal-mask">
@@ -915,6 +987,7 @@
           loadLlmModels();
           loadGenerateRecords();
           bindCreditFlowsClick();
+          initChatSessions();
         });
     }
 
@@ -1036,7 +1109,128 @@
       if (creditsFlowBtn) creditsFlowBtn.addEventListener('click', function() { dropdown.classList.remove('open'); openCreditFlowsModal(); });
     })();
 
+    var CHAT_SESSIONS_KEY = 'ai_test_platform_chat_sessions';
+    var chatSessions = [];
+    var currentSessionId = null;
     var chatHistory = [];
+
+    function loadChatSessionsFromStorage() {
+      try {
+        var raw = localStorage.getItem(CHAT_SESSIONS_KEY);
+        chatSessions = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(chatSessions)) chatSessions = [];
+      } catch (e) { chatSessions = []; }
+    }
+    function saveChatSessionsToStorage() {
+      try {
+        localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(chatSessions));
+      } catch (e) {}
+    }
+    function getSessionTitle(session) {
+      var msg = (session.messages || []).find(function(m) { return m.role === 'user' && (m.content || '').trim(); });
+      if (msg) {
+        var t = (msg.content || '').trim();
+        return t.length > 24 ? t.slice(0, 24) + '…' : t;
+      }
+      return session.title || '新对话';
+    }
+    function getSessionPreview(session) {
+      var messages = session.messages || [];
+      for (var i = messages.length - 1; i >= 0; i--) {
+        var m = messages[i];
+        if (m && (m.content || '').trim()) {
+          var t = (m.content || '').trim();
+          return t.length > 32 ? t.slice(0, 32) + '…' : t;
+        }
+      }
+      return '暂无消息';
+    }
+    function formatSessionTime(ts) {
+      if (!ts) return '';
+      var d = new Date(ts);
+      var now = new Date();
+      var diff = (now - d) / 60000;
+      if (diff < 1) return '刚刚';
+      if (diff < 60) return Math.floor(diff) + ' 分钟前';
+      if (diff < 1440) return Math.floor(diff / 60) + ' 小时前';
+      if (diff < 43200) return Math.floor(diff / 1440) + ' 天前';
+      return d.toLocaleDateString();
+    }
+    function createNewSession() {
+      var id = 's' + Date.now();
+      var session = { id: id, title: '新对话', messages: [], updatedAt: Date.now() };
+      chatSessions.unshift(session);
+      saveChatSessionsToStorage();
+      switchChatSession(id);
+      renderChatSessionList();
+    }
+    function switchChatSession(id) {
+      if (currentSessionId === id) return;
+      saveCurrentSessionToStore();
+      currentSessionId = id;
+      chatHistory = [];
+      var session = chatSessions.find(function(s) { return s.id === id; });
+      if (session && session.messages) chatHistory = session.messages.slice();
+      var container = document.getElementById('chatMessages');
+      if (container) {
+        container.innerHTML = '';
+        chatHistory.forEach(function(m) { appendChatMessage(m.role, m.content); });
+      }
+      renderChatSessionList();
+    }
+    function saveCurrentSessionToStore() {
+      if (!currentSessionId) return;
+      var session = chatSessions.find(function(s) { return s.id === currentSessionId; });
+      if (session) {
+        session.messages = chatHistory.slice();
+        session.updatedAt = Date.now();
+        if (session.messages.length) {
+          var firstUser = session.messages.find(function(m) { return m.role === 'user'; });
+          if (firstUser && (firstUser.content || '').trim()) session.title = getSessionTitle(session);
+        }
+        saveChatSessionsToStorage();
+      }
+    }
+    function renderChatSessionList() {
+      var listEl = document.getElementById('chatSessionList');
+      var searchVal = (document.getElementById('chatSessionSearch') && document.getElementById('chatSessionSearch').value || '').trim().toLowerCase();
+      if (!listEl) return;
+      var filtered = searchVal
+        ? chatSessions.filter(function(s) {
+            var title = getSessionTitle(s); var preview = getSessionPreview(s);
+            return title.toLowerCase().indexOf(searchVal) >= 0 || preview.toLowerCase().indexOf(searchVal) >= 0;
+          })
+        : chatSessions.slice();
+      if (filtered.length === 0) {
+        listEl.innerHTML = '<p class="meta" style="padding:0.5rem;font-size:0.8rem;color:var(--text-muted);">暂无对话</p>';
+        return;
+      }
+      listEl.innerHTML = filtered.map(function(s) {
+        var title = getSessionTitle(s);
+        var preview = getSessionPreview(s);
+        var time = formatSessionTime(s.updatedAt);
+        var active = s.id === currentSessionId ? ' active' : '';
+        return '<div class="chat-session-item' + active + '" data-session-id="' + escapeAttr(s.id) + '">' +
+          '<div class="session-title">' + escapeHtml(title) + '</div>' +
+          '<div class="session-preview">' + escapeHtml(preview) + '</div>' +
+          '<div class="session-time">' + escapeHtml(time) + '</div></div>';
+      }).join('');
+      listEl.querySelectorAll('.chat-session-item').forEach(function(el) {
+        el.addEventListener('click', function() { switchChatSession(el.dataset.sessionId); });
+      });
+    }
+    function initChatSessions() {
+      loadChatSessionsFromStorage();
+      if (chatSessions.length === 0) {
+        createNewSession();
+        return;
+      }
+      if (!currentSessionId || !chatSessions.find(function(s) { return s.id === currentSessionId; })) {
+        currentSessionId = chatSessions[0].id;
+      }
+      switchChatSession(currentSessionId);
+    }
+
     function linkifyText(text) {
       var escaped = (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       return escaped.replace(/(https?:\/\/[^\s<>]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
@@ -1058,9 +1252,15 @@
       if (!input || !btn) return;
       var message = (input.value || '').trim();
       if (!message) return;
+      if (!currentSessionId) {
+        if (chatSessions.length) switchChatSession(chatSessions[0].id);
+        else createNewSession();
+      }
       input.value = '';
       appendChatMessage('user', message);
       chatHistory.push({ role: 'user', content: message });
+      saveCurrentSessionToStore();
+      renderChatSessionList();
       btn.disabled = true;
       fetch(API_BASE + '/chat', {
         method: 'POST',
@@ -1077,9 +1277,13 @@
             var errMsg = (x.data && x.data.detail) ? x.data.detail : ('请求失败 ' + (x.status || ''));
             appendChatMessage('assistant', '错误：' + errMsg);
           }
+          saveCurrentSessionToStore();
+          renderChatSessionList();
         })
         .catch(function(e) {
           appendChatMessage('assistant', '网络错误：' + (e && e.message ? e.message : '请稍后重试'));
+          saveCurrentSessionToStore();
+          renderChatSessionList();
         })
         .finally(function() { btn.disabled = false; });
     }
@@ -1091,6 +1295,10 @@
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
       });
     }
+    var chatNewSessionBtn = document.getElementById('chatNewSessionBtn');
+    if (chatNewSessionBtn) chatNewSessionBtn.addEventListener('click', createNewSession);
+    var chatSessionSearch = document.getElementById('chatSessionSearch');
+    if (chatSessionSearch) chatSessionSearch.addEventListener('input', renderChatSessionList);
 
     function loadLlmModels() {
       if (!token) return;
