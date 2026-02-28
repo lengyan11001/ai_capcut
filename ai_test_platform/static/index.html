@@ -310,7 +310,7 @@
     .execute-result-item .req pre { margin: 0.25rem 0 0; padding: 0.5rem; background: rgba(0,0,0,0.3); border-radius: 4px; white-space: pre-wrap; word-break: break-all; font-size: 0.8rem; max-height: 120px; overflow-y: auto; }
     .execute-result-login { border-left: 3px solid var(--accent); }
     /* 智能对话 */
-    .chat-panel { display: flex; flex-direction: column; height: 420px; }
+    .chat-panel { display: flex; flex-direction: column; height: 560px; min-width: 0; }
     .chat-messages { flex: 1; overflow-y: auto; padding: 0.75rem 0; display: flex; flex-direction: column; gap: 0.75rem; }
     .chat-msg { max-width: 85%; padding: 0.65rem 0.9rem; border-radius: var(--radius-sm); font-size: 0.9rem; white-space: pre-wrap; word-break: break-word; }
     .chat-msg.user { align-self: flex-end; background: var(--accent); color: #0a0a0f; }
@@ -322,12 +322,12 @@
     .chat-input-row textarea:focus { outline: none; border-color: var(--accent); }
     .chat-input-row button:disabled { opacity: 0.6; cursor: not-allowed; }
     /* 左侧导航 + 主内容布局 */
-    .dashboard-layout { display: flex; gap: 1.5rem; margin-top: 1rem; min-height: 0; }
+    .dashboard-layout { display: flex; gap: 1rem; margin-top: 1rem; min-height: 0; }
     .dashboard-main { flex: 1; min-width: 0; }
     .content-block { display: none; }
     .content-block.visible { display: block; }
     .nav-left {
-      width: 210px; flex-shrink: 0;
+      width: 150px; flex-shrink: 0;
       display: flex; flex-direction: column; gap: 0.25rem;
       padding: 0.5rem 0; border-right: 1px solid var(--border); padding-right: 1rem;
     }
@@ -372,12 +372,12 @@
     @keyframes typingBounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-4px); } }
     .chat-msg-body { white-space: pre-wrap; word-break: break-word; }
     /* 智能对话：左侧聊天 + 右侧历史列表 */
-    .chat-area-wrap { display: flex; gap: 1rem; min-height: 0; align-items: stretch; }
+    .chat-area-wrap { display: flex; gap: 0.75rem; min-height: 0; align-items: stretch; }
     .chat-main { flex: 1; min-width: 0; }
     .chat-history-sidebar {
-      width: 260px; flex-shrink: 0;
+      width: 200px; flex-shrink: 0;
       background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 0.75rem; display: flex; flex-direction: column; min-height: 420px;
+      padding: 0.6rem; display: flex; flex-direction: column; min-height: 360px;
     }
     .chat-history-sidebar .search-input {
       width: 100%; padding: 0.45rem 0.65rem; margin-bottom: 0.5rem;
@@ -422,9 +422,9 @@
       .nav-left-sub { margin-left: 0; margin-top: 0.35rem; width: 100%; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 0.25rem; }
       .nav-left-sub .nav-left-item { flex: none; }
       .chat-area-wrap { flex-direction: column; }
-      .chat-history-sidebar { width: 100%; min-height: 200px; max-height: 280px; }
+      .chat-history-sidebar { width: 100%; min-height: 180px; max-height: 240px; }
       .chat-main h3 { font-size: 1rem; }
-      .chat-panel { height: 360px; }
+      .chat-panel { height: 380px; }
       .chat-panel.card { max-width: none; }
       .chat-input-row { flex-wrap: wrap; }
       .chat-input-row textarea { min-height: 2.2rem; }
@@ -513,7 +513,7 @@
               <div class="chat-main">
                 <h3 style="margin-bottom: 0.5rem;">智能对话</h3>
                 <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">用自然语言描述你想完成的任务，助手会自动选择并调用已接入的能力。</p>
-                <div class="chat-panel card" style="max-width: 720px;">
+                <div class="chat-panel card" style="max-width: 100%;">
                   <div id="chatMessages" class="chat-messages"></div>
                   <div class="chat-input-row">
                     <textarea id="chatInput" rows="1" placeholder="输入消息，例如：帮我查一下当前积分"></textarea>
@@ -1126,7 +1126,12 @@
         var raw = localStorage.getItem(CHAT_SESSIONS_KEY);
         if (!raw) return;
         var parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) chatSessions = parsed;
+        if (Array.isArray(parsed)) {
+          chatSessions = parsed;
+          chatSessions.forEach(function(s) {
+            if (!s.messages) s.messages = s.history || [];
+          });
+        }
       } catch (e) {}
     }
     loadChatSessionsFromStorage();
@@ -1177,13 +1182,13 @@
       if (currentSessionId === id) return;
       saveCurrentSessionToStore();
       currentSessionId = id;
-      chatHistory = [];
       var session = chatSessions.find(function(s) { return s.id === id; });
-      if (session && session.messages) chatHistory = session.messages.slice();
+      chatHistory = (session && (session.messages || session.history)) ? (session.messages || session.history).slice() : [];
       var container = document.getElementById('chatMessages');
       if (container) {
         container.innerHTML = '';
         chatHistory.forEach(function(m) { appendChatMessage(m.role, m.content); });
+        container.scrollTop = container.scrollHeight;
       }
       renderChatSessionList();
     }
