@@ -425,6 +425,7 @@ def _run_generate_cases_job(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     temperature=0.3,
+                    max_tokens=32768,
                 )
                 raw = str(llm_result.get("content") or "").strip()
                 llm_credits_used = int(llm_result.get("credits_used") or 0)

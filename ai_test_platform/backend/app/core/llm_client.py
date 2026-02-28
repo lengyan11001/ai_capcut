@@ -270,27 +270,32 @@ def call_llm(
     system_prompt: str,
     user_prompt: str,
     temperature: float = 0.2,
+    max_tokens: Optional[int] = None,
 ) -> Dict[str, object]:
     """
     实际调用 OpenAI 模型，并返回：
     - content: str
     - usage: {prompt_tokens, completion_tokens, total_tokens}
     - credits_used: int（按真实 usage 换算）
+    - max_tokens: 可选，不传则用接口默认；生成大量用例时建议传 16384 或 32768 避免截断
     """
     cfg = _get_model_config(model_id)
     if not cfg:
         raise ValueError(f"不支持的模型 ID: {model_id}")
 
     client = _get_client()
+    create_kwargs: Dict[str, object] = {
+        "model": cfg.model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": temperature,
+    }
+    if max_tokens is not None:
+        create_kwargs["max_tokens"] = max_tokens
     try:
-        resp = client.chat.completions.create(
-            model=cfg.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=temperature,
-        )
+        resp = client.chat.completions.create(**create_kwargs)
     except Exception as e:
         err_msg = str(e).strip() or getattr(e, "message", "")
         raise RuntimeError(f"大模型接口调用失败：{err_msg}") from e
