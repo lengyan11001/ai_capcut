@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_base_url: str | None = None  # 可选，自定义网关或代理
     openai_provider: str | None = None  # 可选，当前配置的厂商，仅展示该厂商模型。可选值：deepseek / aliyun / volcengine
+    # OpenClaw Gateway：配置后 /chat 将代理到 OpenClaw 的 Chat Completions，实现会话 + MCP 调用
+    openclaw_gateway_url: str | None = None  # 如 http://127.0.0.1:18789
+    openclaw_gateway_token: str | None = None  # Gateway 鉴权 token
 
     class Config:
         env_file = ".env"
