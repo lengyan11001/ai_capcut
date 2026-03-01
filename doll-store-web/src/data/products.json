@@ -1,5 +1,42 @@
 [
-  {"id":"prod-1","slug":"classic-tpe-158","name":"Classic TPE 158cm","description":"Full body doll with realistic proportions. TPE material, standing feet, articulated skeleton. Ideal for collectors and beginners.","price":899,"compareAtPrice":1099,"images":["https://placehold.co/600x800/e2e8f0/64748b?text=Doll+1"],"categoryId":"tpe","material":"TPE","specs":{"Height":"158cm","Weight":"28kg","Skeleton":"Metal"},"featured":true},
-  {"id":"prod-2","slug":"silicone-premium-165","name":"Silicone Premium 165cm","description":"High-end silicone full body doll. Lifelike skin texture, removable head option. Premium quality for discerning buyers.","price":2499,"compareAtPrice":2799,"images":["https://placehold.co/600x800/e2e8f0/64748b?text=Doll+2"],"categoryId":"silicone","material":"Silicone","specs":{"Height":"165cm","Weight":"32kg","Skeleton":"Stainless steel"},"featured":true},
-  {"id":"prod-3","slug":"care-kit-basic","name":"Care Kit Basic","description":"Essential care kit: renewing powder, cleaning cloth, storage bag. Keeps your doll in best condition.","price":49,"images":["https://placehold.co/600x800/e2e8f0/64748b?text=Care+Kit"],"categoryId":"accessories","material":"N/A","featured":false}
+  {
+    "id": "prod-1",
+    "slug": "classic-tpe-158",
+    "name": "Classic TPE 158cm",
+    "description": "Full body doll with realistic proportions. TPE material, standing feet, articulated skeleton. Ideal for collectors and beginners.",
+    "price": 899,
+    "compareAtPrice": 1099,
+    "images": ["https://images.unsplash.com/photo-1556742049-0cfc4e1fba42?w=600&h=800&fit=crop"],
+    "videoUrl": "",
+    "categoryId": "tpe",
+    "material": "TPE",
+    "specs": { "Height": "158cm", "Weight": "28kg", "Skeleton": "Metal" },
+    "featured": true
+  },
+  {
+    "id": "prod-2",
+    "slug": "silicone-premium-165",
+    "name": "Silicone Premium 165cm",
+    "description": "High-end silicone full body doll. Lifelike skin texture, removable head option. Premium quality for discerning buyers.",
+    "price": 2499,
+    "compareAtPrice": 2799,
+    "images": ["https://images.unsplash.com/photo-1583394838336-acd977736f90?w=600&h=800&fit=crop"],
+    "videoUrl": "https://www.w3schools.com/html/mov_bbb.mp4",
+    "categoryId": "silicone",
+    "material": "Silicone",
+    "specs": { "Height": "165cm", "Weight": "32kg", "Skeleton": "Stainless steel" },
+    "featured": true
+  },
+  {
+    "id": "prod-3",
+    "slug": "care-kit-basic",
+    "name": "Care Kit Basic",
+    "description": "Essential care kit: renewing powder, cleaning cloth, storage bag. Keeps your doll in best condition.",
+    "price": 49,
+    "images": ["https://images.unsplash.com/photo-1584305574647-2ab460f4e1b3?w=600&h=800&fit=crop"],
+    "videoUrl": "",
+    "categoryId": "accessories",
+    "material": "N/A",
+    "featured": false
+  }
 ]

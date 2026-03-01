@@ -13,20 +13,36 @@ export default async function ProductPage({
   const product = getProductBySlug(slug);
   if (!product) notFound();
   const imageUrl = product.images[0] ?? "https://placehold.co/600x800?text=Product";
+  const isPlaceholder = imageUrl.startsWith("https://placehold.co");
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
       <div className="grid gap-8 lg:grid-cols-2">
-        <div className="relative aspect-[3/4] overflow-hidden rounded-lg bg-gray-100">
-          <Image
+        <div className="space-y-4">
+          <div className="relative aspect-[3/4] overflow-hidden rounded-lg bg-gray-100">
+            <Image
             src={imageUrl}
             alt={product.name}
             fill
             className="object-cover"
             sizes="(max-width: 1024px) 100vw, 50vw"
             priority
-            unoptimized={imageUrl.startsWith("https://placehold.co")}
+            unoptimized={isPlaceholder}
           />
+          </div>
+          {/* 商品视频占位：videoUrl 填入自有或供应商授权视频 URL */}
+          {product.videoUrl && (
+            <div className="rounded-lg overflow-hidden bg-gray-900">
+              <video
+                src={product.videoUrl}
+                controls
+                className="w-full aspect-video object-contain"
+                preload="metadata"
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
+          )}
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{product.name}</h1>

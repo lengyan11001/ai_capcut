@@ -1,6 +1,9 @@
 import Link from "next/link";
+import Image from "next/image";
 import { getCategories, getFeaturedProducts } from "@/lib/data";
 import { ProductCard } from "@/components/ProductCard";
+
+const HERO_IMAGE = "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1200&q=80";
 
 export default function HomePage() {
   const categories = getCategories();
@@ -8,18 +11,22 @@ export default function HomePage() {
 
   return (
     <div>
-      {/* Hero */}
-      <section className="bg-gray-100 py-16 md:py-24">
+      {/* Hero：占位图来自 Unsplash，上线前请替换为自有或供应商授权素材 */}
+      <section className="relative py-16 md:py-24">
+        <div className="absolute inset-0 -z-10">
+          <Image src={HERO_IMAGE} alt="" fill className="object-cover" priority sizes="100vw" />
+          <div className="absolute inset-0 bg-black/40" />
+        </div>
         <div className="mx-auto max-w-6xl px-4 text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 md:text-4xl">
+          <h1 className="text-3xl font-bold tracking-tight text-white drop-shadow md:text-4xl">
             Premium Collectibles
           </h1>
-          <p className="mt-4 text-lg text-gray-600">
+          <p className="mt-4 text-lg text-white/90 drop-shadow">
             Full body dolls and accessories. Discreet packaging, worldwide delivery.
           </p>
           <Link
             href="/products"
-            className="mt-6 inline-block rounded bg-gray-900 px-6 py-3 text-white hover:bg-gray-800"
+            className="mt-6 inline-block rounded bg-white px-6 py-3 font-medium text-gray-900 hover:bg-gray-100"
           >
             Shop All
           </Link>

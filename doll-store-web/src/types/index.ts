@@ -13,6 +13,8 @@ export interface Product {
   price: number;
   compareAtPrice?: number;
   images: string[];
+  /** 可选：商品介绍视频 URL，上线前替换为自有或供应商授权素材 */
+  videoUrl?: string;
   categoryId: string;
   material: string;
   specs?: Record<string, string>;

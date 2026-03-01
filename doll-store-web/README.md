@@ -53,10 +53,12 @@ create policy "Allow insert" on orders for insert with check (true);
 create policy "Allow select by service" on orders for select using (true);
 ```
 
-## 数据
+## 数据与素材
 
 - 商品与分类：`src/data/products.json`、`src/data/categories.json`。可替换为 CMS 或 API。
-- 占位图使用 placehold.co；正式环境请替换为自有图床或 CDN。
+- **图片与视频（占位）**：当前演示使用 Unsplash 占位图、首页 Hero 使用 Unsplash 图、商品可选 `videoUrl` 占位视频。**上线前请全部替换为自有或供应商授权的图片/视频**，勿直接使用竞品站素材。可改：
+  - 首页 Hero：`src/app/page.tsx` 中的 `HERO_IMAGE`，或改为 `public/hero.jpg` 等本地路径。
+  - 商品图/视频：`src/data/products.json` 的 `images`、`videoUrl`，或改为从 CMS/API 拉取。
 
 ## 部署（Vercel）
 
