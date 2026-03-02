@@ -439,7 +439,21 @@ async def _call_upstream_mcp_tool(server_url: str, tool_name: str, arguments: Di
                 "clientInfo": {"name": "ai-test-platform-capability-proxy", "version": "0.1.0"},
             },
         }
-        await client.post(server_url, json=init_body)
+        init_resp = await client.post(server_url, json=init_body)
+        session_id = (
+            init_resp.headers.get("Mcp-Session-Id")
+            or init_resp.headers.get("mcp-session-id")
+            or ""
+        )
+        if not session_id:
+            try:
+                init_json = init_resp.json()
+                if isinstance(init_json, dict):
+                    result = init_json.get("result") or {}
+                    if isinstance(result, dict):
+                        session_id = str(result.get("sessionId") or result.get("session_id") or "").strip()
+            except Exception:
+                session_id = ""
         call_body = {
             "jsonrpc": "2.0",
             "id": "call-capability",
@@ -449,7 +463,8 @@ async def _call_upstream_mcp_tool(server_url: str, tool_name: str, arguments: Di
                 "arguments": arguments,
             },
         }
-        r = await client.post(server_url, json=call_body)
+        call_headers = {"Mcp-Session-Id": session_id} if session_id else {}
+        r = await client.post(server_url, json=call_body, headers=call_headers)
         try:
             return r.json()
         except Exception:
@@ -592,6 +607,13 @@ async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str]) -> T
     is_error = False
     status_code = getattr(r, "status_code", 200) if r is not None else 200
     if isinstance(data, dict) and data.get("detail") and status_code >= 400:
+        is_error = True
+        text = json.dumps(data, ensure_ascii=False, indent=2)
+    elif (
+        isinstance(data, dict)
+        and isinstance(data.get("result"), dict)
+        and isinstance((data.get("result") or {}).get("error"), dict)
+    ):
         is_error = True
         text = json.dumps(data, ensure_ascii=False, indent=2)
     else:
