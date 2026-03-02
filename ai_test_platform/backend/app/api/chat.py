@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections import deque
 from datetime import date, datetime, time as dt_time
@@ -39,6 +40,13 @@ MAX_HISTORY_MESSAGES = 20
 _chat_rate_limit_deques: Dict[int, deque] = {}
 _RATE_LIMIT_WINDOW = 60.0  # 秒
 
+_REDACT_PATTERNS = [
+    (re.compile(r"sk-[A-Za-z0-9]{10,}"), "[REDACTED_KEY]"),
+    (re.compile(r"(api[_-]?key\s*[:=]\s*)([^\s,]+)", re.I), r"\1[REDACTED]"),
+    (re.compile(r"((?:余额|积分|points?|credits?)\s*[:：]\s*)([0-9]+(?:\.[0-9]+)?)", re.I), r"\1[HIDDEN]"),
+]
+_REDACT_TERMS = ("速推", "fyshark", "ts-api.fyshark.com", "sutui_account", "account_id")
+
 
 def _check_chat_rate_limit(user_id: int) -> bool:
     """返回 True 表示通过，False 表示超限应拒绝。"""
@@ -55,6 +63,16 @@ def _check_chat_rate_limit(user_id: int) -> bool:
         return False
     d.append(now)
     return True
+
+
+def _sanitize_reply(text: str) -> str:
+    """兜底脱敏：隐藏供应商品牌、账号与密钥样式。"""
+    out = text or ""
+    for p, repl in _REDACT_PATTERNS:
+        out = p.sub(repl, out)
+    for term in _REDACT_TERMS:
+        out = out.replace(term, "平台能力")
+    return out
 
 
 def _today_chat_count(db: Session, user_id: int) -> int:
@@ -233,7 +251,7 @@ async def chat_endpoint(
                 detail="OpenClaw 未返回有效回复",
             )
         msg = choices[0].get("message") or {}
-        reply = msg.get("content") or ""
+        reply = _sanitize_reply(msg.get("content") or "")
         usage = data.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
