@@ -234,6 +234,10 @@ git pull
 若本次更新涉及新配置项，在 `.env` 中按需添加或修改（与 `.env.example` 对照）：
 
 - **管理端改价**：`ADMIN_SECRET=你的管理密钥`（请求头 `X-Admin-Token` 与此一致时可访问 `GET/PUT /auth/model-pricing`）。
+- **OpenClaw 双实例（可选）**：
+  - `OPENCLAW_GATEWAY_URL`、`OPENCLAW_GATEWAY_TOKEN`：学习实例（白名单用户）
+  - `OPENCLAW_GATEWAY_URL_USERS`、`OPENCLAW_GATEWAY_TOKEN_USERS`：用户实例（兼容回退）
+  - `OPENCLAW_LEARN_ALLOWLIST`：学习实例白名单（user id 或 email，逗号分隔）
 - **智能对话用量限制**（可选，0 表示不限制，前期内部用可放宽）：
   - `CHAT_DAILY_CAP_PER_USER=100`  # 每用户每日最多 N 轮
   - `CHAT_RATE_LIMIT_PER_MINUTE=30` # 每用户每分钟最多 N 次
@@ -256,6 +260,14 @@ docker compose up -d --build
   curl -s -H "X-Admin-Token: 你的ADMIN_SECRET" http://127.0.0.1:8000/auth/model-pricing
   ```
 - **智能对话**：登录后在前端发几条消息，确认计费与限流符合预期（超限时应返回 429）。
+- **OpenClaw 实例池（可选）**：
+  ```bash
+  # 查看实例池
+  curl -s -H "X-Admin-Token: 你的ADMIN_SECRET" http://127.0.0.1:8000/auth/openclaw-instances
+
+  # 为存量用户手动触发分配
+  curl -s -X POST -H "X-Admin-Token: 你的ADMIN_SECRET" http://127.0.0.1:8000/auth/openclaw-bindings/assign/用户ID
+  ```
 
 ### 7.5 本次更新涉及的能力摘要
 
@@ -263,4 +275,5 @@ docker compose up -d --build
 |------|------|
 | 模型价格与用量 | 表 `model_pricing`、`usage_period`；智能对话 / testAI 按 token 与配置计费并落库 |
 | 管理 API | `GET/PUT /auth/model-pricing`，需 `X-Admin-Token` |
+| OpenClaw 实例池 | 注册自动分配实例、聊天按用户绑定路由（支持学习白名单 + 用户实例） |
 | 智能对话限流 | 每用户每日次数上限 + 每分钟频率限制，防过度使用 |

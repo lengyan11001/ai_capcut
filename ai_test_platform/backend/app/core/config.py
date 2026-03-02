@@ -23,8 +23,13 @@ class Settings(BaseSettings):
     openai_base_url: str | None = None  # 可选，自定义网关或代理
     openai_provider: str | None = None  # 可选，当前配置的厂商，仅展示该厂商模型。可选值：deepseek / aliyun / volcengine
     # OpenClaw Gateway：配置后 /chat 将代理到 OpenClaw 的 Chat Completions，实现会话 + MCP 调用
-    openclaw_gateway_url: str | None = None  # 如 http://127.0.0.1:18789
-    openclaw_gateway_token: str | None = None  # Gateway 鉴权 token
+    openclaw_gateway_url: str | None = None  # 学习实例 URL（如 http://127.0.0.1:18789），白名单用户使用
+    openclaw_gateway_token: str | None = None  # 学习实例鉴权 token
+    # 用户实例（多 agent、每用户独立 workspace）；未配置时所有用户共用上面单一 Gateway
+    openclaw_gateway_url_users: str | None = None  # 如 http://127.0.0.1:18790
+    openclaw_gateway_token_users: str | None = None  # 用户实例鉴权 token
+    # 学习实例白名单：逗号分隔的 user id 或 email，仅这些账号走学习实例；空则按是否配置 url_users 决定（见 chat 路由）
+    openclaw_learn_allowlist: str = ""  # 例如 "1" 或 "admin@example.com" 或 "1,2,admin@example.com"
     # 新用户注册赠送积分（控制成本）
     default_credits_for_new_user: int = 30
     # 充值接口密钥：请求头 X-Recharge-Token 与此一致时才允许充值

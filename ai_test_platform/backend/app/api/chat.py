@@ -27,7 +27,7 @@ from ..core.credits import credits_for_chat
 from ..core import model_pricing
 from ..db import get_db
 from .auth import get_current_user
-from ..models import CreditFlow, User
+from ..models import CreditFlow, OpenClawInstance, User, UserOpenClawBinding
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -82,12 +82,74 @@ class ChatResponse(BaseModel):
     reply: str
 
 
-def _openclaw_available() -> bool:
-    return bool(
-        settings.openclaw_gateway_url
-        and settings.openclaw_gateway_token
-        and settings.openclaw_gateway_url.strip().rstrip("/")
+def _is_learn_allowlist_user(user: User) -> bool:
+    """当前用户是否在学习实例白名单内（仅白名单用户走带学习能力的主实例）。"""
+    allowlist = (getattr(settings, "openclaw_learn_allowlist", None) or "").strip()
+    if not allowlist:
+        return False
+    parts = [p.strip() for p in allowlist.split(",") if p.strip()]
+    for p in parts:
+        if p.isdigit() and int(p) == user.id:
+            return True
+        if p and getattr(user, "email", None) and user.email and p.lower() == user.email.lower():
+            return True
+    return False
+
+
+def _resolve_openclaw_target(db: Session, user: User) -> tuple[str, str, str]:
+    """
+    返回 (base_url, token, agent_id)。
+    - 白名单用户 -> 学习实例 + main
+    - 已配置用户实例 -> 用户实例 + user_<id>
+    - 否则（未配用户实例）-> 学习实例 + main（向后兼容）
+    """
+    url_learn = (getattr(settings, "openclaw_gateway_url", None) or "").strip().rstrip("/")
+    token_learn = (getattr(settings, "openclaw_gateway_token", None) or "").strip()
+    url_users = (getattr(settings, "openclaw_gateway_url_users", None) or "").strip().rstrip("/")
+    token_users = (getattr(settings, "openclaw_gateway_token_users", None) or "").strip()
+
+    if _is_learn_allowlist_user(user):
+        if url_learn and token_learn:
+            return url_learn, token_learn, "main"
+        # 白名单但学习实例未配， fallback 到用户实例（若存在）
+        if url_users and token_users:
+            return url_users, token_users, f"user_{user.id}"
+        return url_learn, token_learn, "main"
+
+    # 优先按用户绑定实例池路由（注册后自动分配）
+    binding = (
+        db.query(UserOpenClawBinding)
+        .filter(UserOpenClawBinding.user_id == user.id)
+        .first()
     )
+    if binding and binding.status == "assigned":
+        ins = db.query(OpenClawInstance).filter(OpenClawInstance.id == binding.instance_id).first()
+        if ins and ins.enabled:
+            pool_url = (ins.base_url or "").strip().rstrip("/")
+            pool_token = (ins.gateway_token or "").strip()
+            pool_agent = (binding.agent_id or ins.default_agent_id or "main").strip() or "main"
+            if pool_url and pool_token:
+                return pool_url, pool_token, pool_agent
+
+    if url_users and token_users:
+        return url_users, token_users, f"user_{user.id}"
+    # 未配用户实例：所有人走单一 Gateway（向后兼容）
+    return url_learn, token_learn, "main"
+
+
+def _openclaw_available(db: Session, user: Optional[User] = None) -> bool:
+    """当前请求是否可用的 OpenClaw：按用户解析目标后检查 URL 与 token。"""
+    if user is None:
+        # 无用户时只检查是否至少有一个实例配置（用于文档/健康检查等）
+        url_learn = (getattr(settings, "openclaw_gateway_url", None) or "").strip()
+        token_learn = (getattr(settings, "openclaw_gateway_token", None) or "").strip()
+        url_users = (getattr(settings, "openclaw_gateway_url_users", None) or "").strip()
+        token_users = (getattr(settings, "openclaw_gateway_token_users", None) or "").strip()
+        return bool(
+            (url_learn and token_learn) or (url_users and token_users)
+        )
+    base, token, _ = _resolve_openclaw_target(db, user)
+    return bool(base and token)
 
 
 @router.post("/chat", response_model=ChatResponse, summary="智能对话（OpenClaw）")
@@ -119,85 +181,84 @@ async def chat_endpoint(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=f"积分不足，智能对话每轮需 {need} 积分，当前 {current_user.credits}，请充值后再试",
         )
-    if _openclaw_available():
-        base = settings.openclaw_gateway_url.strip().rstrip("/")
-        url = f"{base}/v1/chat/completions"
-        messages = []
-        history = payload.history or []
-        for m in history:
-            if m.role in ("user", "assistant", "system") and (m.content or "").strip():
-                messages.append({"role": m.role, "content": (m.content or "").strip()})
-        if len(messages) > MAX_HISTORY_MESSAGES:
-            messages = messages[-MAX_HISTORY_MESSAGES:]
-        messages.append({"role": "user", "content": payload.message})
-        body = {
-            "model": "openclaw",
-            "messages": messages,
-            "stream": False,
-        }
-        req_headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {settings.openclaw_gateway_token}",
-            "x-openclaw-agent-id": "main",
-        }
-        try:
-            t0 = time.perf_counter()
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resp = await client.post(url, json=body, headers=req_headers)
-            duration_ms = round((time.perf_counter() - t0) * 1000)
-            logger.info("openclaw_chat duration_ms=%s status=%s", duration_ms, resp.status_code)
-            if resp.status_code != 200:
-                detail = resp.text
-                try:
-                    j = resp.json()
-                    detail = j.get("error", {}).get("message", detail) or detail
-                except Exception:
-                    pass
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"OpenClaw Gateway 返回 {resp.status_code}: {detail[:500]}",
-                )
-            data = resp.json()
-            choices = data.get("choices") or []
-            if not choices:
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail="OpenClaw 未返回有效回复",
-                )
-            msg = choices[0].get("message") or {}
-            reply = msg.get("content") or ""
-            usage = data.get("usage") or {}
-            prompt_tokens = int(usage.get("prompt_tokens") or 0)
-            completion_tokens = int(usage.get("completion_tokens") or 0)
-            model_id = (data.get("model") or "").strip() or "openclaw:default"
-            if not model_id or ":" not in model_id:
-                model_id = "openclaw:default"
-            if prompt_tokens or completion_tokens:
-                need = model_pricing.compute_credits(db, model_id, prompt_tokens, completion_tokens)
-            if need <= 0:
-                need = credits_for_chat()
-            user = db.query(User).filter(User.id == current_user.id).first()
-            if user:
-                add_credit_flow(db, user, "deduct", need, "智能对话", "chat", None)
-                total_tokens = prompt_tokens + completion_tokens
-                if total_tokens > 0:
-                    period_start = date.today().replace(day=1)
-                    model_pricing.add_usage_period(db, user.id, model_id, period_start, total_tokens)
-                db.commit()
-            out = ChatResponse(reply=reply.strip() or "（无回复内容）")
-            return JSONResponse(
-                content=out.model_dump(),
-                headers={"X-OpenClaw-Duration-Ms": str(duration_ms)},
-            )
-        except httpx.RequestError as e:
+    if not _openclaw_available(db, current_user):
+        reply = (
+            f"你说的是：{payload.message}\n\n"
+            "当前未启用智能对话或你的账号暂无可用实例。\n"
+            "请联系管理员配置 OpenClaw 或用户实例。"
+        )
+        return ChatResponse(reply=reply)
+    base, token, agent_id = _resolve_openclaw_target(db, current_user)
+    url = f"{base}/v1/chat/completions"
+    messages = []
+    history = payload.history or []
+    for m in history:
+        if m.role in ("user", "assistant", "system") and (m.content or "").strip():
+            messages.append({"role": m.role, "content": (m.content or "").strip()})
+    if len(messages) > MAX_HISTORY_MESSAGES:
+        messages = messages[-MAX_HISTORY_MESSAGES:]
+    messages.append({"role": "user", "content": payload.message})
+    body = {
+        "model": "openclaw",
+        "messages": messages,
+        "stream": False,
+    }
+    req_headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+        "x-openclaw-agent-id": agent_id,
+    }
+    try:
+        t0 = time.perf_counter()
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(url, json=body, headers=req_headers)
+        duration_ms = round((time.perf_counter() - t0) * 1000)
+        logger.info("openclaw_chat duration_ms=%s status=%s agent_id=%s", duration_ms, resp.status_code, agent_id)
+        if resp.status_code != 200:
+            detail = resp.text
+            try:
+                j = resp.json()
+                detail = j.get("error", {}).get("message", detail) or detail
+            except Exception:
+                pass
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"无法连接 OpenClaw Gateway: {e!s}",
-            ) from e
-    # 未启用智能对话时返回占位说明
-    reply = (
-        f"你说的是：{payload.message}\n\n"
-        "当前未启用智能对话。\n"
-        "请联系管理员启用 OpenClaw 服务后再试。"
-    )
-    return ChatResponse(reply=reply)
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"OpenClaw Gateway 返回 {resp.status_code}: {detail[:500]}",
+            )
+        data = resp.json()
+        choices = data.get("choices") or []
+        if not choices:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="OpenClaw 未返回有效回复",
+            )
+        msg = choices[0].get("message") or {}
+        reply = msg.get("content") or ""
+        usage = data.get("usage") or {}
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or 0)
+        model_id = (data.get("model") or "").strip() or "openclaw:default"
+        if not model_id or ":" not in model_id:
+            model_id = "openclaw:default"
+        if prompt_tokens or completion_tokens:
+            need = model_pricing.compute_credits(db, model_id, prompt_tokens, completion_tokens)
+        if need <= 0:
+            need = credits_for_chat()
+        user = db.query(User).filter(User.id == current_user.id).first()
+        if user:
+            add_credit_flow(db, user, "deduct", need, "智能对话", "chat", None)
+            total_tokens = prompt_tokens + completion_tokens
+            if total_tokens > 0:
+                period_start = date.today().replace(day=1)
+                model_pricing.add_usage_period(db, user.id, model_id, period_start, total_tokens)
+            db.commit()
+        out = ChatResponse(reply=reply.strip() or "（无回复内容）")
+        return JSONResponse(
+            content=out.model_dump(),
+            headers={"X-OpenClaw-Duration-Ms": str(duration_ms)},
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"无法连接 OpenClaw Gateway: {e!s}",
+        ) from e

@@ -137,6 +137,35 @@ class UsagePeriod(Base):
     tokens_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
+class OpenClawInstance(Base):
+    """OpenClaw 实例池：注册时为用户自动分配实例。"""
+    __tablename__ = "openclaw_instances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    base_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    gateway_token: Mapped[str] = mapped_column(String(255), nullable=False)
+    default_agent_id: Mapped[str] = mapped_column(String(128), default="main", nullable=False)
+    max_users: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # NULL 表示不设上限
+    current_users: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class UserOpenClawBinding(Base):
+    """用户绑定的 OpenClaw 实例与 agent。"""
+    __tablename__ = "user_openclaw_bindings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    instance_id: Mapped[int] = mapped_column(ForeignKey("openclaw_instances.id"), nullable=False, index=True)
+    agent_id: Mapped[str] = mapped_column(String(128), default="main", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="assigned", nullable=False)  # assigned | disabled
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class EmailVerificationCode(Base):
     """邮箱验证码：用于注册/找回密码等场景"""
 

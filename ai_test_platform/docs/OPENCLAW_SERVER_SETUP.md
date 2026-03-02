@@ -266,7 +266,11 @@ OPENCLAW_GATEWAY_TOKEN=你在 openclaw.json 里配置的 token
   3. **模型与配置**：在 OpenClaw 中选用响应更快的模型或调小 max_tokens；若会触发 MCP，工具调用也会增加耗时。  
   4. **流式输出**：若 OpenClaw Gateway 支持 `stream: true`，可改为流式接口，前端边收边展示，体感会更快。
 
-## 十、参考链接
+## 十、双实例部署（学习仅管理员 + 用户独立资源）
+
+若需「主实例带学习能力仅白名单可用、用户实例多 agent 每用户独立 workspace」，见 [OPENCLAW_DUAL_SETUP.md](OPENCLAW_DUAL_SETUP.md)。其中包含用户实例配置、新用户 agent 创建、学习白名单（OPENCLAW_LEARN_ALLOWLIST）及 Skill 同步说明。
+
+## 十一、参考链接
 
 - [OpenClaw Gateway 文档](https://docs.openclaw.ai/cli/gateway)
 - [OpenClaw 配置参考](https://docs.openclaw.ai/gateway/configuration-reference)
