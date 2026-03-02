@@ -120,3 +120,47 @@ docker compose ps        # 查看状态
 ## 成本与计费
 
 详见 [docs/MCP_AND_COST.md](docs/MCP_AND_COST.md)：积分单价、套餐建议、固定成本与盈亏平衡估算。
+
+## 能力目录（白名单路由）
+
+平台 MCP 服务支持通过能力目录文件管理可用能力，避免在系统提示词中堆叠大量工具说明。
+
+- 目录文件：`mcp/capability_catalog.json`
+- 关键字段：
+  - `description`：能力描述（面向 Agent）
+  - `upstream`：上游服务名（如 `sutui`）
+  - `upstream_tool`：上游 MCP 工具名
+  - `enabled`：是否启用
+- 环境变量：
+  - `CAPABILITY_CATALOG_PATH`：可选，覆盖默认目录文件路径
+  - `CAPABILITY_UPSTREAM_URLS_JSON`：上游映射 JSON，例如 `{"sutui":"https://xxx/mcp-http?api_key=***"}`
+  - `CAPABILITY_ALLOWLIST`：能力白名单（逗号分隔）
+
+建议将上述环境变量配置在 `ai-test-platform-mcp.service`（MCP 服务）中，而不是后端 API 服务。
+
+### 能力管理与审计 API
+
+- 用户态：
+  - `GET /capabilities/available`：查询当前用户可用能力（已做策略过滤）
+  - `POST /capabilities/record-call`：记录能力调用审计并按规则扣费
+- 管理态（需 `X-Admin-Token`）：
+  - `GET /capabilities/registry` / `POST /capabilities/registry` / `PUT /capabilities/registry/{capability_id}`
+  - `GET /capabilities/policies` / `POST /capabilities/policies` / `PUT /capabilities/policies/{policy_id}`
+  - `GET /capabilities/call-logs`
+
+### 部署流程（能力封装版）
+
+1. 更新代码并重启后端（自动建表 + 首次导入 `mcp/capability_catalog.json`）：
+   - `docker compose up -d --build app`
+2. 为 MCP 服务配置上游映射（systemd）：
+   - `CAPABILITY_UPSTREAM_URLS_JSON={"sutui":"https://.../mcp-http?api_key=..."}`
+   - 可选：`CAPABILITY_ALLOWLIST=image.generate,task.get_result`
+3. 重启 MCP 服务：
+   - `sudo systemctl daemon-reload`
+   - `sudo systemctl restart ai-test-platform-mcp.service`
+4. 在管理端写入能力计费与策略：
+   - 将 `unit_credits` 配置为每次调用扣费
+   - 通过策略接口按 `user_id/email` 做 allow/deny
+5. 联调验证：
+   - 用户调用 `list_capabilities` 仅看到授权能力
+   - `invoke_capability` 成功后，`/capabilities/call-logs` 可看到审计，`/auth/credit-flows` 可看到扣费流水

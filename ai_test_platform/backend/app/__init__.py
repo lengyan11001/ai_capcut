@@ -13,6 +13,7 @@ from .api.auth import router as auth_router
 from .api.templates import router as templates_router
 from .api.case_libraries import router as case_libraries_router
 from .api.accounts import router as accounts_router
+from .api.capabilities import router as capabilities_router
 from .core.config import settings
 from .db import Base, engine
 from . import models  # noqa: F401
@@ -135,6 +136,43 @@ def _seed_model_pricing():
         db.close()
 
 
+def _seed_capability_catalog():
+    """首次部署或 capability_configs 为空时，从 mcp/capability_catalog.json 导入能力目录。"""
+    import json
+    from .db import SessionLocal
+    from .models import CapabilityConfig
+
+    catalog_path = Path(__file__).resolve().parent.parent.parent / "mcp" / "capability_catalog.json"
+    if not catalog_path.exists():
+        return
+    db = SessionLocal()
+    try:
+        if db.query(CapabilityConfig).count() > 0:
+            return
+        raw = json.loads(catalog_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return
+        for capability_id, cfg in raw.items():
+            if not isinstance(capability_id, str) or not isinstance(cfg, dict):
+                continue
+            db.add(
+                CapabilityConfig(
+                    capability_id=capability_id.strip(),
+                    description=str(cfg.get("description") or capability_id),
+                    upstream=str(cfg.get("upstream") or "sutui"),
+                    upstream_tool=str(cfg.get("upstream_tool") or "").strip(),
+                    arg_schema=cfg.get("arg_schema") if isinstance(cfg.get("arg_schema"), dict) else None,
+                    enabled=bool(cfg.get("enabled", True)),
+                    unit_credits=int(cfg.get("unit_credits") or 0),
+                )
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
 def create_app() -> FastAPI:
     Base.metadata.create_all(bind=engine)
     _ensure_accounts_columns()
@@ -142,6 +180,7 @@ def create_app() -> FastAPI:
     _ensure_document_template_columns()
     _ensure_case_generate_record_credits_reserved()
     _seed_model_pricing()
+    _seed_capability_catalog()
 
     app = FastAPI(
         title="OpenClaw 控制台 API",
@@ -175,6 +214,7 @@ def create_app() -> FastAPI:
     app.include_router(templates_router, prefix="")
     app.include_router(case_libraries_router, prefix="")
     app.include_router(accounts_router, prefix="")
+    app.include_router(capabilities_router, prefix="")
     app.include_router(chat_router, prefix="")
     app.include_router(api_test_router, prefix="")
 

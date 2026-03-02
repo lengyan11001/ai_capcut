@@ -180,3 +180,49 @@ class EmailVerificationCode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class CapabilityConfig(Base):
+    """平台能力目录：统一白标能力配置（可管理、可计费）。"""
+    __tablename__ = "capability_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    capability_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    upstream: Mapped[str] = mapped_column(String(64), nullable=False, default="sutui")
+    upstream_tool: Mapped[str] = mapped_column(String(128), nullable=False)
+    arg_schema: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    unit_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class CapabilityPolicy(Base):
+    """能力访问策略：按 user_id / email 做 allow/deny。"""
+    __tablename__ = "capability_policies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    capability_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    subject_type: Mapped[str] = mapped_column(String(32), nullable=False)  # user_id | email
+    subject_value: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    effect: Mapped[str] = mapped_column(String(16), nullable=False, default="allow")  # allow | deny
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class CapabilityCallLog(Base):
+    """能力调用审计：记录调用、结果、扣费与延迟。"""
+    __tablename__ = "capability_call_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    capability_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    upstream: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    upstream_tool: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    credits_charged: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    request_payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+

@@ -1,0 +1,46 @@
+{
+  "image.generate": {
+    "description": "生成图片（统一能力入口）",
+    "upstream": "sutui",
+    "upstream_tool": "generate",
+    "enabled": true,
+    "arg_schema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "description": "生成提示词"
+        },
+        "model": {
+          "type": "string",
+          "description": "可选，模型名"
+        },
+        "size": {
+          "type": "string",
+          "description": "可选，图像尺寸"
+        }
+      },
+      "required": [
+        "prompt"
+      ]
+    }
+  },
+  "task.get_result": {
+    "description": "查询任务结果（统一能力入口）",
+    "upstream": "sutui",
+    "upstream_tool": "get_result",
+    "enabled": true,
+    "arg_schema": {
+      "type": "object",
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "description": "任务 ID"
+        }
+      },
+      "required": [
+        "task_id"
+      ]
+    }
+  }
+}

@@ -18,7 +18,9 @@ Cursor / Claude 等客户端的配置示例：
 
 import json
 import os
+from pathlib import Path
 import re
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import httpx
@@ -32,15 +34,17 @@ from starlette.routing import Route
 
 BASE_URL = os.environ.get("AI_TEST_PLATFORM_BASE_URL", "http://localhost:8000").rstrip("/")
 CAPABILITY_SUTUI_MCP_URL = os.environ.get("CAPABILITY_SUTUI_MCP_URL", "").strip()
-CAPABILITY_ALLOWLIST = {
-    x.strip() for x in os.environ.get("CAPABILITY_ALLOWLIST", "image.generate,task.get_result").split(",") if x.strip()
-}
+_allowlist_raw = os.environ.get("CAPABILITY_ALLOWLIST", "").strip()
+CAPABILITY_ALLOWLIST = {x.strip() for x in _allowlist_raw.split(",") if x.strip()}
+CAPABILITY_CATALOG_PATH = os.environ.get("CAPABILITY_CATALOG_PATH", "").strip()
+CAPABILITY_UPSTREAM_URLS_JSON = os.environ.get("CAPABILITY_UPSTREAM_URLS_JSON", "").strip()
 
-# 统一能力目录：对外只暴露 capability_id，不暴露上游供应商/工具名
-CAPABILITY_CATALOG: Dict[str, Dict[str, Any]] = {
+DEFAULT_CAPABILITY_CATALOG: Dict[str, Dict[str, Any]] = {
     "image.generate": {
         "description": "生成图片（统一能力入口）",
+        "upstream": "sutui",
         "upstream_tool": "generate",
+        "enabled": True,
         "arg_schema": {
             "type": "object",
             "properties": {
@@ -53,7 +57,9 @@ CAPABILITY_CATALOG: Dict[str, Dict[str, Any]] = {
     },
     "task.get_result": {
         "description": "查询任务结果（统一能力入口）",
+        "upstream": "sutui",
         "upstream_tool": "get_result",
+        "enabled": True,
         "arg_schema": {
             "type": "object",
             "properties": {
@@ -63,6 +69,170 @@ CAPABILITY_CATALOG: Dict[str, Dict[str, Any]] = {
         },
     },
 }
+
+
+def _load_catalog_from_file(path: Path) -> Dict[str, Dict[str, Any]]:
+    raw = path.read_text(encoding="utf-8")
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("capability catalog file must be object")
+    out: Dict[str, Dict[str, Any]] = {}
+    for k, v in data.items():
+        if isinstance(k, str) and isinstance(v, dict):
+            out[k] = v
+    return out
+
+
+def _load_capability_catalog() -> Dict[str, Dict[str, Any]]:
+    """
+    能力目录优先级：
+    1) CAPABILITY_CATALOG_PATH 指向的 JSON 文件
+    2) 项目内默认文件 mcp/capability_catalog.json
+    3) 代码默认 DEFAULT_CAPABILITY_CATALOG
+    """
+    # 显式路径优先
+    if CAPABILITY_CATALOG_PATH:
+        try:
+            p = Path(CAPABILITY_CATALOG_PATH)
+            if p.exists():
+                return _load_catalog_from_file(p)
+        except Exception:
+            pass
+    # 项目默认配置文件
+    try:
+        p = Path(__file__).resolve().parent / "capability_catalog.json"
+        if p.exists():
+            return _load_catalog_from_file(p)
+    except Exception:
+        pass
+    return DEFAULT_CAPABILITY_CATALOG
+
+
+CAPABILITY_CATALOG = _load_capability_catalog()
+
+
+def _load_upstream_urls() -> Dict[str, str]:
+    """
+    上游 URL 映射：
+    - CAPABILITY_UPSTREAM_URLS_JSON: {"sutui":"https://..."}
+    - 向后兼容 CAPABILITY_SUTUI_MCP_URL
+    """
+    urls: Dict[str, str] = {}
+    if CAPABILITY_UPSTREAM_URLS_JSON:
+        try:
+            parsed = json.loads(CAPABILITY_UPSTREAM_URLS_JSON)
+            if isinstance(parsed, dict):
+                for k, v in parsed.items():
+                    if isinstance(k, str) and isinstance(v, str) and v.strip():
+                        urls[k.strip()] = v.strip()
+        except Exception:
+            pass
+    if "sutui" not in urls and CAPABILITY_SUTUI_MCP_URL:
+        urls["sutui"] = CAPABILITY_SUTUI_MCP_URL
+    return urls
+
+
+CAPABILITY_UPSTREAM_URLS = _load_upstream_urls()
+
+
+def _enabled_capability_ids() -> List[str]:
+    out: List[str] = []
+    for cid, cfg in CAPABILITY_CATALOG.items():
+        if CAPABILITY_ALLOWLIST and cid not in CAPABILITY_ALLOWLIST:
+            continue
+        if cfg.get("enabled") is False:
+            continue
+        out.append(cid)
+    return sorted(out)
+
+
+async def _fetch_backend_available_capabilities(token: Optional[str]) -> Optional[Dict[str, Dict[str, Any]]]:
+    """从后端读取当前用户可用能力；失败时返回 None（由调用方回退本地目录）。"""
+    if not token:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r = await client.get(f"{BASE_URL}/capabilities/available", headers=_backend_headers(token))
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        arr = data.get("capabilities") if isinstance(data, dict) else None
+        if not isinstance(arr, list):
+            return None
+        out: Dict[str, Dict[str, Any]] = {}
+        for x in arr:
+            if not isinstance(x, dict):
+                continue
+            cid = str(x.get("capability_id") or "").strip()
+            if not cid:
+                continue
+            if CAPABILITY_ALLOWLIST and cid not in CAPABILITY_ALLOWLIST:
+                continue
+            out[cid] = {
+                "description": str(x.get("description") or cid),
+                "upstream": str(x.get("upstream") or "sutui"),
+                "upstream_tool": str(x.get("upstream_tool") or "").strip(),
+                "arg_schema": x.get("arg_schema") if isinstance(x.get("arg_schema"), dict) else {"type": "object", "properties": {}},
+                "unit_credits": int(x.get("unit_credits") or 0),
+                "enabled": True,
+            }
+        return out
+    except Exception:
+        return None
+
+
+async def _runtime_catalog(token: Optional[str]) -> Dict[str, Dict[str, Any]]:
+    backend_catalog = await _fetch_backend_available_capabilities(token)
+    if backend_catalog is not None:
+        return backend_catalog
+    # 回退到本地目录（向后兼容）
+    out: Dict[str, Dict[str, Any]] = {}
+    for cid in _enabled_capability_ids():
+        out[cid] = CAPABILITY_CATALOG[cid]
+    return out
+
+
+def _truncate_payload_for_audit(value: Any) -> Any:
+    """审计入库前裁剪，避免超大 payload。"""
+    if isinstance(value, dict):
+        out: Dict[str, Any] = {}
+        for k, v in value.items():
+            out[str(k)] = _truncate_payload_for_audit(v)
+        return out
+    if isinstance(value, list):
+        return [_truncate_payload_for_audit(x) for x in value[:20]]
+    if isinstance(value, str):
+        return value[:500]
+    return value
+
+
+async def _record_capability_call(
+    token: Optional[str],
+    capability_id: str,
+    success: bool,
+    latency_ms: Optional[int],
+    request_payload: Dict[str, Any],
+    error_message: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """写入后端审计并按能力规则扣费。"""
+    if not token:
+        return None
+    body = {
+        "capability_id": capability_id,
+        "success": success,
+        "latency_ms": latency_ms,
+        "request_payload": _redact_sensitive(_truncate_payload_for_audit(request_payload or {})),
+        "error_message": (error_message or "")[:1000] or None,
+        "should_charge": True,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r = await client.post(f"{BASE_URL}/capabilities/record-call", json=body, headers=_backend_headers(token))
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        return None
+    return None
 
 
 def _get_token_from_request(request: Request) -> Optional[str]:
@@ -83,7 +253,7 @@ def _backend_headers(token: Optional[str]) -> Dict[str, str]:
     return h
 
 
-def _tool_definitions() -> List[Dict[str, Any]]:
+def _tool_definitions(catalog: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
     """返回 tools/list 用到的工具定义。"""
     base_tools = [
         {
@@ -200,7 +370,7 @@ def _tool_definitions() -> List[Dict[str, Any]]:
             "inputSchema": {"type": "object", "properties": {}},
         },
     ]
-    capability_list = sorted([cid for cid in CAPABILITY_CATALOG.keys() if cid in CAPABILITY_ALLOWLIST])
+    capability_list = sorted(catalog.keys())
     base_tools.extend(
         [
             {
@@ -339,32 +509,59 @@ async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str]) -> T
                 r = await client.get(f"{BASE_URL}/auth/pricing", headers=_backend_headers(token))
                 data = r.json()
             elif name == "list_capabilities":
+                catalog = await _runtime_catalog(token)
                 data = {
                     "capabilities": [
                         {
                             "capability_id": cid,
-                            "description": CAPABILITY_CATALOG[cid]["description"],
+                            "description": catalog[cid].get("description") or cid,
                         }
-                        for cid in sorted(CAPABILITY_CATALOG.keys())
-                        if cid in CAPABILITY_ALLOWLIST
+                        for cid in sorted(catalog.keys())
                     ]
                 }
             elif name == "invoke_capability":
+                catalog = await _runtime_catalog(token)
                 capability_id = (args.get("capability_id") or "").strip()
                 payload = args.get("payload") or {}
                 if not capability_id:
                     return ([{"type": "text", "text": "capability_id 不能为空"}], True)
-                if capability_id not in CAPABILITY_ALLOWLIST:
+                if capability_id not in catalog:
                     return ([{"type": "text", "text": f"能力未开放: {capability_id}"}], True)
-                cfg = CAPABILITY_CATALOG.get(capability_id)
+                cfg = catalog.get(capability_id)
                 if not cfg:
                     return ([{"type": "text", "text": f"未知能力: {capability_id}"}], True)
-                if not CAPABILITY_SUTUI_MCP_URL:
-                    return ([{"type": "text", "text": "未配置能力上游网关：请设置 CAPABILITY_SUTUI_MCP_URL"}], True)
+                upstream_tool = str(cfg.get("upstream_tool") or "").strip()
+                if not upstream_tool:
+                    return ([{"type": "text", "text": f"能力配置缺失 upstream_tool: {capability_id}"}], True)
+                upstream_name = str(cfg.get("upstream") or "sutui").strip()
+                upstream_url = CAPABILITY_UPSTREAM_URLS.get(upstream_name, "").strip()
+                if not upstream_url:
+                    return ([{"type": "text", "text": f"未配置能力上游网关: {upstream_name}"}], True)
+                required_credits = int(cfg.get("unit_credits") or 0)
+                if required_credits > 0 and token:
+                    me = await client.get(f"{BASE_URL}/auth/me", headers=_backend_headers(token))
+                    if me.status_code == 200:
+                        me_json = me.json() if me.content else {}
+                        left = int((me_json or {}).get("credits") or 0)
+                        if left < required_credits:
+                            return ([{"type": "text", "text": f"积分不足，调用该能力需 {required_credits}，当前 {left}"}], True)
+                t0 = time.perf_counter()
                 upstream_resp = await _call_upstream_mcp_tool(
-                    CAPABILITY_SUTUI_MCP_URL,
-                    cfg["upstream_tool"],
+                    upstream_url,
+                    upstream_tool,
                     payload,
+                )
+                latency_ms = int((time.perf_counter() - t0) * 1000)
+                upstream_error = ""
+                if isinstance(upstream_resp, dict) and isinstance(upstream_resp.get("error"), dict):
+                    upstream_error = str((upstream_resp.get("error") or {}).get("message") or "")[:500]
+                await _record_capability_call(
+                    token=token,
+                    capability_id=capability_id,
+                    success=not bool(upstream_error),
+                    latency_ms=latency_ms,
+                    request_payload=payload,
+                    error_message=upstream_error or None,
                 )
                 data = {
                     "capability_id": capability_id,
@@ -448,7 +645,9 @@ async def _handle_single_message(msg: Dict[str, Any], request: Request) -> Optio
         }
 
     if method == "tools/list":
-        tools = _tool_definitions()
+        token = _get_token_from_request(request)
+        catalog = await _runtime_catalog(token)
+        tools = _tool_definitions(catalog)
         return {
             "jsonrpc": "2.0",
             "id": msg_id,

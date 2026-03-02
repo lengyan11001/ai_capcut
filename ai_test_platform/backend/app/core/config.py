@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # 智能对话用量限制（防过度使用，前期内部用可放宽；0 表示不限制）
     chat_daily_cap_per_user: int = 100  # 每用户每日最多 N 轮对话
     chat_rate_limit_per_minute: int = 30  # 每用户每分钟最多 N 次请求
+    # MCP 能力代理相关（供独立 MCP HTTP 服务使用；后端保留字段以避免 .env 额外字段导致启动失败）
+    capability_sutui_mcp_url: str | None = None
+    capability_allowlist: str | None = None
+    capability_catalog_path: str | None = None
+    capability_upstream_urls_json: str | None = None
 
     class Config:
         env_file = ".env"
