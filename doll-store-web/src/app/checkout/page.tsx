@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/context/CartContext";
 import Link from "next/link";
+import { formatMoney } from "@/lib/money";
 
 export default function CheckoutPage() {
   const { items, subtotal, clearCart } = useCart();
@@ -35,7 +36,7 @@ export default function CheckoutPage() {
           shipping: form,
           items,
           total: subtotal,
-          currency: "USD",
+          currency: "CNY",
         }),
       });
       const data = await res.json();
@@ -74,7 +75,7 @@ export default function CheckoutPage() {
     <div className="mx-auto max-w-6xl px-4 py-10">
       <h1 className="text-2xl font-bold text-gray-900">Checkout</h1>
       <p className="mt-2 text-sm text-gray-500">
-        Payment options coming soon. We’ll contact you for secure payment after order confirmation.
+        Displayed prices are factory-to-forwarder only. International freight and final payable amount will be confirmed after destination review.
       </p>
       <form onSubmit={handleSubmit} className="mt-8 grid gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
@@ -196,12 +197,15 @@ export default function CheckoutPage() {
                 <span>
                   {item.name} × {item.quantity}
                 </span>
-                <span>${(item.price * item.quantity).toLocaleString()}</span>
+                <span>{formatMoney(item.price * item.quantity, item.currency ?? "CNY")}</span>
               </li>
             ))}
           </ul>
           <p className="mt-4 font-medium text-gray-900">
-            Subtotal: ${subtotal.toLocaleString()}
+            Subtotal: {formatMoney(subtotal, "CNY")}
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            Freight: quoted after destination confirmation.
           </p>
           <button
             type="submit"

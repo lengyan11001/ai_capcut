@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import type { Product } from "@/types";
+import { formatMoney } from "@/lib/money";
 
 export function ProductCard({ product }: { product: Product }) {
   const imageUrl = product.images[0] ?? "https://placehold.co/600x800?text=Product";
@@ -29,17 +30,22 @@ export function ProductCard({ product }: { product: Product }) {
         <h3 className="font-medium text-gray-900 group-hover:text-gray-700">
           {product.name}
         </h3>
-        <p className="mt-1 text-sm text-gray-500">{product.material}</p>
+        <p className="mt-1 text-sm text-gray-500">
+          {product.material} · {product.sourceType === "origin" ? "Origin supply" : "Warehouse supply"}
+        </p>
         <div className="mt-2 flex items-center gap-2">
           <span className="font-semibold text-gray-900">
-            ${product.price.toLocaleString()}
+            {formatMoney(product.price, product.currency ?? "CNY")}
           </span>
           {product.compareAtPrice != null && product.compareAtPrice > product.price && (
             <span className="text-sm text-gray-400 line-through">
-              ${product.compareAtPrice.toLocaleString()}
+              {formatMoney(product.compareAtPrice, product.currency ?? "CNY")}
             </span>
           )}
         </div>
+        <p className="mt-1 text-xs text-gray-500">
+          Factory price to forwarder. Freight quoted after destination confirmation.
+        </p>
       </div>
     </Link>
   );

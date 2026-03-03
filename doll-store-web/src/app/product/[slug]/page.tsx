@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { getProductBySlug } from "@/lib/data";
 import { AddToCartButton } from "./AddToCartButton";
+import { formatMoney } from "@/lib/money";
 
 export default async function ProductPage({
   params,
@@ -46,27 +47,45 @@ export default async function ProductPage({
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{product.name}</h1>
-          <p className="mt-2 text-gray-500">{product.material}</p>
+          <p className="mt-2 text-gray-500">
+            {product.material} · {product.sourceType === "origin" ? "Origin supply" : "Warehouse supply"}
+          </p>
           <div className="mt-4 flex items-center gap-3">
             <span className="text-2xl font-semibold text-gray-900">
-              ${product.price.toLocaleString()}
+              {formatMoney(product.price, product.currency ?? "CNY")}
             </span>
             {product.compareAtPrice != null && product.compareAtPrice > product.price && (
               <span className="text-lg text-gray-400 line-through">
-                ${product.compareAtPrice.toLocaleString()}
+                {formatMoney(product.compareAtPrice, product.currency ?? "CNY")}
               </span>
             )}
           </div>
+          {product.shippingNotice && (
+            <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {product.shippingNotice}
+            </p>
+          )}
           <div className="mt-6">
             <AddToCartButton
               productId={product.id}
               slug={product.slug}
               name={product.name}
               price={product.price}
+              currency={product.currency}
               image={product.images[0]}
             />
           </div>
           <p className="mt-6 text-gray-600">{product.description}</p>
+          {product.addOnOptions && product.addOnOptions.length > 0 && (
+            <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <h3 className="font-medium text-gray-900">Optional functions (factory add-ons)</h3>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-600">
+                {product.addOnOptions.map((opt) => (
+                  <li key={opt}>{opt}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {product.specs && Object.keys(product.specs).length > 0 && (
             <dl className="mt-6 border-t border-gray-200 pt-6">
               <dt className="font-medium text-gray-900">Specifications</dt>

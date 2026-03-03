@@ -8,15 +8,16 @@ interface Props {
   slug: string;
   name: string;
   price: number;
+  currency?: "CNY" | "USD" | "EUR";
   image?: string;
 }
 
-export function AddToCartButton({ productId, slug, name, price, image }: Props) {
+export function AddToCartButton({ productId, slug, name, price, currency, image }: Props) {
   const { addItem } = useCart();
   const [added, setAdded] = useState(false);
 
   const handleClick = () => {
-    addItem({ productId, slug, name, price, image });
+    addItem({ productId, slug, name, price, currency, image });
     setAdded(true);
     setTimeout(() => setAdded(false), 2000);
   };

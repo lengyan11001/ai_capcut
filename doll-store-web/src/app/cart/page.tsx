@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useCart } from "@/context/CartContext";
+import { formatMoney } from "@/lib/money";
 
 export default function CartPage() {
   const { items, updateQuantity, removeItem, subtotal, totalItems } = useCart();
@@ -59,7 +60,9 @@ export default function CartPage() {
                     >
                       {item.name}
                     </Link>
-                    <p className="text-sm text-gray-500">${item.price.toLocaleString()}</p>
+                    <p className="text-sm text-gray-500">
+                      {formatMoney(item.price, item.currency ?? "CNY")}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -87,7 +90,7 @@ export default function CartPage() {
                   </div>
                 </div>
                 <div className="text-right font-medium">
-                  ${(item.price * item.quantity).toLocaleString()}
+                  {formatMoney(item.price * item.quantity, item.currency ?? "CNY")}
                 </div>
               </li>
             ))}
@@ -96,9 +99,11 @@ export default function CartPage() {
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-6">
           <h2 className="font-semibold text-gray-900">Order summary</h2>
           <p className="mt-2 text-gray-600">
-            Subtotal: <span className="font-medium">${subtotal.toLocaleString()}</span>
+            Subtotal: <span className="font-medium">{formatMoney(subtotal, "CNY")}</span>
           </p>
-          <p className="mt-1 text-sm text-gray-500">Shipping calculated at checkout.</p>
+          <p className="mt-1 text-sm text-gray-500">
+            Factory prices shown. International freight will be quoted after destination confirmation.
+          </p>
           <Link
             href="/checkout"
             className="mt-6 block w-full rounded bg-gray-900 py-3 text-center font-medium text-white hover:bg-gray-800"

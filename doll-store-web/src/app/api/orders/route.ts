@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
         shipping_phone: shipping.phone ?? null,
         items,
         total,
-        currency: currency ?? "USD",
+        currency: currency ?? "CNY",
         status: "pending",
       })
       .select("id")

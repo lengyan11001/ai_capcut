@@ -3,7 +3,7 @@ import categoriesData from "@/data/categories.json";
 import productsData from "@/data/products.json";
 
 const categories = categoriesData as Category[];
-const products = productsData as Product[];
+const products = productsData as unknown as Product[];
 
 export function getCategories(): Category[] {
   return categories;
