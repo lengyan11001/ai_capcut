@@ -42,3 +42,12 @@ __pycache__/
 # *.webp
 # *.jpg
 # *.png
+
+# 打包产物（不推送）
+*.apk
+*.ipa
+*.aab
+*.zip
+
+# 本地临时文件
+/1
