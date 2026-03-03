@@ -1,0 +1,23 @@
+{
+  "name": "novel-mobile-uniapp",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev:h5": "uni -p h5",
+    "dev:app": "uni -p app",
+    "build:h5": "uni build -p h5",
+    "build:app": "uni build -p app"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.1.0",
+    "@capacitor/core": "^8.1.0",
+    "@dcloudio/uni-app": "3.0.0-alpha-5000120260211001",
+    "pinia": "2.1.7",
+    "vue": "3.4.21"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.1.0",
+    "@dcloudio/vite-plugin-uni": "3.0.0-alpha-5000120260211001",
+    "vite": "5.2.8"
+  }
+}

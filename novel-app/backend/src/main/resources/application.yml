@@ -1,0 +1,45 @@
+server:
+  port: 8088
+
+spring:
+  application:
+    name: novel-backend
+  datasource:
+    url: jdbc:h2:mem:novel;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  cache:
+    type: simple
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+novel:
+  jwt:
+    secret: change-this-in-production-change-this-in-production
+    access-expire-minutes: 120
+    refresh-expire-days: 30
+  content:
+    base-url: https://content-provider.example.com
+    app-key: demo-key
+    app-secret: demo-secret
+    timeout-millis: 3000
+  payment:
+    callback-secret: demo-payment-callback-secret
+  rate-limit:
+    requests-per-minute: 120

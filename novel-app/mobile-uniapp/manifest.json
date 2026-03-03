@@ -1,0 +1,30 @@
+{
+  "name": "小说体验版",
+  "appid": "__UNI__NOVELMVP001",
+  "description": "小说App MVP Android体验包",
+  "versionName": "0.1.0",
+  "versionCode": "101",
+  "transformPx": false,
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3,
+    "splashscreen": {
+      "alwaysShowBeforeRender": true,
+      "waiting": true,
+      "autoclose": true,
+      "delay": 0
+    },
+    "distribute": {
+      "android": {
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.INTERNET\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>"
+        ]
+      }
+    }
+  },
+  "h5": {
+    "title": "小说体验版"
+  }
+}

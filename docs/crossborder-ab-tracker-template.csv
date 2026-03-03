@@ -1,0 +1,5 @@
+week,platform,sku,test_name,variant,impressions,clicks,ctr,consults,consult_rate,qualified_consults,qualified_rate,orders,close_rate,upgrade_orders,upgrade_rate,decision,notes
+2026-W10,douyin,SKU-B,main_title,A,0,0,0,0,0,0,0,0,0,0,0,待定,
+2026-W10,douyin,SKU-B,main_title,B,0,0,0,0,0,0,0,0,0,0,0,待定,
+2026-W10,douyin,SKU-C,free_addon_copy,A,0,0,0,0,0,0,0,0,0,0,0,待定,
+2026-W10,douyin,SKU-C,free_addon_copy,B,0,0,0,0,0,0,0,0,0,0,0,待定,

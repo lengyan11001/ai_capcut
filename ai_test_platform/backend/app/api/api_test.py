@@ -1,7 +1,6 @@
 import asyncio
 import json
 import re
-from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
@@ -13,7 +12,6 @@ from sqlalchemy.orm import Session
 
 from ..core.credit_flow import add_credit_flow
 from ..core.credits import credits_for_api_test, credits_for_from_doc
-from ..core import model_pricing
 from ..core.llm_client import call_llm, estimate_credits_for_apis
 from ..db import get_db
 from ..models import User
@@ -905,7 +903,6 @@ async def generate_tests_from_doc(
         llm_estimate = estimate_credits_for_apis(
             model_id=payload.llm_model_id,
             api_count=len(apis),
-            db=db,
         )
 
     # 若仅做预估，则不执行接口、不扣积分，也不真正调用模型
@@ -963,8 +960,6 @@ async def generate_tests_from_doc(
                 system_prompt,
                 user_prompt,
                 0.2,
-                None,
-                db,
             )
             content = str(llm_result.get("content") or "").strip()
             llm_credits_used = int(llm_result.get("credits_used") or 0)
@@ -1006,15 +1001,6 @@ async def generate_tests_from_doc(
                 )
             current_user.credits -= llm_credits_used
             db.add(current_user)
-            if llm_usage:
-                total_tokens = llm_usage.get("total_tokens") or (
-                    llm_usage.get("prompt_tokens", 0) + llm_usage.get("completion_tokens", 0)
-                )
-                if total_tokens > 0:
-                    period_start = date.today().replace(day=1)
-                    model_pricing.add_usage_period(
-                        db, current_user.id, payload.llm_model_id, period_start, total_tokens
-                    )
             db.commit()
 
         return ApiFromDocResult(
@@ -1103,15 +1089,6 @@ async def generate_tests_from_doc(
             "from_doc_llm",
             None,
         )
-        if llm_usage:
-            total_tokens = llm_usage.get("total_tokens") or (
-                llm_usage.get("prompt_tokens", 0) + llm_usage.get("completion_tokens", 0)
-            )
-            if total_tokens > 0:
-                period_start = date.today().replace(day=1)
-                model_pricing.add_usage_period(
-                    db, current_user.id, payload.llm_model_id, period_start, total_tokens
-                )
     db.commit()
 
     executed = True

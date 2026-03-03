@@ -9,14 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import ceil
-from typing import Dict, Optional, TypedDict, TYPE_CHECKING
+from typing import Dict, Optional, TypedDict
 
 from openai import OpenAI
 
 from .config import settings
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
 
 
 class UsageLike(TypedDict, total=False):
@@ -139,25 +136,35 @@ def estimate_credits_for_usage(
     model_id: str,
     prompt_tokens: int,
     completion_tokens: int,
-    db: Optional["Session"] = None,
 ) -> int:
     """
     根据实际/预估的 tokens 计算本次调用需要的积分。
-    - 若传入 db，优先从 model_pricing 表取价，无则回退到代码 LLM_MODELS。
-    - model_id 为具体模型 ID，例如 aliyun:qwen-turbo、openclaw:default 等。
-    """
-    from . import model_pricing
 
-    cfg: Optional[LLMModelConfig] = None
-    if db is not None:
-        db_cfg = model_pricing.get_model_config(db, model_id)
-        if db_cfg is not None:
-            cfg = db_cfg  # PricingConfig 与 LLMModelConfig 计费字段兼容
-    if cfg is None:
-        cfg = _get_model_config(model_id)
+    - model_id 为具体模型 ID，例如 aliyun:qwen-turbo、volc:doubao-flash 等
+    - 若希望「免费模式」，上层不应调用本函数，而是直接视为 0 积分
+    """
+    cfg = _get_model_config(model_id)
     if not cfg:
+        # 未知模型，保守地视为不计费；上层可选择拒绝这类 model_id
         return 0
-    return model_pricing.compute_credits_with_config(cfg, prompt_tokens, completion_tokens)
+
+    prompt_m = prompt_tokens / 1_000_000.0
+    completion_m = completion_tokens / 1_000_000.0
+
+    # 先按模型本币种算出成本，再统一折算为美元
+    cost_in_currency = prompt_m * cfg.input_price_per_m + completion_m * cfg.output_price_per_m
+    if cfg.currency.upper() == "CNY":
+        dollars = cost_in_currency / EXCHANGE_RATE_RMB_PER_USD
+    else:
+        dollars = cost_in_currency
+
+    raw_credits = dollars * CREDITS_PER_DOLLAR
+    charged = ceil(raw_credits * cfg.margin_factor)
+    if charged <= 0:
+        charged = MIN_CREDITS_PER_CALL
+    else:
+        charged = max(charged, MIN_CREDITS_PER_CALL)
+    return charged
 
 
 def rough_token_estimate_for_apis(
@@ -188,7 +195,6 @@ def rough_token_estimate_for_apis(
 def estimate_credits_for_apis(
     model_id: str,
     api_count: int,
-    db: Optional["Session"] = None,
 ) -> Dict[str, int]:
     """
     给定接口数量与模型 ID，返回一个预估的积分消耗：
@@ -200,7 +206,6 @@ def estimate_credits_for_apis(
         model_id=model_id,
         prompt_tokens=usage.get("prompt_tokens", 0),
         completion_tokens=usage.get("completion_tokens", 0),
-        db=db,
     )
     return {
         "estimated_prompt_tokens": usage.get("prompt_tokens", 0),
@@ -240,7 +245,6 @@ def estimate_credits_for_openapi_doc(
     model_id: str,
     content_length: int,
     api_count: int,
-    db: Optional["Session"] = None,
 ) -> Dict[str, int]:
     """
     方案二（大模型设计完整用例）的积分预估：按文档长度 + 接口数估算 token，再换算积分。
@@ -252,7 +256,6 @@ def estimate_credits_for_openapi_doc(
         model_id=model_id,
         prompt_tokens=usage.get("prompt_tokens", 0),
         completion_tokens=usage.get("completion_tokens", 0),
-        db=db,
     )
     return {
         "estimated_prompt_tokens": usage.get("prompt_tokens", 0),
@@ -268,7 +271,6 @@ def call_llm(
     user_prompt: str,
     temperature: float = 0.2,
     max_tokens: Optional[int] = None,
-    db: Optional["Session"] = None,
 ) -> Dict[str, object]:
     """
     实际调用 OpenAI 模型，并返回：
