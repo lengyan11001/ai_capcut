@@ -183,9 +183,9 @@ def create_app() -> FastAPI:
     _seed_capability_catalog()
 
     app = FastAPI(
-        title="OpenClaw 控制台 API",
+        title="智能工作生活平台 API",
         version="0.1.0",
-        description="OpenClaw 控制台后端",
+        description="智能工作生活平台后端",
     )
 
     app.add_middleware(

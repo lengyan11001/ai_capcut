@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OpenClaw 控制台</title>
+  <title>智能工作生活平台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -450,7 +450,7 @@
 <body>
   <div class="page">
     <header class="header">
-      <div class="logo">OpenClaw<span>控制台</span></div>
+      <div class="logo">智能工作生活<span>平台</span></div>
       <div class="header-actions" id="headerActions" style="display: none;">
         <div class="header-dropdown" id="headerUserDropdown">
           <button type="button" class="header-dropdown-btn" id="headerDropdownBtn"><span id="headerCredits">0 积分</span> &#9660;</button>
@@ -1141,6 +1141,46 @@
     var chatSessions = [];
     var currentSessionId = null;
     var chatHistory = [];
+    var chatPendingBySession = {};
+
+    function getSessionById(id) {
+      var sid = id != null ? String(id) : '';
+      return chatSessions.find(function(s) { return String(s.id) === sid; }) || null;
+    }
+    function isSessionPending(id) {
+      return !!chatPendingBySession[String(id)];
+    }
+    function setSessionPending(id, pending) {
+      var sid = String(id || '');
+      if (!sid) return;
+      if (pending) chatPendingBySession[sid] = true;
+      else delete chatPendingBySession[sid];
+      var s = getSessionById(sid);
+      if (s) s.pending = !!pending;
+      refreshChatInputState();
+      renderChatSessionList();
+    }
+    function refreshChatInputState() {
+      var input = document.getElementById('chatInput');
+      var btn = document.getElementById('chatSendBtn');
+      if (!btn) return;
+      // 不锁输入框，避免切新会话无法输入；仅在当前会话请求进行中禁用发送按钮
+      btn.disabled = !!(currentSessionId && isSessionPending(currentSessionId));
+      if (input) input.disabled = false;
+    }
+    function renderCurrentSessionMessages() {
+      var container = document.getElementById('chatMessages');
+      if (!container) return;
+      container.innerHTML = '';
+      var sid = currentSessionId ? String(currentSessionId) : '';
+      var session = getSessionById(sid);
+      var messages = session && Array.isArray(session.messages) ? session.messages : [];
+      chatHistory = messages.slice();
+      messages.forEach(function(m) { appendChatMessage(m.role, m.content); });
+      if (sid && isSessionPending(sid)) showChatTypingIndicator();
+      container.scrollTop = container.scrollHeight;
+      refreshChatInputState();
+    }
 
     function loadChatSessionsFromStorage() {
       try {
@@ -1195,7 +1235,7 @@
     }
     function createNewSession() {
       var id = 's' + Date.now();
-      var session = { id: id, title: '新对话', messages: [], updatedAt: Date.now() };
+      var session = { id: id, title: '新对话', messages: [], updatedAt: Date.now(), pending: false };
       chatSessions.unshift(session);
       saveChatSessionsToStorage();
       switchChatSession(id);
@@ -1206,15 +1246,7 @@
       if (currentSessionId === sid) return;
       saveCurrentSessionToStore();
       currentSessionId = sid;
-      var session = chatSessions.find(function(s) { return String(s.id) === sid; });
-      var raw = session && (session.messages || session.history);
-      chatHistory = Array.isArray(raw) ? raw.slice() : [];
-      var container = document.getElementById('chatMessages');
-      if (container) {
-        container.innerHTML = '';
-        chatHistory.forEach(function(m) { appendChatMessage(m.role, m.content); });
-        container.scrollTop = container.scrollHeight;
-      }
+      renderCurrentSessionMessages();
       renderChatSessionList();
     }
     function saveCurrentSessionToStore() {
@@ -1277,7 +1309,20 @@
 
     function linkifyText(text) {
       var escaped = (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-      return escaped.replace(/(https?:\/\/[^\s<>]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+      return escaped.replace(/https?:\/\/[^\s<>"]+/g, function(raw) {
+        var url = raw;
+        var suffix = '';
+        while (/[)\]}\u3002\uff0c\uff01\uff1f,.]$/.test(url)) {
+          if (url.endsWith(')')) {
+            var opens = (url.match(/\(/g) || []).length;
+            var closes = (url.match(/\)/g) || []).length;
+            if (closes <= opens) break;
+          }
+          suffix = url.slice(-1) + suffix;
+          url = url.slice(0, -1);
+        }
+        return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>' + suffix;
+      });
     }
     function appendChatMessage(role, content) {
       var container = document.getElementById('chatMessages');
@@ -1347,26 +1392,43 @@
         if (chatSessions.length) switchChatSession(chatSessions[0].id);
         else createNewSession();
       }
+      var sid = String(currentSessionId);
+      var session = getSessionById(sid);
+      if (!session) return;
+      if (isSessionPending(sid)) return;
+
       input.value = '';
-      appendChatMessage('user', message);
-      chatHistory.push({ role: 'user', content: message });
+      session.messages = Array.isArray(session.messages) ? session.messages : [];
+      session.messages.push({ role: 'user', content: message });
+      session.updatedAt = Date.now();
+      if (String(currentSessionId) === sid) {
+        appendChatMessage('user', message);
+        chatHistory = session.messages.slice();
+      }
       saveCurrentSessionToStore();
       renderChatSessionList();
-      btn.disabled = true;
-      input.disabled = true;
+      setSessionPending(sid, true);
       showChatTypingIndicator();
+      var historyForRequest = session.messages.slice(0, -1);
       fetch(API_BASE + '/chat', {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ message: message, history: chatHistory.slice(0, -1) })
+        body: JSON.stringify({ message: message, history: historyForRequest })
       })
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, status: r.status, data: d }; }); })
         .then(function(x) {
-          removeChatTypingIndicator();
+          var targetSession = getSessionById(sid);
+          if (!targetSession) return;
+          if (String(currentSessionId) === sid) removeChatTypingIndicator();
           if (x.ok) {
             var reply = (x.data && x.data.reply) ? x.data.reply : '';
-            appendAssistantMessageReveal(reply);
-            chatHistory.push({ role: 'assistant', content: reply });
+            targetSession.messages = Array.isArray(targetSession.messages) ? targetSession.messages : [];
+            targetSession.messages.push({ role: 'assistant', content: reply });
+            targetSession.updatedAt = Date.now();
+            if (String(currentSessionId) === sid) {
+              appendAssistantMessageReveal(reply);
+              chatHistory = targetSession.messages.slice();
+            }
             fetch(API_BASE + '/auth/me', { headers: authHeaders() }).then(function(r) { return r.json(); }).then(function(d) {
               if (d && d.credits != null) {
                 var el = document.getElementById('userCredits'); if (el) el.textContent = d.credits;
@@ -1375,24 +1437,46 @@
             }).catch(function() {});
           } else {
             var errMsg = (x.data && x.data.detail) ? x.data.detail : ('请求失败 ' + (x.status || ''));
-            appendChatMessage('assistant', '错误：' + errMsg);
+            targetSession.messages = Array.isArray(targetSession.messages) ? targetSession.messages : [];
+            targetSession.messages.push({ role: 'assistant', content: '错误：' + errMsg });
+            targetSession.updatedAt = Date.now();
+            if (String(currentSessionId) === sid) {
+              appendChatMessage('assistant', '错误：' + errMsg);
+              chatHistory = targetSession.messages.slice();
+            }
           }
-          saveCurrentSessionToStore();
-          renderChatSessionList();
+          saveChatSessionsToStorage();
         })
         .catch(function(e) {
-          removeChatTypingIndicator();
-          appendChatMessage('assistant', '网络错误：' + (e && e.message ? e.message : '请稍后重试'));
-          saveCurrentSessionToStore();
-          renderChatSessionList();
+          var targetSession = getSessionById(sid);
+          var msg = '网络错误：' + (e && e.message ? e.message : '请稍后重试');
+          if (targetSession) {
+            targetSession.messages = Array.isArray(targetSession.messages) ? targetSession.messages : [];
+            targetSession.messages.push({ role: 'assistant', content: msg });
+            targetSession.updatedAt = Date.now();
+          }
+          if (String(currentSessionId) === sid) {
+            removeChatTypingIndicator();
+            appendChatMessage('assistant', msg);
+            if (targetSession) chatHistory = targetSession.messages.slice();
+          }
+          saveChatSessionsToStorage();
         })
-        .finally(function() { btn.disabled = false; input.disabled = false; });
+        .finally(function() {
+          setSessionPending(sid, false);
+          if (String(currentSessionId) === sid) removeChatTypingIndicator();
+        });
     }
     var chatSendBtn = document.getElementById('chatSendBtn');
     var chatInput = document.getElementById('chatInput');
     if (chatSendBtn) chatSendBtn.addEventListener('click', sendChatMessage);
     if (chatInput) {
+      var chatInputComposing = false;
+      chatInput.addEventListener('compositionstart', function() { chatInputComposing = true; });
+      chatInput.addEventListener('compositionend', function() { chatInputComposing = false; });
       chatInput.addEventListener('keydown', function(e) {
+        // 中文输入法组合态下回车用于上屏，不应触发发送
+        if (chatInputComposing || e.isComposing || e.keyCode === 229) return;
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
       });
     }
