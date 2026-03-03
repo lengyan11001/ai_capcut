@@ -1,0 +1,194 @@
+[
+  {
+    "id": "guide-1",
+    "slug": "how-to-choose-first-doll",
+    "title": "First Purchase Guide: How to Choose Size and Material",
+    "excerpt": "A practical path for first-time buyers: budget, body size, material feel, and shipping expectations.",
+    "category": "Beginner",
+    "readMinutes": 6,
+    "tags": ["beginner", "size", "budget"],
+    "sections": [
+      {
+        "heading": "Start from total landed budget",
+        "body": "Do not only compare factory price. Include international freight, destination fees, and optional functions before deciding."
+      },
+      {
+        "heading": "Size affects both handling and shipping",
+        "body": "100-130cm models are easier for storage and lower-risk first orders. 149-171cm models provide stronger realism but are heavier and more expensive to ship."
+      },
+      {
+        "heading": "Pick one must-have, then control options",
+        "body": "Choose one key preference (for example: skin texture, standing feet, implanted hair), then keep other add-ons minimal to avoid budget overflow."
+      }
+    ],
+    "relatedProductSlugs": ["origin-tpe-130-new-body", "origin-silicone-149-wig", "origin-half-body-7kg-st-7"]
+  },
+  {
+    "id": "guide-2",
+    "slug": "tpe-vs-silicone-differences",
+    "title": "TPE vs Silicone: Cost, Touch, and Maintenance",
+    "excerpt": "A side-by-side comparison for decision making before payment.",
+    "category": "Comparison",
+    "readMinutes": 5,
+    "tags": ["tpe", "silicone", "comparison"],
+    "sections": [
+      {
+        "heading": "Price and entry threshold",
+        "body": "TPE is usually lower cost and better for first order testing. Silicone has higher upfront cost and often higher freight impact."
+      },
+      {
+        "heading": "Touch and appearance",
+        "body": "Silicone usually offers stronger skin-texture consistency. TPE can feel softer in some ranges but requires more regular powder care."
+      },
+      {
+        "heading": "Maintenance rhythm",
+        "body": "Both materials need regular cleaning and dry storage. Silicone is more stable for long-term shape retention, while TPE needs stricter anti-stain handling."
+      }
+    ],
+    "relatedProductSlugs": ["origin-tpe-149-standard", "origin-silicone-158-wig", "origin-silicone-171-skin-texture"]
+  },
+  {
+    "id": "guide-3",
+    "slug": "care-routine-weekly-monthly",
+    "title": "Care Routine: Weekly and Monthly Checklist",
+    "excerpt": "A maintenance SOP to keep product condition stable and reduce after-sales issues.",
+    "category": "Care",
+    "readMinutes": 4,
+    "tags": ["care", "maintenance", "checklist"],
+    "sections": [
+      {
+        "heading": "Weekly basic care",
+        "body": "Surface cleaning, dry wipe, and quick visual check for high-contact zones."
+      },
+      {
+        "heading": "Monthly deep care",
+        "body": "Joint movement check, powder or surface condition refresh, wig and accessory organization."
+      },
+      {
+        "heading": "Storage discipline",
+        "body": "Keep in dry, low-dust space. Avoid direct sunlight and long-term pressure on one side."
+      }
+    ],
+    "relatedProductSlugs": ["origin-half-body-14kg-st-2", "origin-silicone-168-wig"]
+  },
+  {
+    "id": "guide-4",
+    "slug": "shipping-warehouse-vs-origin",
+    "title": "Warehouse vs Origin Delivery: Which Route Fits You",
+    "excerpt": "Understand the trade-off between faster regional inventory and wider origin options.",
+    "category": "Beginner",
+    "readMinutes": 5,
+    "tags": ["shipping", "warehouse", "origin"],
+    "sections": [
+      {
+        "heading": "Regional warehouse route",
+        "body": "Usually faster final-mile delivery, limited model options, and region-dependent stock."
+      },
+      {
+        "heading": "Origin route",
+        "body": "Wider model selection and option combinations, but international freight and customs timeline vary by destination."
+      },
+      {
+        "heading": "How to decide",
+        "body": "If timeline is priority, prefer local warehouse when available. If model customization is priority, origin route is usually better."
+      }
+    ],
+    "relatedProductSlugs": ["origin-tpe-100-standard", "origin-silicone-149-wig"]
+  },
+  {
+    "id": "guide-5",
+    "slug": "half-body-vs-full-body-scenarios",
+    "title": "Half Body vs Full Body: Usage Scenario Playbook",
+    "excerpt": "Choose based on space, handling, and use intensity instead of only body type preference.",
+    "category": "Scene",
+    "readMinutes": 4,
+    "tags": ["half-body", "full-body", "scenario"],
+    "sections": [
+      {
+        "heading": "Half body advantages",
+        "body": "Lower space requirement, easier handling, and lower shipping baseline."
+      },
+      {
+        "heading": "Full body advantages",
+        "body": "Stronger visual completeness and broader presentation scenarios."
+      },
+      {
+        "heading": "Decision shortcut",
+        "body": "For first order and tight storage, start with half body. For long-term collection intent, choose full body."
+      }
+    ],
+    "relatedProductSlugs": ["origin-half-body-7kg-st-7", "origin-half-body-15kg-st-3", "origin-silicone-158-wig"]
+  },
+  {
+    "id": "guide-6",
+    "slug": "optional-functions-worth-it",
+    "title": "Optional Functions: What Is Worth Paying For",
+    "excerpt": "Prioritize options by conversion value instead of adding everything.",
+    "category": "Comparison",
+    "readMinutes": 4,
+    "tags": ["options", "pricing", "value"],
+    "sections": [
+      {
+        "heading": "High-impact options first",
+        "body": "Focus on options that directly change your daily experience, such as preferred hair type or key body function."
+      },
+      {
+        "heading": "Avoid stacked low-value add-ons",
+        "body": "Multiple minor options can exceed budget quickly without clear utility gain."
+      },
+      {
+        "heading": "Use a one-page option plan",
+        "body": "Before order confirmation, lock one must-have, one nice-to-have, and one optional fallback."
+      }
+    ],
+    "relatedProductSlugs": ["origin-tpe-169-new-shape", "origin-silicone-171-skin-texture", "origin-half-body-14kg-st-2"]
+  },
+  {
+    "id": "guide-7",
+    "slug": "privacy-and-discreet-delivery",
+    "title": "Privacy and Discreet Delivery: What to Expect",
+    "excerpt": "A clear expectation-setting note for packaging, communication, and delivery checkpoints.",
+    "category": "Beginner",
+    "readMinutes": 3,
+    "tags": ["privacy", "delivery", "packaging"],
+    "sections": [
+      {
+        "heading": "Outer packaging",
+        "body": "No sensitive labels on package exterior. Keep receiver contact details accurate to avoid exception handling calls."
+      },
+      {
+        "heading": "Communication flow",
+        "body": "You will receive confirmation before final freight quote and payment completion."
+      },
+      {
+        "heading": "After-delivery checks",
+        "body": "Inspect package condition, then do a basic product status check within the first day."
+      }
+    ],
+    "relatedProductSlugs": ["origin-tpe-130-new-body", "origin-silicone-149-wig"]
+  },
+  {
+    "id": "guide-8",
+    "slug": "beginner-bundle-recommendations",
+    "title": "Starter Bundle Recommendations by Budget",
+    "excerpt": "Three practical bundle ideas to reduce decision fatigue for first-time buyers.",
+    "category": "Scene",
+    "readMinutes": 5,
+    "tags": ["bundle", "budget", "starter"],
+    "sections": [
+      {
+        "heading": "Entry bundle",
+        "body": "Start with one compact model plus basic care items and minimal add-ons."
+      },
+      {
+        "heading": "Balanced bundle",
+        "body": "Choose a 149-159cm class model with one major optional function and a maintenance schedule."
+      },
+      {
+        "heading": "Premium bundle",
+        "body": "For long-term use, prioritize higher-grade texture model and strict post-delivery care routine."
+      }
+    ],
+    "relatedProductSlugs": ["origin-half-body-7kg-st-7", "origin-tpe-149-standard", "origin-silicone-171-skin-texture"]
+  }
+]

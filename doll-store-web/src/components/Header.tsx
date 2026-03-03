@@ -28,6 +28,12 @@ export function Header() {
             Products
           </Link>
           <Link
+            href="/guides"
+            className="text-sm text-gray-600 hover:text-gray-900"
+          >
+            Guides
+          </Link>
+          <Link
             href="/cart"
             className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
           >
@@ -65,6 +71,13 @@ export function Header() {
             onClick={() => setOpen(false)}
           >
             Products
+          </Link>
+          <Link
+            href="/guides"
+            className="block py-2 text-gray-600"
+            onClick={() => setOpen(false)}
+          >
+            Guides
           </Link>
           <Link
             href="/cart"

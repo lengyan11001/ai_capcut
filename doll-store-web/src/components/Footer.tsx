@@ -14,6 +14,11 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href="/guides" className="text-gray-600 hover:text-gray-900">
+                  Buying Guides
+                </Link>
+              </li>
+              <li>
                 <Link href="/category/full-body" className="text-gray-600 hover:text-gray-900">
                   Full Body
                 </Link>
@@ -46,6 +51,11 @@ export function Footer() {
               <li>
                 <Link href="/shipping" className="text-gray-600 hover:text-gray-900">
                   Shipping & Delivery
+                </Link>
+              </li>
+              <li>
+                <Link href="/guides/how-to-choose-first-doll" className="text-gray-600 hover:text-gray-900">
+                  First Purchase Guide
                 </Link>
               </li>
               <li>

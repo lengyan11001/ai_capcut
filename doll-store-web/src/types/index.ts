@@ -18,6 +18,8 @@ export interface Product {
   videoUrl?: string;
   sku?: string;
   sourceType?: "origin" | "overseas_us" | "overseas_eu";
+  visibleRegions?: Array<"US" | "EU" | "ROW" | "ALL">;
+  shippableCountries?: string[];
   shippingNotice?: string;
   leadTimeDays?: string;
   addOnOptions?: string[];
@@ -25,6 +27,18 @@ export interface Product {
   material: string;
   specs?: Record<string, string>;
   featured?: boolean;
+}
+
+export interface GuideArticle {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  category: "Beginner" | "Material" | "Care" | "Scene" | "Comparison";
+  readMinutes: number;
+  tags: string[];
+  sections: Array<{ heading: string; body: string }>;
+  relatedProductSlugs: string[];
 }
 
 export interface CartItem {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCart } from "@/context/CartContext";
 import Link from "next/link";
 import { formatMoney } from "@/lib/money";
+import { isCountrySupported } from "@/lib/shipping";
 
 export default function CheckoutPage() {
   const { items, subtotal, clearCart } = useCart();
@@ -22,10 +23,15 @@ export default function CheckoutPage() {
     postalCode: "",
     country: "",
   });
+  const countrySupported = form.country ? isCountrySupported(form.country) : true;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!countrySupported) {
+      setError("This destination is not available yet. Please contact support for a manual shipping quote.");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/orders", {
@@ -183,6 +189,11 @@ export default function CheckoutPage() {
                 onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))}
                 className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
               />
+              {!countrySupported && (
+                <p className="mt-1 text-xs text-red-600">
+                  This destination is currently outside our shipping allowlist.
+                </p>
+              )}
             </div>
           </div>
           {error && (
@@ -209,7 +220,7 @@ export default function CheckoutPage() {
           </p>
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !countrySupported}
             className="mt-6 w-full rounded bg-gray-900 py-3 font-medium text-white hover:bg-gray-800 disabled:opacity-70"
           >
             {loading ? "Submitting…" : "Submit order"}

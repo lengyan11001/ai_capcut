@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { OrderPayload } from "@/types";
+import { isCountrySupported } from "@/lib/shipping";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -21,6 +22,12 @@ export async function POST(request: NextRequest) {
   if (!email || !shipping?.name || !shipping?.address || !Array.isArray(items) || typeof total !== "number") {
     return Response.json(
       { error: "Missing required fields: email, shipping (name, address), items, total" },
+      { status: 400 }
+    );
+  }
+  if (!shipping?.country || !isCountrySupported(shipping.country)) {
+    return Response.json(
+      { error: "Destination country is not supported yet. Please contact support for manual quote." },
       { status: 400 }
     );
   }

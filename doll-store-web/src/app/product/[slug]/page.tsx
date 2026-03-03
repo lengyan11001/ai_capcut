@@ -4,14 +4,19 @@ import Link from "next/link";
 import { getProductBySlug } from "@/lib/data";
 import { AddToCartButton } from "./AddToCartButton";
 import { formatMoney } from "@/lib/money";
+import { resolveRegionContext } from "@/lib/request-context";
 
 export default async function ProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { slug } = await params;
-  const product = getProductBySlug(slug);
+  const resolvedSearchParams = await searchParams;
+  const ctx = await resolveRegionContext(resolvedSearchParams);
+  const product = getProductBySlug(slug, { region: ctx.region, debugAll: ctx.debugAll });
   if (!product) notFound();
   const imageUrl = product.images[0] ?? "https://placehold.co/600x800?text=Product";
   const isPlaceholder = imageUrl.startsWith("https://placehold.co");
@@ -48,6 +53,10 @@ export default async function ProductPage({
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{product.name}</h1>
+          <p className="mt-1 text-xs text-gray-500">
+            Region view: {ctx.region}
+            {ctx.debugAll ? " · debug_all enabled" : ""}
+          </p>
           <p className="mt-2 text-gray-500">
             {product.material} · {product.sourceType === "origin" ? "Origin supply" : "Warehouse supply"}
           </p>
