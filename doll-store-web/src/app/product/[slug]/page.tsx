@@ -15,6 +15,7 @@ export default async function ProductPage({
   if (!product) notFound();
   const imageUrl = product.images[0] ?? "https://placehold.co/600x800?text=Product";
   const isPlaceholder = imageUrl.startsWith("https://placehold.co");
+  const isProxyImage = imageUrl.startsWith("/api/image-proxy");
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -28,7 +29,7 @@ export default async function ProductPage({
             className="object-cover"
             sizes="(max-width: 1024px) 100vw, 50vw"
             priority
-            unoptimized={isPlaceholder}
+            unoptimized={isPlaceholder || isProxyImage}
           />
           </div>
           {/* 商品视频占位：videoUrl 填入自有或供应商授权视频 URL */}

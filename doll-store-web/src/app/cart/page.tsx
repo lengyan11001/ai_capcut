@@ -48,7 +48,10 @@ export default function CartPage() {
                       alt={item.name}
                       fill
                       className="object-cover"
-                      unoptimized={item.image.startsWith("https://placehold.co")}
+                      unoptimized={
+                        item.image.startsWith("https://placehold.co") ||
+                        item.image.startsWith("/api/image-proxy")
+                      }
                     />
                   ) : null}
                 </div>

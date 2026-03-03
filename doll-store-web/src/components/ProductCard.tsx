@@ -6,6 +6,7 @@ import { formatMoney } from "@/lib/money";
 export function ProductCard({ product }: { product: Product }) {
   const imageUrl = product.images[0] ?? "https://placehold.co/600x800?text=Product";
   const isPlaceholder = imageUrl.startsWith("https://placehold.co");
+  const isProxyImage = imageUrl.startsWith("/api/image-proxy");
   return (
     <Link
       href={`/product/${product.slug}`}
@@ -18,7 +19,7 @@ export function ProductCard({ product }: { product: Product }) {
           fill
           className="object-cover transition group-hover:scale-[1.02]"
           sizes="(max-width: 768px) 100vw, 33vw"
-          unoptimized={isPlaceholder}
+          unoptimized={isPlaceholder || isProxyImage}
         />
         {product.compareAtPrice != null && product.compareAtPrice > product.price && (
           <span className="absolute left-2 top-2 rounded bg-red-600 px-2 py-0.5 text-xs text-white">
