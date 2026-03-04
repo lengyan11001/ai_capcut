@@ -2,6 +2,7 @@ import type { Category, Product } from "@/types";
 import categoriesData from "@/data/categories.json";
 import productsData from "@/data/products.json";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { unstable_cache } from "next/cache";
 
 const categories = categoriesData as Category[];
 const IMAGE_PROXY_PREFIX = "http://47.107.244.246:3000/uploads/";
@@ -114,7 +115,7 @@ function mapDbProduct(row: DbProductRow): Product {
   };
 }
 
-async function loadProducts(): Promise<Product[]> {
+async function loadProductsFromSource(): Promise<Product[]> {
   const supabase = getSupabaseAdmin();
   if (!supabase) return staticProducts;
 
@@ -125,6 +126,10 @@ async function loadProducts(): Promise<Product[]> {
   if (error || !data) return staticProducts;
   return (data as DbProductRow[]).map(mapDbProduct);
 }
+
+const loadProductsCached = unstable_cache(loadProductsFromSource, ["products-all"], {
+  revalidate: 30,
+});
 
 export function getCategories(): Category[] {
   return categories;
@@ -138,7 +143,7 @@ export async function getProducts(
   categorySlug?: string,
   options?: { region?: RegionCode; debugAll?: boolean }
 ): Promise<Product[]> {
-  const products = await loadProducts();
+  const products = await loadProductsCached();
   const base = options?.debugAll
     ? products
     : products.filter((p) => canShowByRegion(p, options?.region ?? "ROW"));

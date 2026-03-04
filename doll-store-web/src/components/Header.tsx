@@ -30,24 +30,25 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
-        <Link href={buildHref("/")} className="text-lg font-semibold text-gray-900">
+        <Link href={buildHref("/")} prefetch className="text-lg font-semibold text-gray-900">
           Doll Store
         </Link>
         <nav className="hidden items-center gap-6 md:flex">
-          <Link href={buildHref("/")} className="text-sm text-gray-600 hover:text-gray-900">
+          <Link href={buildHref("/")} prefetch className="text-sm text-gray-600 hover:text-gray-900">
             {t(lang, "Home", "首页")}
           </Link>
-          <Link href={buildHref("/products")} className="text-sm text-gray-600 hover:text-gray-900">
+          <Link href={buildHref("/products")} prefetch className="text-sm text-gray-600 hover:text-gray-900">
             {t(lang, "Products", "商品")}
           </Link>
-          <Link href={buildHref("/guides")} className="text-sm text-gray-600 hover:text-gray-900">
+          <Link href={buildHref("/guides")} prefetch className="text-sm text-gray-600 hover:text-gray-900">
             {t(lang, "Guides", "指南")}
           </Link>
-          <Link href={buildHref("/orders")} className="text-sm text-gray-600 hover:text-gray-900">
+          <Link href={buildHref("/orders")} prefetch className="text-sm text-gray-600 hover:text-gray-900">
             {t(lang, "Track order", "订单查询")}
           </Link>
           <Link
             href={buildHref("/cart")}
+            prefetch
             className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
           >
             {t(lang, "Cart", "购物车")}
@@ -88,6 +89,7 @@ export function Header() {
         <div className="border-t border-gray-200 bg-white px-4 py-3 md:hidden">
           <Link
             href={buildHref("/")}
+            prefetch
             className="block py-2 text-gray-600"
             onClick={() => setOpen(false)}
           >
@@ -95,6 +97,7 @@ export function Header() {
           </Link>
           <Link
             href={buildHref("/products")}
+            prefetch
             className="block py-2 text-gray-600"
             onClick={() => setOpen(false)}
           >
@@ -102,6 +105,7 @@ export function Header() {
           </Link>
           <Link
             href={buildHref("/guides")}
+            prefetch
             className="block py-2 text-gray-600"
             onClick={() => setOpen(false)}
           >
@@ -109,6 +113,7 @@ export function Header() {
           </Link>
           <Link
             href={buildHref("/cart")}
+            prefetch
             className="block py-2 text-gray-600"
             onClick={() => setOpen(false)}
           >
@@ -116,6 +121,7 @@ export function Header() {
           </Link>
           <Link
             href={buildHref("/orders")}
+            prefetch
             className="block py-2 text-gray-600"
             onClick={() => setOpen(false)}
           >
