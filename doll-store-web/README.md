@@ -17,7 +17,7 @@
 - 多语言切换：右上角支持 `EN / 中文`（通过 `lang` URL 参数切换）
 - 静态页：About、Shipping & Delivery、Privacy Policy、Contact
 
-支付：当前为「提交订单」后由站长联系客户完成支付。真实收款需自行对接成人友好通道（如 CCBill、Epoch），参见仓库根目录下 `docs/doll-store/` 下的《Shopify从零到上线步骤》或《自建服务器独立站从零到上线》中的支付章节。
+支付：当前默认为「提交订单」后由站长联系客户完成支付，并支持可选「加密货币人工转账」入口（下单后在感谢页展示钱包信息）。真实自动收款可后续对接成人友好通道（如 CCBill、Epoch），参见仓库根目录下 `docs/doll-store/` 下的《Shopify从零到上线步骤》或《自建服务器独立站从零到上线》中的支付章节。
 
 ## 本地运行
 
@@ -39,6 +39,12 @@ npm run dev
 
 - `ADMIN_PANEL_PASSWORD`：后台登录密码（必填）
 - `SUPABASE_ASSET_BUCKET`：后台上传素材的 Storage bucket（默认 `product-media`）
+
+### 加密支付入口（人工确认）变量
+
+- `CRYPTO_PAY_COIN`：币种（默认 `USDT`）
+- `CRYPTO_PAY_NETWORK`：网络（默认 `TRON (TRC20)`）
+- `CRYPTO_PAY_ADDRESS`：收款地址（未配置时感谢页会提示联系客服）
 
 ### Supabase 订单表
 
@@ -131,6 +137,16 @@ npm run migrate:supplier-assets
 3. 本地执行 `npm run import:products` 初始化商品
 4. 打开 `/admin/login` 登录后台
 5. 在 `/admin/products` 设置 `cost_price/cost_currency`、`sale_price/sale_currency`、素材状态、海外仓包邮开关和素材
+
+## 本周支付流程（已上线）
+
+1. 结账页选择支付方式：
+   - `Manual contact payment`（人工联系支付，默认）
+   - `Crypto (manual transfer)`（加密货币人工转账）
+2. 订单提交后进入感谢页：
+   - 人工支付：提示等待客服联系
+   - 加密支付：展示币种、网络、钱包地址和转账备注（订单号）
+3. 客服人工确认到账后安排后续发货流程
 
 ## 项目结构
 

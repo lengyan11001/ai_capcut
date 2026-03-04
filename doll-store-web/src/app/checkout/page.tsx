@@ -15,6 +15,7 @@ export default function CheckoutPage() {
   const [lang, setLang] = useState<Lang>("en");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<"manual_contact" | "crypto_manual">("manual_contact");
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -51,12 +52,15 @@ export default function CheckoutPage() {
           items,
           total: subtotal,
           currency: "CNY",
+          paymentMethod,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? t(lang, "Order failed", "订单提交失败"));
       clearCart();
-      router.push(`/checkout/thank-you?orderId=${data.orderId ?? ""}&lang=${lang}`);
+      router.push(
+        `/checkout/thank-you?orderId=${data.orderId ?? ""}&lang=${lang}&paymentMethod=${paymentMethod}`
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : t(lang, "Something went wrong", "系统异常，请稍后重试"));
     } finally {
@@ -237,6 +241,60 @@ export default function CheckoutPage() {
           <p className="mt-1 text-xs text-gray-500">
             {t(lang, "Freight: quoted after destination confirmation.", "运费：确认收货地区后报价。")}
           </p>
+          <div className="mt-4 rounded border border-gray-200 bg-white p-3 text-left">
+            <p className="text-sm font-medium text-gray-800">{t(lang, "Payment method", "支付方式")}</p>
+            <label className="mt-2 flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="radio"
+                name="paymentMethod"
+                value="manual_contact"
+                checked={paymentMethod === "manual_contact"}
+                onChange={() => setPaymentMethod("manual_contact")}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium">
+                  {t(lang, "Manual contact payment", "人工联系支付")}
+                </span>
+                <span className="block text-xs text-gray-500">
+                  {t(
+                    lang,
+                    "Submit order first, we will contact you to confirm shipping and payment.",
+                    "先提交订单，我们将联系你确认运费与支付。"
+                  )}
+                </span>
+              </span>
+            </label>
+            <label className="mt-2 flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="radio"
+                name="paymentMethod"
+                value="crypto_manual"
+                checked={paymentMethod === "crypto_manual"}
+                onChange={() => setPaymentMethod("crypto_manual")}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium">{t(lang, "Crypto (manual transfer)", "加密货币（人工转账）")}</span>
+                <span className="block text-xs text-gray-500">
+                  {t(
+                    lang,
+                    "After placing order, pay by wallet address shown on thank-you page and contact support.",
+                    "下单后按感谢页钱包地址转账，并联系客服确认到账。"
+                  )}
+                </span>
+              </span>
+            </label>
+            {paymentMethod === "crypto_manual" && (
+              <p className="mt-2 text-xs text-amber-700">
+                {t(
+                  lang,
+                  "Tip: transfer with your order reference in memo for faster confirmation.",
+                  "提示：转账备注填写订单号可更快确认。"
+                )}
+              </p>
+            )}
+          </div>
           <button
             type="submit"
             disabled={loading || !countrySupported}

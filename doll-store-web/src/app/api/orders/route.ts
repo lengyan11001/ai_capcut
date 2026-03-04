@@ -18,7 +18,8 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { email, shipping, items, total, currency } = body as OrderPayload;
+  const { email, shipping, items, total, currency, paymentMethod } = body as OrderPayload;
+  const resolvedPaymentMethod = paymentMethod === "crypto_manual" ? "crypto_manual" : "manual_contact";
   if (!email || !shipping?.name || !shipping?.address || !Array.isArray(items) || typeof total !== "number") {
     return Response.json(
       { error: "Missing required fields: email, shipping (name, address), items, total" },
@@ -34,6 +35,10 @@ export async function POST(request: NextRequest) {
 
   const supabase = getSupabase();
   if (supabase) {
+    const orderItems = {
+      lines: items,
+      paymentMethod: resolvedPaymentMethod,
+    };
     const { data, error } = await supabase
       .from("orders")
       .insert({
@@ -47,10 +52,10 @@ export async function POST(request: NextRequest) {
           shipping.country,
         ].filter(Boolean).join(", "),
         shipping_phone: shipping.phone ?? null,
-        items,
+        items: orderItems,
         total,
         currency: currency ?? "CNY",
-        status: "pending",
+        status: resolvedPaymentMethod === "crypto_manual" ? "pending_crypto" : "pending",
       })
       .select("id")
       .single();
@@ -62,7 +67,7 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-    return Response.json({ success: true, orderId: data?.id });
+    return Response.json({ success: true, orderId: data?.id, paymentMethod: resolvedPaymentMethod });
   }
 
   // Fallback: no Supabase configured — return success with a placeholder ID so the flow still works.
@@ -71,9 +76,11 @@ export async function POST(request: NextRequest) {
     email,
     total,
     itemCount: items.length,
+    paymentMethod: resolvedPaymentMethod,
   });
   return Response.json({
     success: true,
     orderId: `draft-${Date.now()}`,
+    paymentMethod: resolvedPaymentMethod,
   });
 }
