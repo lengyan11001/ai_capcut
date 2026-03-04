@@ -3,6 +3,7 @@ import "./globals.css";
 import { CartProvider } from "@/context/CartContext";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
+import { Suspense } from "react";
 
 export const metadata: Metadata = {
   title: "Doll Store | Premium Collectibles",
@@ -18,7 +19,9 @@ export default function RootLayout({
     <html lang="en">
       <body className="flex min-h-screen flex-col bg-white text-gray-900 antialiased">
         <CartProvider>
-          <Header />
+          <Suspense fallback={<div className="h-14 border-b border-gray-200 bg-white" />}>
+            <Header />
+          </Suspense>
           <main className="flex-1">{children}</main>
           <Footer />
         </CartProvider>

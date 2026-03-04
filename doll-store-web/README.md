@@ -14,6 +14,7 @@
   - `/admin/products` 商品列表、双币种价格与素材状态管理
   - `/admin/products/new` 新建商品，支持上传图片/视频到 Supabase Storage
 - 商品详情媒体区：缩略图切换 + 图片悬停放大预览（视频仅播放不放大）
+- 多语言切换：右上角支持 `EN / 中文`（通过 `lang` URL 参数切换）
 - 静态页：About、Shipping & Delivery、Privacy Policy、Contact
 
 支付：当前为「提交订单」后由站长联系客户完成支付。真实收款需自行对接成人友好通道（如 CCBill、Epoch），参见仓库根目录下 `docs/doll-store/` 下的《Shopify从零到上线步骤》或《自建服务器独立站从零到上线》中的支付章节。
@@ -84,6 +85,12 @@ npm run import:us-stock -- --dry-run
 
 # 指定其他供应商文件（为后续多供应商扩展保留）
 npm run import:us-stock -- --file="/absolute/path/to/inventory_raw.json"
+```
+
+将已导入的美国仓商品文案统一转为英文（清洗中文字段）：
+
+```bash
+npm run normalize:us-copy
 ```
 
 如需将供应商外链素材（如 `47.107.244.246`）迁移到你自己的 Supabase Storage，并自动回写商品图片/视频 URL：

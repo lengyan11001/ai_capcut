@@ -18,6 +18,7 @@ const supplierJsonPath = supplierJsonArg ? supplierJsonArg.slice("--file=".lengt
 const dryRun = process.argv.includes("--dry-run");
 
 const SUPPLIER_ASSET_BASE = "http://47.107.244.246:3000";
+const CJK_REGEX = /[\u3400-\u9FFF]/g;
 
 function normalizeImage(picture) {
   if (!picture || typeof picture !== "string") return [];
@@ -31,6 +32,16 @@ function normalizeCurrency(input) {
   return "CNY";
 }
 
+function stripCjk(input) {
+  if (!input || typeof input !== "string") return "";
+  return input
+    .replace(CJK_REGEX, "")
+    .replace(/[；]/g, ";")
+    .replace(/[：]/g, ":")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function toProductRow(item) {
   const code = String(item.code || "").trim();
   if (!code.startsWith("US-")) return null;
@@ -42,16 +53,16 @@ function toProductRow(item) {
   const priceNumber = Number(usPrice);
   if (!Number.isFinite(priceNumber) || priceNumber <= 0) return null;
 
-  const height = item.height ? String(item.height).trim() : "";
-  const color = item.color ? String(item.color).trim() : "";
-  const name = `US Local ${height}${color ? ` · ${color}` : ""}`.trim();
+  const codeDisplay = code.replace(/_/g, "-");
+  const name = `US Local Product ${codeDisplay}`;
+  const grossWeight = item.gross_weight ? String(item.gross_weight).trim() : "";
+  const rawVitals = item.vital_statistics ? String(item.vital_statistics).trim() : "";
+  const packStats = stripCjk(rawVitals);
 
   return {
     slug: code,
     name,
-    description: `Supplier US local stock item ${code}. Height: ${height || "N/A"}, color: ${
-      color || "N/A"
-    }, stock: ${stock}.`,
+    description: `Supplier US local stock item ${codeDisplay}. In-stock item from US warehouse (stock: ${stock}).`,
     category_id: "silicone",
     material: "TPE/Silicone",
     currency: usCurrency,
@@ -68,10 +79,10 @@ function toProductRow(item) {
     video_url: null,
     specs: {
       supplier: "supplier_us_inventory",
-      supplier_code: code,
+      supplier_code: codeDisplay,
       supplier_stock: String(stock),
-      gross_weight: item.gross_weight ? String(item.gross_weight) : "",
-      vital_statistics: item.vital_statistics ? String(item.vital_statistics) : "",
+      gross_weight: grossWeight ? `${grossWeight} kg` : "",
+      package_stats: packStats || "",
       download_link: item.downloadlink ? String(item.downloadlink) : "",
     },
     add_on_options: [],

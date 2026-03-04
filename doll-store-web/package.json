@@ -9,7 +9,8 @@
     "lint": "eslint",
     "import:products": "node --env-file=.env scripts/import-products-to-supabase.mjs",
     "migrate:supplier-assets": "node --env-file=.env scripts/migrate-supplier-assets-to-storage.mjs",
-    "import:us-stock": "node --env-file=.env scripts/import-us-instock-from-supplier.mjs"
+    "import:us-stock": "node --env-file=.env scripts/import-us-instock-from-supplier.mjs",
+    "normalize:us-copy": "node --env-file=.env scripts/normalize-us-copy-to-english.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",

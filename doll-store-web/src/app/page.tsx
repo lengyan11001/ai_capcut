@@ -4,6 +4,7 @@ import { getCategories, getFeaturedProducts } from "@/lib/data";
 import { ProductCard } from "@/components/ProductCard";
 import { getGuides } from "@/lib/guides";
 import { resolveRegionContext } from "@/lib/request-context";
+import { getLangFromSearchParams, t } from "@/lib/i18n";
 
 const HERO_IMAGE = "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1200&q=80";
 
@@ -13,6 +14,7 @@ export default async function HomePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
+  const lang = getLangFromSearchParams(resolvedSearchParams);
   const ctx = await resolveRegionContext(resolvedSearchParams);
   const categories = getCategories();
   const featured = await getFeaturedProducts({ region: ctx.region, debugAll: ctx.debugAll });
@@ -28,31 +30,39 @@ export default async function HomePage({
         </div>
         <div className="mx-auto max-w-6xl px-4 text-center">
           <h1 className="text-3xl font-bold tracking-tight text-white drop-shadow md:text-4xl">
-            Premium Collectibles
+            {t(lang, "Premium Collectibles", "高端收藏级产品")}
           </h1>
           <p className="mt-4 text-lg text-white/90 drop-shadow">
-            Full body dolls and accessories. Discreet packaging, worldwide delivery.
+            {t(
+              lang,
+              "Full body dolls and accessories. Discreet packaging, worldwide delivery.",
+              "全身娃娃与配件，隐私包装，全球配送。"
+            )}
           </p>
           <Link
             href="/guides"
             className="mt-6 inline-block rounded bg-white px-6 py-3 font-medium text-gray-900 hover:bg-gray-100"
           >
-            Start with Guides
+            {t(lang, "Start with Guides", "先看选购指南")}
           </Link>
-          <p className="mt-3 text-xs text-white/80">Current region view: {ctx.region}</p>
+          <p className="mt-3 text-xs text-white/80">{t(lang, "Current region view:", "当前地区视图:")} {ctx.region}</p>
         </div>
       </section>
 
       <section className="mx-auto max-w-6xl px-4 py-12">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">Guides First</h2>
+            <h2 className="text-xl font-semibold text-gray-900">{t(lang, "Guides First", "内容先行")}</h2>
             <p className="mt-1 text-sm text-gray-600">
-              Learn materials, use scenarios, and maintenance before choosing products.
+              {t(
+                lang,
+                "Learn materials, use scenarios, and maintenance before choosing products.",
+                "先了解材质、使用场景和保养建议，再决定购买。"
+              )}
             </p>
           </div>
           <Link href="/guides" className="text-sm text-gray-700 underline hover:text-gray-900">
-            View all guides
+            {t(lang, "View all guides", "查看全部指南")}
           </Link>
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -74,7 +84,7 @@ export default async function HomePage({
 
       {/* Category cards */}
       <section className="mx-auto max-w-6xl px-4 py-12">
-        <h2 className="text-xl font-semibold text-gray-900">Shop by Category</h2>
+        <h2 className="text-xl font-semibold text-gray-900">{t(lang, "Shop by Category", "按品类选购")}</h2>
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {categories.map((cat) => (
             <Link
@@ -93,7 +103,7 @@ export default async function HomePage({
 
       {/* Featured products */}
       <section className="mx-auto max-w-6xl px-4 py-12">
-        <h2 className="text-xl font-semibold text-gray-900">Featured</h2>
+        <h2 className="text-xl font-semibold text-gray-900">{t(lang, "Featured", "精选推荐")}</h2>
         <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {featured.map((product) => (
             <ProductCard key={product.id} product={product} />
@@ -104,7 +114,7 @@ export default async function HomePage({
             href="/products"
             className="text-gray-600 underline hover:text-gray-900"
           >
-            View all products
+            {t(lang, "View all products", "查看全部商品")}
           </Link>
         </div>
       </section>
@@ -114,21 +124,33 @@ export default async function HomePage({
         <div className="mx-auto max-w-6xl px-4">
           <div className="grid gap-8 text-center sm:grid-cols-3">
             <div>
-              <h3 className="font-semibold text-gray-900">Discreet Packaging</h3>
+              <h3 className="font-semibold text-gray-900">{t(lang, "Discreet Packaging", "隐私包装")}</h3>
               <p className="mt-1 text-sm text-gray-600">
-                Plain packaging, no sensitive labels. Your privacy is our priority.
+                {t(
+                  lang,
+                  "Plain packaging, no sensitive labels. Your privacy is our priority.",
+                  "普通外箱，无敏感标签。你的隐私优先。"
+                )}
               </p>
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">Secure Checkout</h3>
+              <h3 className="font-semibold text-gray-900">{t(lang, "Secure Checkout", "安全下单")}</h3>
               <p className="mt-1 text-sm text-gray-600">
-                We’ll contact you for secure payment after order confirmation.
+                {t(
+                  lang,
+                  "We’ll contact you for secure payment after order confirmation.",
+                  "订单确认后我们会联系你完成安全支付。"
+                )}
               </p>
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">Support</h3>
+              <h3 className="font-semibold text-gray-900">{t(lang, "Support", "客服支持")}</h3>
               <p className="mt-1 text-sm text-gray-600">
-                Questions? Contact us anytime. Returns policy available.
+                {t(
+                  lang,
+                  "Questions? Contact us anytime. Returns policy available.",
+                  "有疑问可随时联系，支持售后与退换说明。"
+                )}
               </p>
             </div>
           </div>
