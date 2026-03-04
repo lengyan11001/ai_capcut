@@ -16,6 +16,11 @@ export default async function HomePage({
   const resolvedSearchParams = await searchParams;
   const lang = getLangFromSearchParams(resolvedSearchParams);
   const ctx = await resolveRegionContext(resolvedSearchParams);
+  const query = new URLSearchParams();
+  query.set("lang", lang);
+  if (ctx.debugRegion) query.set("debug_region", ctx.debugRegion);
+  if (ctx.debugAll) query.set("debug_all", "1");
+  const queryString = query.toString();
   const categories = getCategories();
   const featured = await getFeaturedProducts({ region: ctx.region, debugAll: ctx.debugAll });
   const guides = getGuides().slice(0, 3);
@@ -40,7 +45,7 @@ export default async function HomePage({
             )}
           </p>
           <Link
-            href="/guides"
+            href={`/guides?${queryString}`}
             className="mt-6 inline-block rounded bg-white px-6 py-3 font-medium text-gray-900 hover:bg-gray-100"
           >
             {t(lang, "Start with Guides", "先看选购指南")}
@@ -61,7 +66,7 @@ export default async function HomePage({
               )}
             </p>
           </div>
-          <Link href="/guides" className="text-sm text-gray-700 underline hover:text-gray-900">
+          <Link href={`/guides?${queryString}`} className="text-sm text-gray-700 underline hover:text-gray-900">
             {t(lang, "View all guides", "查看全部指南")}
           </Link>
         </div>
@@ -69,7 +74,7 @@ export default async function HomePage({
           {guides.map((guide) => (
             <Link
               key={guide.id}
-              href={`/guides/${guide.slug}`}
+              href={`/guides/${guide.slug}?${queryString}`}
               className="rounded-lg border border-gray-200 bg-white p-5 hover:border-gray-300 hover:shadow-sm"
             >
               <p className="text-xs uppercase tracking-wide text-gray-500">
@@ -106,12 +111,12 @@ export default async function HomePage({
         <h2 className="text-xl font-semibold text-gray-900">{t(lang, "Featured", "精选推荐")}</h2>
         <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {featured.map((product) => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard key={product.id} product={product} lang={lang} queryString={queryString} />
           ))}
         </div>
         <div className="mt-8 text-center">
           <Link
-            href="/products"
+            href={`/products?${queryString}`}
             className="text-gray-600 underline hover:text-gray-900"
           >
             {t(lang, "View all products", "查看全部商品")}

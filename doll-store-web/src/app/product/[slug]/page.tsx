@@ -25,8 +25,8 @@ export default async function ProductPage({
   const shippingText =
     (product.sourceType === "overseas_us" || product.sourceType === "overseas_eu") &&
     product.isFreeShippingOverseas
-      ? "Free shipping from overseas warehouse."
-      : "Shipping quoted after destination confirmation.";
+      ? t(lang, "Free shipping from overseas warehouse.", "海外仓包邮。")
+      : t(lang, "Shipping quoted after destination confirmation.", "运费按收货地区确认后报价。");
   const backHref = `/products?lang=${lang}${ctx.debugRegion ? `&debug_region=${ctx.debugRegion}` : ""}${
     ctx.debugAll ? "&debug_all=1" : ""
   }`;
@@ -39,16 +39,17 @@ export default async function ProductPage({
             name={product.name}
             images={product.images.length > 0 ? product.images : ["https://placehold.co/600x800?text=Product"]}
             videoUrl={product.videoUrl}
+            lang={lang}
           />
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{product.name}</h1>
           <p className="mt-1 text-xs text-gray-500">
             {t(lang, "Region view:", "地区视图:")} {ctx.region}
-            {ctx.debugAll ? " · debug_all enabled" : ""}
+            {ctx.debugAll ? t(lang, " · debug_all enabled", " · 已开启debug_all") : ""}
           </p>
           <p className="mt-2 text-gray-500">
-            {product.material} · {product.sourceType === "origin" ? "Origin supply" : "Warehouse supply"}
+            {product.material} · {product.sourceType === "origin" ? t(lang, "Origin supply", "产地供应") : t(lang, "Warehouse supply", "海外仓供应")}
           </p>
           <div className="mt-4 flex items-center gap-3">
             <span className="text-2xl font-semibold text-gray-900">
@@ -73,6 +74,7 @@ export default async function ProductPage({
               price={displayPrice}
               currency={displayCurrency}
               image={product.images[0]}
+              lang={lang}
             />
           </div>
           <p className="mt-6 text-gray-600">{product.description}</p>

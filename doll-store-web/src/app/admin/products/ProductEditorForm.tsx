@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 
 type FormValues = {
   slug: string;
@@ -26,6 +27,12 @@ type FormValues = {
   shippableCountries: string[];
 };
 
+type MediaItem = {
+  id: string;
+  type: "image" | "video";
+  url: string;
+};
+
 interface Props {
   mode: "create" | "edit";
   productId?: string;
@@ -42,12 +49,25 @@ function parseCommaList(input: string): string[] {
 export function ProductEditorForm({ mode, productId, initialValue }: Props) {
   const router = useRouter();
   const [form, setForm] = useState<FormValues>(initialValue);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>(() => {
+    const images = (initialValue.images ?? []).map((url, index) => ({
+      id: `image-${index}-${url}`,
+      type: "image" as const,
+      url,
+    }));
+    const videos = initialValue.videoUrl
+      ? [{ id: `video-0-${initialValue.videoUrl}`, type: "video" as const, url: initialValue.videoUrl }]
+      : [];
+    return [...images, ...videos];
+  });
+  const [manualMediaUrl, setManualMediaUrl] = useState("");
+  const [manualMediaType, setManualMediaType] = useState<"image" | "video">("image");
+  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const imageInput = useMemo(() => form.images.join(", "), [form.images]);
   const addOnInput = useMemo(() => form.addOnOptions.join(", "), [form.addOnOptions]);
   const visibleRegionsInput = useMemo(() => form.visibleRegions.join(", "), [form.visibleRegions]);
   const shippableCountriesInput = useMemo(
@@ -55,7 +75,7 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
     [form.shippableCountries]
   );
 
-  const uploadFile = async (file: File, target: "image" | "video") => {
+  const uploadFile = async (file: File) => {
     const fd = new FormData();
     fd.append("file", file);
     const res = await fetch("/api/admin/upload", {
@@ -64,11 +84,18 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? "Upload failed");
-    if (target === "image") {
-      setForm((f) => ({ ...f, images: [...f.images, data.url] }));
-    } else {
-      setForm((f) => ({ ...f, videoUrl: data.url }));
-    }
+    return data.url as string;
+  };
+
+  const appendMediaItem = (type: "image" | "video", url: string) => {
+    const item: MediaItem = { id: `${type}-${Date.now()}-${Math.random()}`, type, url };
+    setMediaItems((prev) => {
+      if (type === "video") {
+        const noVideos = prev.filter((m) => m.type !== "video");
+        return [...noVideos, item];
+      }
+      return [...prev, item];
+    });
   };
 
   const onUploadImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,7 +104,8 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
     setError(null);
     setUploading(true);
     try {
-      await uploadFile(file, "image");
+      const url = await uploadFile(file);
+      appendMediaItem("image", url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -91,12 +119,34 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
     setError(null);
     setUploading(true);
     try {
-      await uploadFile(file, "video");
+      const url = await uploadFile(file);
+      appendMediaItem("video", url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }
+  };
+
+  const addManualMedia = () => {
+    const url = manualMediaUrl.trim();
+    if (!url) return;
+    appendMediaItem(manualMediaType, url);
+    setManualMediaUrl("");
+  };
+
+  const moveMedia = (index: number, direction: -1 | 1) => {
+    setMediaItems((prev) => {
+      const target = index + direction;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+
+  const removeMedia = (index: number) => {
+    setMediaItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -105,10 +155,13 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
     setSuccess(null);
     setSubmitting(true);
     try {
+      const orderedImages = mediaItems.filter((m) => m.type === "image").map((m) => m.url.trim()).filter(Boolean);
+      const orderedVideo = mediaItems.find((m) => m.type === "video")?.url?.trim() || null;
       const payload = {
         ...form,
         currency: form.saleCurrency,
-        images: parseCommaList(imageInput),
+        images: orderedImages,
+        videoUrl: orderedVideo,
         addOnOptions: parseCommaList(addOnInput),
         visibleRegions: parseCommaList(visibleRegionsInput),
         shippableCountries: parseCommaList(shippableCountriesInput),
@@ -282,34 +335,96 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
         </label>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="text-sm">
-          <span className="block font-medium text-gray-700">Image URLs (comma-separated)</span>
+      <div className="space-y-3 rounded border border-gray-200 p-4">
+        <p className="text-sm font-medium text-gray-700">Media (images + video in one panel)</p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="text-sm">
+            <span className="block font-medium text-gray-700">Upload image</span>
+            <input type="file" accept="image/*" onChange={onUploadImage} className="mt-1 block w-full text-sm" />
+          </label>
+          <label className="text-sm">
+            <span className="block font-medium text-gray-700">Upload video</span>
+            <input type="file" accept="video/*" onChange={onUploadVideo} className="mt-1 block w-full text-sm" />
+          </label>
+        </div>
+        <div className="grid gap-3 md:grid-cols-[120px_1fr_auto]">
+          <select
+            value={manualMediaType}
+            onChange={(e) => setManualMediaType(e.target.value as "image" | "video")}
+            className="rounded border border-gray-300 px-2 py-2 text-sm"
+          >
+            <option value="image">Image URL</option>
+            <option value="video">Video URL</option>
+          </select>
           <input
-            value={imageInput}
-            onChange={(e) => setForm((f) => ({ ...f, images: parseCommaList(e.target.value) }))}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+            value={manualMediaUrl}
+            onChange={(e) => setManualMediaUrl(e.target.value)}
+            placeholder="https://..."
+            className="rounded border border-gray-300 px-3 py-2 text-sm"
           />
-        </label>
-        <label className="text-sm">
-          <span className="block font-medium text-gray-700">Video URL</span>
-          <input
-            value={form.videoUrl ?? ""}
-            onChange={(e) => setForm((f) => ({ ...f, videoUrl: e.target.value }))}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-          />
-        </label>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="text-sm">
-          <span className="block font-medium text-gray-700">Upload image</span>
-          <input type="file" accept="image/*" onChange={onUploadImage} className="mt-1 block w-full text-sm" />
-        </label>
-        <label className="text-sm">
-          <span className="block font-medium text-gray-700">Upload video</span>
-          <input type="file" accept="video/*" onChange={onUploadVideo} className="mt-1 block w-full text-sm" />
-        </label>
+          <button
+            type="button"
+            onClick={addManualMedia}
+            className="rounded border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
+          >
+            Add
+          </button>
+        </div>
+        {mediaItems.length === 0 ? (
+          <p className="text-xs text-gray-500">No media yet.</p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {mediaItems.map((item, index) => (
+              <div key={item.id} className="rounded border border-gray-200 p-2">
+                <div className="relative aspect-square overflow-hidden rounded bg-gray-100">
+                  {item.type === "image" ? (
+                    <Image
+                      src={item.url}
+                      alt={`media-${index + 1}`}
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewVideoUrl(item.url)}
+                      className="flex h-full w-full items-center justify-center bg-gray-900 text-sm text-white"
+                    >
+                      Preview video
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1 truncate text-xs text-gray-600">
+                  #{index + 1} · {item.type}
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => moveMedia(index, -1)}
+                    className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveMedia(index, 1)}
+                    className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeMedia(index)}
+                    className="ml-auto rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -377,6 +492,22 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
 
       {error && <p className="rounded bg-red-50 p-2 text-sm text-red-700">{error}</p>}
       {success && <p className="rounded bg-green-50 p-2 text-sm text-green-700">{success}</p>}
+      {previewVideoUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-white p-3">
+            <div className="mb-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPreviewVideoUrl(null)}
+                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+            <video src={previewVideoUrl} controls className="aspect-video w-full rounded bg-black" autoPlay />
+          </div>
+        </div>
+      )}
       <button
         type="submit"
         disabled={submitting || uploading}

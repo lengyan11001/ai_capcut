@@ -2,18 +2,21 @@
 
 import { useMemo, useState } from "react";
 import Image from "next/image";
+import type { Lang } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
 interface Props {
   name: string;
   images: string[];
   videoUrl?: string;
+  lang?: Lang;
 }
 
 type MediaItem =
   | { type: "image"; url: string }
   | { type: "video"; url: string };
 
-export function ProductMediaGallery({ name, images, videoUrl }: Props) {
+export function ProductMediaGallery({ name, images, videoUrl, lang = "en" }: Props) {
   const mediaItems = useMemo<MediaItem[]>(() => {
     const items: MediaItem[] = (images ?? []).map((url) => ({ type: "image", url }));
     if (videoUrl) items.push({ type: "video", url: videoUrl });
@@ -57,7 +60,9 @@ export function ProductMediaGallery({ name, images, videoUrl }: Props) {
                     />
                   </div>
                 ) : (
-                  <div className="flex h-full items-center justify-center bg-gray-800 text-xs text-white">Video</div>
+                  <div className="flex h-full items-center justify-center bg-gray-800 text-xs text-white">
+                    {t(lang, "Video", "视频")}
+                  </div>
                 )}
               </button>
             ))}
@@ -96,7 +101,7 @@ export function ProductMediaGallery({ name, images, videoUrl }: Props) {
           unoptimized={isPlaceholder || isProxyImage}
         />
         <div className="pointer-events-none absolute bottom-3 right-3 rounded bg-black/65 px-2 py-1 text-xs text-white">
-          Hover to zoom
+          {t(lang, "Hover to zoom", "悬停放大")}
         </div>
       </div>
 
@@ -133,7 +138,9 @@ export function ProductMediaGallery({ name, images, videoUrl }: Props) {
                   />
                 </div>
               ) : (
-                <div className="flex h-full items-center justify-center bg-gray-800 text-xs text-white">Video</div>
+                <div className="flex h-full items-center justify-center bg-gray-800 text-xs text-white">
+                  {t(lang, "Video", "视频")}
+                </div>
               )}
             </button>
           ))}

@@ -2,6 +2,8 @@
 
 import { useCart } from "@/context/CartContext";
 import { useState } from "react";
+import type { Lang } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
 interface Props {
   productId: string;
@@ -10,9 +12,10 @@ interface Props {
   price: number;
   currency?: "CNY" | "USD" | "EUR";
   image?: string;
+  lang?: Lang;
 }
 
-export function AddToCartButton({ productId, slug, name, price, currency, image }: Props) {
+export function AddToCartButton({ productId, slug, name, price, currency, image, lang = "en" }: Props) {
   const { addItem } = useCart();
   const [added, setAdded] = useState(false);
 
@@ -28,7 +31,7 @@ export function AddToCartButton({ productId, slug, name, price, currency, image 
       onClick={handleClick}
       className="w-full rounded bg-gray-900 px-6 py-3 font-medium text-white hover:bg-gray-800 disabled:opacity-70 sm:w-auto"
     >
-      {added ? "Added to cart" : "Add to cart"}
+      {added ? t(lang, "Added to cart", "已加入购物车") : t(lang, "Add to cart", "加入购物车")}
     </button>
   );
 }

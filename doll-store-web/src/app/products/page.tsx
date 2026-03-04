@@ -11,6 +11,11 @@ export default async function ProductsPage({
   const resolvedSearchParams = await searchParams;
   const lang = getLangFromSearchParams(resolvedSearchParams);
   const ctx = await resolveRegionContext(resolvedSearchParams);
+  const query = new URLSearchParams();
+  query.set("lang", lang);
+  if (ctx.debugRegion) query.set("debug_region", ctx.debugRegion);
+  if (ctx.debugAll) query.set("debug_all", "1");
+  const queryString = query.toString();
   const products = await getProducts(undefined, { region: ctx.region, debugAll: ctx.debugAll });
 
   return (
@@ -28,11 +33,11 @@ export default async function ProductsPage({
       <p className="mt-2 text-xs text-gray-500">
         {t(lang, "Region view:", "地区视图:")} {ctx.region}
         {ctx.debugRegion ? ` (debug_region=${ctx.debugRegion})` : ""}
-        {ctx.debugAll ? " · debug_all enabled" : ""}
+        {ctx.debugAll ? t(lang, " · debug_all enabled", " · 已开启debug_all") : ""}
       </p>
       <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {products.map((product) => (
-          <ProductCard key={product.id} product={product} />
+          <ProductCard key={product.id} product={product} lang={lang} queryString={queryString} />
         ))}
       </div>
     </div>

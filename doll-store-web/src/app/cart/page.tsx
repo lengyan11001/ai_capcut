@@ -5,14 +5,20 @@ import Link from "next/link";
 import Image from "next/image";
 import { useCart } from "@/context/CartContext";
 import { formatMoney } from "@/lib/money";
+import { normalizeLang, t, type Lang } from "@/lib/i18n";
 
 export default function CartPage() {
   const { items, updateQuantity, removeItem, subtotal, totalItems } = useCart();
   const [mounted, setMounted] = useState(false);
+  const [lang, setLang] = useState<Lang>("en");
   useEffect(() => {
-    const timer = setTimeout(() => setMounted(true), 0);
+    const timer = setTimeout(() => {
+      setMounted(true);
+      setLang(normalizeLang(new URLSearchParams(window.location.search).get("lang")));
+    }, 0);
     return () => clearTimeout(timer);
   }, []);
+  const withLang = (path: string) => `${path}?lang=${lang}`;
 
   if (!mounted) {
     return (
@@ -25,12 +31,12 @@ export default function CartPage() {
   if (items.length === 0) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-16 text-center">
-        <h1 className="text-2xl font-bold text-gray-900">Your cart is empty</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t(lang, "Your cart is empty", "购物车为空")}</h1>
         <Link
-          href="/products"
+          href={withLang("/products")}
           className="mt-4 inline-block text-gray-600 underline hover:text-gray-900"
         >
-          Continue shopping
+          {t(lang, "Continue shopping", "继续购物")}
         </Link>
       </div>
     );
@@ -38,7 +44,9 @@ export default function CartPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="text-2xl font-bold text-gray-900">Cart ({totalItems} items)</h1>
+      <h1 className="text-2xl font-bold text-gray-900">
+        {t(lang, "Cart", "购物车")} ({totalItems} {t(lang, "items", "件")})
+      </h1>
       <div className="mt-8 grid gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <ul className="divide-y divide-gray-200">
@@ -61,7 +69,7 @@ export default function CartPage() {
                 <div className="flex flex-1 flex-col justify-between">
                   <div>
                     <Link
-                      href={`/product/${item.slug}`}
+                      href={`/product/${item.slug}?lang=${lang}`}
                       className="font-medium text-gray-900 hover:underline"
                     >
                       {item.name}
@@ -91,7 +99,7 @@ export default function CartPage() {
                       onClick={() => removeItem(item.productId)}
                       className="ml-2 text-sm text-red-600 hover:underline"
                     >
-                      Remove
+                      {t(lang, "Remove", "删除")}
                     </button>
                   </div>
                 </div>
@@ -103,24 +111,28 @@ export default function CartPage() {
           </ul>
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-6">
-          <h2 className="font-semibold text-gray-900">Order summary</h2>
+          <h2 className="font-semibold text-gray-900">{t(lang, "Order summary", "订单摘要")}</h2>
           <p className="mt-2 text-gray-600">
-            Subtotal: <span className="font-medium">{formatMoney(subtotal, "CNY")}</span>
+            {t(lang, "Subtotal:", "小计:")} <span className="font-medium">{formatMoney(subtotal, "CNY")}</span>
           </p>
           <p className="mt-1 text-sm text-gray-500">
-            Factory prices shown. International freight will be quoted after destination confirmation.
+            {t(
+              lang,
+              "Factory prices shown. International freight will be quoted after destination confirmation.",
+              "当前显示工厂价格，国际运费将在确认目的地后单独报价。"
+            )}
           </p>
           <Link
-            href="/checkout"
+            href={withLang("/checkout")}
             className="mt-6 block w-full rounded bg-gray-900 py-3 text-center font-medium text-white hover:bg-gray-800"
           >
-            Proceed to checkout
+            {t(lang, "Proceed to checkout", "去结账")}
           </Link>
           <Link
-            href="/products"
+            href={withLang("/products")}
             className="mt-4 block text-center text-sm text-gray-600 hover:text-gray-900"
           >
-            Continue shopping
+            {t(lang, "Continue shopping", "继续购物")}
           </Link>
         </div>
       </div>

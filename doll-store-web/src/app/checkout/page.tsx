@@ -6,11 +6,13 @@ import { useCart } from "@/context/CartContext";
 import Link from "next/link";
 import { formatMoney } from "@/lib/money";
 import { isCountrySupported } from "@/lib/shipping";
+import { normalizeLang, t, type Lang } from "@/lib/i18n";
 
 export default function CheckoutPage() {
   const { items, subtotal, clearCart } = useCart();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [lang, setLang] = useState<Lang>("en");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -29,7 +31,13 @@ export default function CheckoutPage() {
     e.preventDefault();
     setError(null);
     if (!countrySupported) {
-      setError("This destination is not available yet. Please contact support for a manual shipping quote.");
+      setError(
+        t(
+          lang,
+          "This destination is not available yet. Please contact support for a manual shipping quote.",
+          "当前目的地暂不支持自动下单，请联系客服人工确认运费。"
+        )
+      );
       return;
     }
     setLoading(true);
@@ -46,17 +54,24 @@ export default function CheckoutPage() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Order failed");
+      if (!res.ok) throw new Error(data.error ?? t(lang, "Order failed", "订单提交失败"));
       clearCart();
-      router.push(`/checkout/thank-you?orderId=${data.orderId ?? ""}`);
+      router.push(`/checkout/thank-you?orderId=${data.orderId ?? ""}&lang=${lang}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setError(err instanceof Error ? err.message : t(lang, "Something went wrong", "系统异常，请稍后重试"));
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMounted(true);
+      setLang(normalizeLang(new URLSearchParams(window.location.search).get("lang")));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+  const withLang = (path: string) => `${path}?lang=${lang}`;
 
   if (!mounted) {
     return (
@@ -69,9 +84,9 @@ export default function CheckoutPage() {
   if (items.length === 0) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-16 text-center">
-        <h1 className="text-2xl font-bold text-gray-900">Your cart is empty</h1>
-        <Link href="/products" className="mt-4 inline-block text-gray-600 underline">
-          Continue shopping
+        <h1 className="text-2xl font-bold text-gray-900">{t(lang, "Your cart is empty", "购物车为空")}</h1>
+        <Link href={withLang("/products")} className="mt-4 inline-block text-gray-600 underline">
+          {t(lang, "Continue shopping", "继续购物")}
         </Link>
       </div>
     );
@@ -79,15 +94,19 @@ export default function CheckoutPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="text-2xl font-bold text-gray-900">Checkout</h1>
+      <h1 className="text-2xl font-bold text-gray-900">{t(lang, "Checkout", "结账")}</h1>
       <p className="mt-2 text-sm text-gray-500">
-        Displayed prices are factory-to-forwarder only. International freight and final payable amount will be confirmed after destination review.
+        {t(
+          lang,
+          "Displayed prices are factory-to-forwarder only. International freight and final payable amount will be confirmed after destination review.",
+          "当前显示价格仅为工厂到货代，国际运费与最终应付金额将在确认目的地后给出。"
+        )}
       </p>
       <form onSubmit={handleSubmit} className="mt-8 grid gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-              Full name *
+              {t(lang, "Full name", "收货人姓名")} *
             </label>
             <input
               id="name"
@@ -113,7 +132,7 @@ export default function CheckoutPage() {
           </div>
           <div>
             <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
-              Phone
+              {t(lang, "Phone", "电话")}
             </label>
             <input
               id="phone"
@@ -125,7 +144,7 @@ export default function CheckoutPage() {
           </div>
           <div>
             <label htmlFor="address" className="block text-sm font-medium text-gray-700">
-              Address *
+              {t(lang, "Address", "地址")} *
             </label>
             <input
               id="address"
@@ -139,7 +158,7 @@ export default function CheckoutPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="city" className="block text-sm font-medium text-gray-700">
-                City *
+                {t(lang, "City", "城市")} *
               </label>
               <input
                 id="city"
@@ -152,7 +171,7 @@ export default function CheckoutPage() {
             </div>
             <div>
               <label htmlFor="state" className="block text-sm font-medium text-gray-700">
-                State / Province
+                {t(lang, "State / Province", "州 / 省")}
               </label>
               <input
                 id="state"
@@ -166,7 +185,7 @@ export default function CheckoutPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="postalCode" className="block text-sm font-medium text-gray-700">
-                Postal code *
+                {t(lang, "Postal code", "邮编")} *
               </label>
               <input
                 id="postalCode"
@@ -179,7 +198,7 @@ export default function CheckoutPage() {
             </div>
             <div>
               <label htmlFor="country" className="block text-sm font-medium text-gray-700">
-                Country *
+                {t(lang, "Country", "国家")} *
               </label>
               <input
                 id="country"
@@ -191,7 +210,7 @@ export default function CheckoutPage() {
               />
               {!countrySupported && (
                 <p className="mt-1 text-xs text-red-600">
-                  This destination is currently outside our shipping allowlist.
+                  {t(lang, "This destination is currently outside our shipping allowlist.", "当前目的地不在可发货白名单中。")}
                 </p>
               )}
             </div>
@@ -201,7 +220,7 @@ export default function CheckoutPage() {
           )}
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-6">
-          <h2 className="font-semibold text-gray-900">Order summary</h2>
+          <h2 className="font-semibold text-gray-900">{t(lang, "Order summary", "订单摘要")}</h2>
           <ul className="mt-4 space-y-2 text-sm text-gray-600">
             {items.map((item) => (
               <li key={item.productId} className="flex justify-between">
@@ -213,17 +232,17 @@ export default function CheckoutPage() {
             ))}
           </ul>
           <p className="mt-4 font-medium text-gray-900">
-            Subtotal: {formatMoney(subtotal, "CNY")}
+            {t(lang, "Subtotal:", "小计:")} {formatMoney(subtotal, "CNY")}
           </p>
           <p className="mt-1 text-xs text-gray-500">
-            Freight: quoted after destination confirmation.
+            {t(lang, "Freight: quoted after destination confirmation.", "运费：确认收货地区后报价。")}
           </p>
           <button
             type="submit"
             disabled={loading || !countrySupported}
             className="mt-6 w-full rounded bg-gray-900 py-3 font-medium text-white hover:bg-gray-800 disabled:opacity-70"
           >
-            {loading ? "Submitting…" : "Submit order"}
+            {loading ? t(lang, "Submitting…", "提交中…") : t(lang, "Submit order", "提交订单")}
           </button>
         </div>
       </form>
