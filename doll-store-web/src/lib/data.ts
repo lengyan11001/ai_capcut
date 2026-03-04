@@ -1,6 +1,7 @@
 import type { Category, Product } from "@/types";
 import categoriesData from "@/data/categories.json";
 import productsData from "@/data/products.json";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const categories = categoriesData as Category[];
 const IMAGE_PROXY_PREFIX = "http://47.107.244.246:3000/uploads/";
@@ -12,8 +13,12 @@ function normalizeImageUrl(url: string): string {
   return url;
 }
 
-const products = (productsData as unknown as Product[]).map((product) => ({
+const staticProducts = (productsData as unknown as Product[]).map((product) => ({
   ...product,
+  costPrice: product.costPrice ?? product.price,
+  salePrice: product.salePrice ?? product.price,
+  shippingQuoteMode: product.shippingQuoteMode ?? "quote_after_confirm",
+  isFreeShippingOverseas: product.isFreeShippingOverseas ?? false,
   images: (product.images ?? []).map(normalizeImageUrl),
 }));
 
@@ -50,6 +55,67 @@ function canShowByRegion(product: Product, region: RegionCode): boolean {
   return true;
 }
 
+type DbProductRow = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  category_id: string;
+  material: string;
+  currency: "CNY" | "USD" | "EUR";
+  cost_price: number;
+  sale_price: number;
+  compare_at_price: number | null;
+  images: string[] | null;
+  video_url: string | null;
+  source_type: "origin" | "overseas_us" | "overseas_eu";
+  shipping_quote_mode: "included" | "quote_after_confirm";
+  is_free_shipping_overseas: boolean;
+  specs: Record<string, string> | null;
+  add_on_options: string[] | null;
+  visible_regions: Array<"US" | "EU" | "ROW" | "ALL"> | null;
+  shippable_countries: string[] | null;
+  featured: boolean;
+};
+
+function mapDbProduct(row: DbProductRow): Product {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    description: row.description ?? "",
+    price: Number(row.sale_price ?? 0),
+    costPrice: Number(row.cost_price ?? row.sale_price ?? 0),
+    salePrice: Number(row.sale_price ?? 0),
+    compareAtPrice: row.compare_at_price == null ? undefined : Number(row.compare_at_price),
+    currency: row.currency ?? "CNY",
+    images: (row.images ?? []).map(normalizeImageUrl),
+    videoUrl: row.video_url ?? undefined,
+    categoryId: row.category_id,
+    material: row.material ?? "",
+    sourceType: row.source_type ?? "origin",
+    shippingQuoteMode: row.shipping_quote_mode ?? "quote_after_confirm",
+    isFreeShippingOverseas: row.is_free_shipping_overseas ?? false,
+    specs: row.specs ?? {},
+    addOnOptions: row.add_on_options ?? [],
+    visibleRegions: row.visible_regions ?? ["ALL"],
+    shippableCountries: row.shippable_countries ?? [],
+    featured: row.featured ?? false,
+  };
+}
+
+async function loadProducts(): Promise<Product[]> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return staticProducts;
+
+  const { data, error } = await supabase
+    .from("products")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (error || !data) return staticProducts;
+  return (data as DbProductRow[]).map(mapDbProduct);
+}
+
 export function getCategories(): Category[] {
   return categories;
 }
@@ -58,10 +124,11 @@ export function getCategoryBySlug(slug: string): Category | undefined {
   return categories.find((c) => c.slug === slug);
 }
 
-export function getProducts(
+export async function getProducts(
   categorySlug?: string,
   options?: { region?: RegionCode; debugAll?: boolean }
-): Product[] {
+): Promise<Product[]> {
+  const products = await loadProducts();
   const base = options?.debugAll
     ? products
     : products.filter((p) => canShowByRegion(p, options?.region ?? "ROW"));
@@ -72,13 +139,15 @@ export function getProducts(
   return base.filter((p) => p.categoryId === cat.id);
 }
 
-export function getProductBySlug(
+export async function getProductBySlug(
   slug: string,
   options?: { region?: RegionCode; debugAll?: boolean }
-): Product | undefined {
-  return getProducts(undefined, options).find((p) => p.slug === slug);
+): Promise<Product | undefined> {
+  return (await getProducts(undefined, options)).find((p) => p.slug === slug);
 }
 
-export function getFeaturedProducts(options?: { region?: RegionCode; debugAll?: boolean }): Product[] {
-  return getProducts(undefined, options).filter((p) => p.featured);
+export async function getFeaturedProducts(
+  options?: { region?: RegionCode; debugAll?: boolean }
+): Promise<Product[]> {
+  return (await getProducts(undefined, options)).filter((p) => p.featured);
 }

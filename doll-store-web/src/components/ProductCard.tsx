@@ -7,6 +7,12 @@ export function ProductCard({ product }: { product: Product }) {
   const imageUrl = product.images[0] ?? "https://placehold.co/600x800?text=Product";
   const isPlaceholder = imageUrl.startsWith("https://placehold.co");
   const isProxyImage = imageUrl.startsWith("/api/image-proxy");
+  const displayPrice = product.salePrice ?? product.price;
+  const shippingText =
+    (product.sourceType === "overseas_us" || product.sourceType === "overseas_eu") &&
+    product.isFreeShippingOverseas
+      ? "Free shipping from overseas warehouse."
+      : "Shipping quoted after destination confirmation.";
   return (
     <Link
       href={`/product/${product.slug}`}
@@ -36,16 +42,16 @@ export function ProductCard({ product }: { product: Product }) {
         </p>
         <div className="mt-2 flex items-center gap-2">
           <span className="font-semibold text-gray-900">
-            {formatMoney(product.price, product.currency ?? "CNY")}
+            {formatMoney(displayPrice, product.currency ?? "CNY")}
           </span>
-          {product.compareAtPrice != null && product.compareAtPrice > product.price && (
+          {product.compareAtPrice != null && product.compareAtPrice > displayPrice && (
             <span className="text-sm text-gray-400 line-through">
               {formatMoney(product.compareAtPrice, product.currency ?? "CNY")}
             </span>
           )}
         </div>
         <p className="mt-1 text-xs text-gray-500">
-          Factory price to forwarder. Freight quoted after destination confirmation.
+          {shippingText}
         </p>
       </div>
     </Link>

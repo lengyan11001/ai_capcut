@@ -12,7 +12,7 @@ export default async function GuideDetailPage({
   const guide = getGuideBySlug(slug);
   if (!guide) notFound();
 
-  const relatedProducts = getGuideProducts(guide);
+  const relatedProducts = await getGuideProducts(guide);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">

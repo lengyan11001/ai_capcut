@@ -16,11 +16,17 @@ export default async function ProductPage({
   const { slug } = await params;
   const resolvedSearchParams = await searchParams;
   const ctx = await resolveRegionContext(resolvedSearchParams);
-  const product = getProductBySlug(slug, { region: ctx.region, debugAll: ctx.debugAll });
+  const product = await getProductBySlug(slug, { region: ctx.region, debugAll: ctx.debugAll });
   if (!product) notFound();
   const imageUrl = product.images[0] ?? "https://placehold.co/600x800?text=Product";
   const isPlaceholder = imageUrl.startsWith("https://placehold.co");
   const isProxyImage = imageUrl.startsWith("/api/image-proxy");
+  const displayPrice = product.salePrice ?? product.price;
+  const shippingText =
+    (product.sourceType === "overseas_us" || product.sourceType === "overseas_eu") &&
+    product.isFreeShippingOverseas
+      ? "Free shipping from overseas warehouse."
+      : "Shipping quoted after destination confirmation.";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -62,17 +68,17 @@ export default async function ProductPage({
           </p>
           <div className="mt-4 flex items-center gap-3">
             <span className="text-2xl font-semibold text-gray-900">
-              {formatMoney(product.price, product.currency ?? "CNY")}
+              {formatMoney(displayPrice, product.currency ?? "CNY")}
             </span>
-            {product.compareAtPrice != null && product.compareAtPrice > product.price && (
+            {product.compareAtPrice != null && product.compareAtPrice > displayPrice && (
               <span className="text-lg text-gray-400 line-through">
                 {formatMoney(product.compareAtPrice, product.currency ?? "CNY")}
               </span>
             )}
           </div>
-          {product.shippingNotice && (
+          {(product.shippingNotice || product.shippingQuoteMode || product.isFreeShippingOverseas) && (
             <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              {product.shippingNotice}
+              {product.shippingNotice ?? shippingText}
             </p>
           )}
           <div className="mt-6">
@@ -80,7 +86,7 @@ export default async function ProductPage({
               productId={product.id}
               slug={product.slug}
               name={product.name}
-              price={product.price}
+              price={displayPrice}
               currency={product.currency}
               image={product.images[0]}
             />

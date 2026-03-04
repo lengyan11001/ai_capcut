@@ -15,7 +15,7 @@ export default async function HomePage({
   const resolvedSearchParams = await searchParams;
   const ctx = await resolveRegionContext(resolvedSearchParams);
   const categories = getCategories();
-  const featured = getFeaturedProducts({ region: ctx.region, debugAll: ctx.debugAll });
+  const featured = await getFeaturedProducts({ region: ctx.region, debugAll: ctx.debugAll });
   const guides = getGuides().slice(0, 3);
 
   return (

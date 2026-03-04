@@ -11,7 +11,12 @@ export interface Product {
   name: string;
   description: string;
   price: number;
+  /** 兼容历史字段：旧逻辑价格（建议逐步只使用 salePrice） */
   currency?: "CNY" | "USD" | "EUR";
+  costPrice?: number;
+  salePrice?: number;
+  shippingQuoteMode?: "included" | "quote_after_confirm";
+  isFreeShippingOverseas?: boolean;
   compareAtPrice?: number;
   images: string[];
   /** 可选：商品介绍视频 URL，上线前替换为自有或供应商授权素材 */

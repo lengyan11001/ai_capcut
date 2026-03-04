@@ -9,7 +9,7 @@ export default async function ProductsPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const ctx = await resolveRegionContext(resolvedSearchParams);
-  const products = getProducts(undefined, { region: ctx.region, debugAll: ctx.debugAll });
+  const products = await getProducts(undefined, { region: ctx.region, debugAll: ctx.debugAll });
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
