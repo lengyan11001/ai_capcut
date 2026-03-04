@@ -105,7 +105,7 @@ export function ProductMediaGallery({ name, images, videoUrl }: Props) {
           className="pointer-events-none absolute left-[calc(100%+16px)] top-0 z-50 hidden h-[520px] w-[360px] rounded-lg border border-gray-200 bg-white shadow-2xl lg:block"
           style={{
             backgroundImage: `url("${active.url}")`,
-            backgroundSize: "230%",
+            backgroundSize: "320%",
             backgroundPosition: `${zoomPos.x}% ${zoomPos.y}%`,
           }}
         />
