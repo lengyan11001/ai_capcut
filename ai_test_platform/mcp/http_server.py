@@ -38,6 +38,7 @@ _allowlist_raw = os.environ.get("CAPABILITY_ALLOWLIST", "").strip()
 CAPABILITY_ALLOWLIST = {x.strip() for x in _allowlist_raw.split(",") if x.strip()}
 CAPABILITY_CATALOG_PATH = os.environ.get("CAPABILITY_CATALOG_PATH", "").strip()
 CAPABILITY_UPSTREAM_URLS_JSON = os.environ.get("CAPABILITY_UPSTREAM_URLS_JSON", "").strip()
+CAPABILITY_IMAGE_DEFAULT_MODEL = os.environ.get("CAPABILITY_IMAGE_DEFAULT_MODEL", "jimeng-4.0").strip()
 
 DEFAULT_CAPABILITY_CATALOG: Dict[str, Dict[str, Any]] = {
     "image.generate": {
@@ -482,6 +483,38 @@ def _extract_should_charge(value: Any) -> bool:
     return False
 
 
+def _extract_upstream_nested_error(value: Any) -> str:
+    """
+    解析上游 MCP 常见嵌套响应中的错误文本。
+    场景：result.content[0].text 是 JSON 字符串，包含 {"success": false, "error": "..."}。
+    """
+    if not isinstance(value, dict):
+        return ""
+    top_error = value.get("error")
+    if isinstance(top_error, dict):
+        return str(top_error.get("message") or "")[:500]
+    result = value.get("result")
+    if not isinstance(result, dict):
+        return ""
+    content = result.get("content")
+    if not isinstance(content, list) or not content:
+        return ""
+    first = content[0]
+    if not isinstance(first, dict):
+        return ""
+    text = first.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return ""
+    try:
+        inner = json.loads(text)
+        if isinstance(inner, dict):
+            if inner.get("success") is False and inner.get("error"):
+                return str(inner.get("error"))[:500]
+    except Exception:
+        return ""
+    return ""
+
+
 async def _call_upstream_mcp_tool(server_url: str, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """
     调用上游 MCP HTTP 工具：
@@ -598,6 +631,8 @@ async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str]) -> T
                 catalog = await _runtime_catalog(token)
                 capability_id = (args.get("capability_id") or "").strip()
                 payload = args.get("payload") or {}
+                if not isinstance(payload, dict):
+                    payload = {}
                 if not capability_id:
                     return ([{"type": "text", "text": "capability_id 不能为空"}], True)
                 if capability_id not in catalog:
@@ -620,16 +655,43 @@ async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str]) -> T
                         left = int((me_json or {}).get("credits") or 0)
                         if left < required_credits:
                             return ([{"type": "text", "text": f"积分不足，调用该能力需 {required_credits}，当前 {left}"}], True)
+                # 用户通常不会主动提供 model，这里给图片生成补默认模型兜底。
+                effective_payload = dict(payload)
+                auto_selected_model = ""
+                if capability_id == "image.generate" and not str(effective_payload.get("model") or "").strip():
+                    if CAPABILITY_IMAGE_DEFAULT_MODEL:
+                        effective_payload["model"] = CAPABILITY_IMAGE_DEFAULT_MODEL
+                        auto_selected_model = CAPABILITY_IMAGE_DEFAULT_MODEL
                 t0 = time.perf_counter()
                 upstream_resp = await _call_upstream_mcp_tool(
                     upstream_url,
                     upstream_tool,
-                    payload,
+                    effective_payload,
                 )
                 latency_ms = int((time.perf_counter() - t0) * 1000)
-                upstream_error = ""
-                if isinstance(upstream_resp, dict) and isinstance(upstream_resp.get("error"), dict):
+                upstream_error = _extract_upstream_nested_error(upstream_resp)
+                if not upstream_error and isinstance(upstream_resp, dict) and isinstance(upstream_resp.get("error"), dict):
                     upstream_error = str((upstream_resp.get("error") or {}).get("message") or "")[:500]
+                # 若仍返回“缺少 model”，再自动补一次兜底模型重试（兼容上游严格校验）。
+                if (
+                    capability_id == "image.generate"
+                    and upstream_error
+                    and ("缺少 model" in upstream_error.lower() or "missing model" in upstream_error.lower() or "缺少 model 参数" in upstream_error)
+                    and CAPABILITY_IMAGE_DEFAULT_MODEL
+                    and str(effective_payload.get("model") or "").strip() != CAPABILITY_IMAGE_DEFAULT_MODEL
+                ):
+                    effective_payload["model"] = CAPABILITY_IMAGE_DEFAULT_MODEL
+                    auto_selected_model = CAPABILITY_IMAGE_DEFAULT_MODEL
+                    t1 = time.perf_counter()
+                    upstream_resp = await _call_upstream_mcp_tool(
+                        upstream_url,
+                        upstream_tool,
+                        effective_payload,
+                    )
+                    latency_ms += int((time.perf_counter() - t1) * 1000)
+                    upstream_error = _extract_upstream_nested_error(upstream_resp)
+                    if not upstream_error and isinstance(upstream_resp, dict) and isinstance(upstream_resp.get("error"), dict):
+                        upstream_error = str((upstream_resp.get("error") or {}).get("message") or "")[:500]
                 actual_credits = _extract_actual_credits(upstream_resp)
                 should_charge = _extract_should_charge(upstream_resp)
                 await _record_capability_call(
@@ -637,7 +699,7 @@ async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str]) -> T
                     capability_id=capability_id,
                     success=not bool(upstream_error),
                     latency_ms=latency_ms,
-                    request_payload=payload,
+                    request_payload=effective_payload,
                     response_payload=upstream_resp if isinstance(upstream_resp, dict) else {"raw": str(upstream_resp)},
                     error_message=upstream_error or None,
                     should_charge=should_charge,
@@ -647,6 +709,7 @@ async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str]) -> T
                 )
                 data = {
                     "capability_id": capability_id,
+                    "meta": {"auto_selected_model": auto_selected_model} if auto_selected_model else {},
                     "result": _redact_sensitive(upstream_resp),
                 }
             else:
