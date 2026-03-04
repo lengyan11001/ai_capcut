@@ -73,6 +73,19 @@ create policy "Allow select by service" on orders for select using (true);
 npm run import:products
 ```
 
+导入供应商“美国本土库存 > 0”商品（编码如 `US-70CM-w-247` 将直接作为后台可见编号）：
+
+```bash
+# 默认读取固定供应商文件路径
+npm run import:us-stock
+
+# 仅预览将导入多少条（不写库）
+npm run import:us-stock -- --dry-run
+
+# 指定其他供应商文件（为后续多供应商扩展保留）
+npm run import:us-stock -- --file="/absolute/path/to/inventory_raw.json"
+```
+
 如需将供应商外链素材（如 `47.107.244.246`）迁移到你自己的 Supabase Storage，并自动回写商品图片/视频 URL：
 
 ```bash

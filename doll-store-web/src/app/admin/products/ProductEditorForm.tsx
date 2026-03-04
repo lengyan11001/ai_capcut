@@ -138,7 +138,7 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
     <form onSubmit={onSubmit} className="space-y-4 rounded-lg border border-gray-200 p-5">
       <div className="grid gap-4 md:grid-cols-2">
         <label className="text-sm">
-          <span className="block font-medium text-gray-700">Slug *</span>
+          <span className="block font-medium text-gray-700">Code / SKU (slug) *</span>
           <input
             required
             value={form.slug}

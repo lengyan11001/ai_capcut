@@ -7,8 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "import:products": "node scripts/import-products-to-supabase.mjs",
-    "migrate:supplier-assets": "node scripts/migrate-supplier-assets-to-storage.mjs"
+    "import:products": "node --env-file=.env scripts/import-products-to-supabase.mjs",
+    "migrate:supplier-assets": "node --env-file=.env scripts/migrate-supplier-assets-to-storage.mjs",
+    "import:us-stock": "node --env-file=.env scripts/import-us-instock-from-supplier.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",

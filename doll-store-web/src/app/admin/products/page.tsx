@@ -52,7 +52,7 @@ export default async function AdminProductsPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-2 text-left font-medium text-gray-700">Name</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-700">Slug</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Code / SKU</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700">Source</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700">Cost</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700">Sale</th>
