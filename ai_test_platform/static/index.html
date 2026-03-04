@@ -1106,12 +1106,63 @@
     var currentLibraryCases = [];
     var currentEditingAccountId = null;
     var capabilityListCache = [];
+    var capabilityViewEntries = [];
     var currentCapabilityId = '';
+    var currentCapabilityEntry = null;
     var currentCapabilityCallLogs = [];
     var currentCapabilityChatLogs = [];
 
     var currentView = 'chat';
     var skillPanelLoaded = { templates: false, libraries: false, accounts: false };
+
+    function buildCapabilityViewEntries(rawList) {
+      var raw = Array.isArray(rawList) ? rawList.slice() : [];
+      var sutuiCaps = raw.filter(function(x) { return String((x && x.upstream) || '').toLowerCase() === 'sutui'; });
+      var others = raw.filter(function(x) { return String((x && x.upstream) || '').toLowerCase() !== 'sutui'; });
+      var out = [];
+      if (sutuiCaps.length) {
+        var primary = sutuiCaps.find(function(x) { return (x.capability_id || '') === 'image.generate'; }) || sutuiCaps[0];
+        out.push({
+          entry_id: 'sutui.material',
+          display_id: 'SUTUI.MATERIAL',
+          display_name: '素材生成',
+          description: '图片生成与任务查询（统一入口）',
+          member_ids: sutuiCaps.map(function(x) { return x.capability_id; }),
+          primary_id: primary.capability_id,
+          is_default: true,
+          unit_credits: Number(primary.unit_credits || 0),
+          upstream: 'sutui',
+          is_group: true
+        });
+      }
+      others.forEach(function(cap) {
+        out.push({
+          entry_id: cap.capability_id,
+          display_id: String(cap.capability_id || '').toUpperCase(),
+          display_name: cap.description || cap.capability_id,
+          description: cap.description || cap.capability_id,
+          member_ids: [cap.capability_id],
+          primary_id: cap.capability_id,
+          is_default: !!cap.is_default,
+          unit_credits: Number(cap.unit_credits || 0),
+          upstream: cap.upstream || '',
+          is_group: false
+        });
+      });
+      return out;
+    }
+
+    function getCurrentCapabilityMemberIds() {
+      if (currentCapabilityEntry && Array.isArray(currentCapabilityEntry.member_ids) && currentCapabilityEntry.member_ids.length) {
+        return currentCapabilityEntry.member_ids.slice();
+      }
+      return currentCapabilityId ? [currentCapabilityId] : [];
+    }
+
+    function getCurrentCapabilityContextId() {
+      if (currentCapabilityEntry && currentCapabilityEntry.primary_id) return currentCapabilityEntry.primary_id;
+      return currentCapabilityId || null;
+    }
 
     function renderCapabilityNavItems(list) {
       var wrap = document.getElementById('navCapabilityItems');
@@ -1121,8 +1172,8 @@
         return;
       }
       var rows = list.map(function(cap) {
-        var cid = cap.capability_id || '';
-        var text = cap.description || cid;
+        var cid = cap.entry_id || '';
+        var text = cap.display_name || cid;
         return '<div class="nav-left-item" data-view="skill-capability" data-dynamic-capability="1" data-capability-id="' + escapeAttr(cid) + '" data-capability-title="' + escapeAttr(text) + '">' + escapeHtml(text) + '</div>';
       }).join('');
       wrap.innerHTML = rows;
@@ -1136,12 +1187,12 @@
         return;
       }
       el.innerHTML = list.map(function(cap) {
-        var cid = cap.capability_id || '';
-        var desc = cap.description || cid;
+        var cid = cap.entry_id || '';
+        var desc = cap.display_name || cid;
         var badge = cap.is_default ? '<span class="btn btn-primary btn-sm" style="cursor:default;">默认</span>' : '';
         var price = (cap.unit_credits || 0) > 0 ? (cap.unit_credits + ' 积分/次') : '按实际计费或免费';
         return '<div class="card">' +
-          '<div class="card-label">' + escapeHtml(cid) + '</div>' +
+          '<div class="card-label">' + escapeHtml(cap.display_id || cid) + '</div>' +
           '<div class="card-value" style="font-size:1.1rem;">' + escapeHtml(desc) + '</div>' +
           '<div class="meta" style="margin-top:0.35rem;">' + escapeHtml(price) + '</div>' +
           '<div class="card-actions" style="margin-top:0.9rem;">' + badge +
@@ -1181,11 +1232,13 @@
               if (ad !== bd) return bd - ad;
               return String(a.capability_id || '').localeCompare(String(b.capability_id || ''));
             });
-          renderCapabilityNavItems(capabilityListCache);
-          renderCapabilityCards(capabilityListCache);
+          capabilityViewEntries = buildCapabilityViewEntries(capabilityListCache);
+          renderCapabilityNavItems(capabilityViewEntries);
+          renderCapabilityCards(capabilityViewEntries);
         })
         .catch(function() {
           capabilityListCache = [];
+          capabilityViewEntries = [];
           renderCapabilityNavItems([]);
           renderCapabilityCards([]);
         });
@@ -1195,11 +1248,19 @@
       currentCapabilityId = capabilityId || '';
       currentCapabilityCallLogs = [];
       currentCapabilityChatLogs = [];
-      var cap = capabilityListCache.find(function(x) { return (x.capability_id || '') === currentCapabilityId; }) || null;
+      currentCapabilityEntry = capabilityViewEntries.find(function(x) { return (x.entry_id || '') === currentCapabilityId; }) || null;
       var titleEl = document.getElementById('capabilityTitle');
       var descEl = document.getElementById('capabilityDesc');
-      if (titleEl) titleEl.textContent = cap ? (cap.description || cap.capability_id) : (currentCapabilityId || '能力记录');
-      if (descEl) descEl.textContent = cap ? ('能力ID：' + cap.capability_id + '。在此查看调用记录与会话归档。') : '查看该能力的调用记录与相关智能会话归档。';
+      if (titleEl) titleEl.textContent = currentCapabilityEntry ? (currentCapabilityEntry.display_name || currentCapabilityEntry.entry_id) : (currentCapabilityId || '能力记录');
+      if (descEl) {
+        if (currentCapabilityEntry && currentCapabilityEntry.is_group) {
+          descEl.textContent = '速推能力统一入口。已聚合图片生成、任务查询等接口记录。';
+        } else if (currentCapabilityEntry) {
+          descEl.textContent = '能力ID：' + currentCapabilityEntry.primary_id + '。在此查看调用记录与会话归档。';
+        } else {
+          descEl.textContent = '查看该能力的调用记录与相关智能会话归档。';
+        }
+      }
       renderCapabilityDomainStats();
       loadCapabilityCallLogs();
       loadCapabilityChatLogs();
@@ -1220,7 +1281,9 @@
         { label: '累计扣费', value: String(totalCharged) + ' 积分' },
         { label: '会话归档', value: String(totalChats) }
       ];
-      if ((currentCapabilityId || '').indexOf('stock') === 0) {
+      var memberIdsForStats = getCurrentCapabilityMemberIds();
+      var isStockView = memberIdsForStats.some(function(id) { return String(id || '').indexOf('stock') === 0; });
+      if (isStockView) {
         var symbols = [];
         (currentCapabilityCallLogs || []).forEach(function(row) {
           var req = row && row.request_payload ? row.request_payload : {};
@@ -1239,15 +1302,25 @@
       if (!el) return;
       if (!currentCapabilityId) { el.innerHTML = '<p class="meta">请选择能力</p>'; return; }
       el.innerHTML = '<p class="meta">加载中…</p>';
-      fetch(API_BASE + '/capabilities/my-call-logs?capability_id=' + encodeURIComponent(currentCapabilityId) + '&limit=100', { headers: authHeaders() })
-        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-        .then(function(x) {
-          if (!x.ok || !Array.isArray(x.data)) { el.innerHTML = '<p class="msg err">加载失败</p>'; return; }
-          currentCapabilityCallLogs = x.data.slice();
+      var memberIds = getCurrentCapabilityMemberIds();
+      if (!memberIds.length) { el.innerHTML = '<p class="meta">暂无能力配置</p>'; return; }
+      var reqs = memberIds.map(function(id) {
+        return fetch(API_BASE + '/capabilities/my-call-logs?capability_id=' + encodeURIComponent(id) + '&limit=100', { headers: authHeaders() })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .catch(function() { return { ok: false, data: [] }; });
+      });
+      Promise.all(reqs)
+        .then(function(results) {
+          var all = [];
+          results.forEach(function(x) {
+            if (x && x.ok && Array.isArray(x.data)) all = all.concat(x.data);
+          });
+          all.sort(function(a, b) { return String(b.created_at || '').localeCompare(String(a.created_at || '')); });
+          currentCapabilityCallLogs = all.slice(0, 200);
           renderCapabilityDomainStats();
-          if (!x.data.length) { el.innerHTML = '<p class="meta">暂无调用记录</p>'; return; }
+          if (!all.length) { el.innerHTML = '<p class="meta">暂无调用记录</p>'; return; }
           el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>时间</th><th>结果</th><th>扣费</th><th>耗时</th><th>请求</th><th>响应</th></tr></thead><tbody>' +
-            x.data.map(function(r) {
+            all.map(function(r) {
               var okText = r.success ? '成功' : '失败';
               var okCls = r.success ? 'ok' : 'err';
               var req = escapeHtml(JSON.stringify(r.request_payload || {}, null, 0));
@@ -1267,14 +1340,24 @@
       if (!el) return;
       if (!currentCapabilityId) { el.innerHTML = '<p class="meta">请选择能力</p>'; return; }
       el.innerHTML = '<p class="meta">加载中…</p>';
-      fetch(API_BASE + '/chat/history?context_id=' + encodeURIComponent(currentCapabilityId) + '&limit=100', { headers: authHeaders() })
-        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-        .then(function(x) {
-          if (!x.ok || !Array.isArray(x.data)) { el.innerHTML = '<p class="msg err">加载失败</p>'; return; }
-          currentCapabilityChatLogs = x.data.slice();
+      var memberIds = getCurrentCapabilityMemberIds();
+      if (!memberIds.length) { el.innerHTML = '<p class="meta">暂无能力配置</p>'; return; }
+      var reqs = memberIds.map(function(id) {
+        return fetch(API_BASE + '/chat/history?context_id=' + encodeURIComponent(id) + '&limit=100', { headers: authHeaders() })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .catch(function() { return { ok: false, data: [] }; });
+      });
+      Promise.all(reqs)
+        .then(function(results) {
+          var all = [];
+          results.forEach(function(x) {
+            if (x && x.ok && Array.isArray(x.data)) all = all.concat(x.data);
+          });
+          all.sort(function(a, b) { return String(b.created_at || '').localeCompare(String(a.created_at || '')); });
+          currentCapabilityChatLogs = all.slice(0, 200);
           renderCapabilityDomainStats();
-          if (!x.data.length) { el.innerHTML = '<p class="meta">暂无会话归档</p>'; return; }
-          el.innerHTML = x.data.map(function(row) {
+          if (!all.length) { el.innerHTML = '<p class="meta">暂无会话归档</p>'; return; }
+          el.innerHTML = all.map(function(row) {
             var t = row.created_at ? new Date(row.created_at).toLocaleString() : '-';
             return '<div class="list-item" style="display:block;">' +
               '<div class="meta">' + t + '</div>' +
@@ -1659,7 +1742,7 @@
           message: message,
           history: historyForRequest,
           session_id: sid,
-          context_id: currentCapabilityId || null
+          context_id: getCurrentCapabilityContextId()
         })
       })
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, status: r.status, data: d }; }); })
