@@ -89,8 +89,9 @@ def _load_capability_catalog() -> Dict[str, Dict[str, Any]]:
     """
     能力目录优先级：
     1) CAPABILITY_CATALOG_PATH 指向的 JSON 文件
-    2) 项目内默认文件 mcp/capability_catalog.json
-    3) 代码默认 DEFAULT_CAPABILITY_CATALOG
+    2) 项目内本地覆盖文件 mcp/capability_catalog.local.json（建议运维改这个）
+    3) 项目内默认文件 mcp/capability_catalog.json
+    4) 代码默认 DEFAULT_CAPABILITY_CATALOG
     """
     # 显式路径优先
     if CAPABILITY_CATALOG_PATH:
@@ -101,6 +102,13 @@ def _load_capability_catalog() -> Dict[str, Dict[str, Any]]:
         except Exception:
             pass
     # 项目默认配置文件
+    try:
+        # 本地覆盖文件（建议放本机配置，不纳入 git）
+        p_local = Path(__file__).resolve().parent / "capability_catalog.local.json"
+        if p_local.exists():
+            return _load_catalog_from_file(p_local)
+    except Exception:
+        pass
     try:
         p = Path(__file__).resolve().parent / "capability_catalog.json"
         if p.exists():

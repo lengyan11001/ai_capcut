@@ -126,6 +126,7 @@ docker compose ps        # 查看状态
 平台 MCP 服务支持通过能力目录文件管理可用能力，避免在系统提示词中堆叠大量工具说明。
 
 - 目录文件：`mcp/capability_catalog.json`
+- 本地覆盖（推荐运维修改）：`mcp/capability_catalog.local.json`（未纳入 git，MCP 启动时优先读取）
 - 关键字段：
   - `description`：能力描述（面向 Agent）
   - `upstream`：上游服务名（如 `sutui`）
@@ -137,6 +138,12 @@ docker compose ps        # 查看状态
   - `CAPABILITY_ALLOWLIST`：能力白名单（逗号分隔）
 
 建议将上述环境变量配置在 `ai-test-platform-mcp.service`（MCP 服务）中，而不是后端 API 服务。
+
+### 避免 git pull 冲突（强烈建议）
+
+- 不要在服务器直接修改受版本控制的 `mcp/capability_catalog.json`。
+- 运维改能力时优先编辑 `mcp/capability_catalog.local.json`（本地覆盖文件，不进 git）。
+- 若需更彻底隔离，使用 systemd 环境变量 `CAPABILITY_CATALOG_PATH=/etc/ai-test-platform/capability_catalog.json` 指向仓库外文件。
 
 ### 能力管理与审计 API
 

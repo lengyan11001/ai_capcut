@@ -27,6 +27,7 @@ cd mcp && pip install -r requirements.txt
 |------|------|------|
 | `AI_TEST_PLATFORM_BASE_URL` | 测试平台后端地址 | `http://localhost:8000` 或 `https://your-domain.com` |
 | `AI_TEST_PLATFORM_TOKEN` | 登录后获取的 Bearer token（调用需扣费接口时必填） | 在平台登录后从接口或前端获取 |
+| `CAPABILITY_CATALOG_PATH` | 可选：能力目录文件绝对路径（建议指向仓库外） | `/etc/ai-test-platform/capability_catalog.json` |
 
 ## 四、本地运行（stdio，供 Cursor 连接）
 
@@ -139,5 +140,8 @@ python -m ai_test_platform.mcp --http --port 8002
 
 1. 在服务器上进入仓库根目录，安装 MCP 依赖：`pip install -r ai_test_platform/mcp/requirements.txt`。
 2. 设置环境变量 `AI_TEST_PLATFORM_BASE_URL` 指向平台后端（如 `http://127.0.0.1:8000` 若与后端同机）。
-3. 常驻运行：`python -m ai_test_platform.mcp --http --port 8001`（可用 systemd/supervisor）；放通 8001 端口或 Nginx 反代。
-4. 用户在 Cursor 中只配置上述 `url` 即可。
+3. 能力目录建议使用本地覆盖文件（避免 git pull 冲突）：
+   - 方式 A（仓库内本地覆盖，MCP 自动优先读取）：`ai_test_platform/mcp/capability_catalog.local.json`
+   - 方式 B（推荐，仓库外）：设置 `CAPABILITY_CATALOG_PATH=/etc/ai-test-platform/capability_catalog.json`
+4. 常驻运行：`python -m ai_test_platform.mcp --http --port 8001`（可用 systemd/supervisor）；放通 8001 端口或 Nginx 反代。
+5. 用户在 Cursor 中只配置上述 `url` 即可。

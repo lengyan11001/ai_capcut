@@ -51,3 +51,8 @@ __pycache__/
 
 # 本地临时文件
 /1
+
+# ai_test_platform 本地运行覆盖配置（避免 git pull 冲突）
+ai_test_platform/mcp/capability_catalog.local.json
+ai_test_platform/.env.runtime
+ai_test_platform/docker-compose.local.yml
