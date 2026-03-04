@@ -22,6 +22,7 @@ class CapabilityConfigIn(BaseModel):
     upstream_tool: str
     arg_schema: Optional[Dict[str, Any]] = None
     enabled: bool = True
+    is_default: bool = False
     unit_credits: int = Field(default=0, ge=0)
 
 
@@ -31,6 +32,7 @@ class CapabilityConfigUpdate(BaseModel):
     upstream_tool: Optional[str] = None
     arg_schema: Optional[Dict[str, Any]] = None
     enabled: Optional[bool] = None
+    is_default: Optional[bool] = None
     unit_credits: Optional[int] = Field(default=None, ge=0)
 
 
@@ -54,8 +56,13 @@ class CapabilityCallRecordIn(BaseModel):
     success: bool = False
     latency_ms: Optional[int] = None
     request_payload: Optional[Dict[str, Any]] = None
+    response_payload: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
     should_charge: bool = True
+    actual_credits: Optional[int] = Field(default=None, ge=0)
+    source: Optional[str] = "ui"
+    chat_session_id: Optional[str] = None
+    chat_context_id: Optional[str] = None
 
 
 def _policy_match_user(row: CapabilityPolicy, user: User) -> bool:
@@ -100,6 +107,7 @@ def _serialize_capability(row: CapabilityConfig) -> Dict[str, Any]:
         "upstream_tool": row.upstream_tool,
         "arg_schema": row.arg_schema,
         "enabled": row.enabled,
+        "is_default": row.is_default,
         "unit_credits": row.unit_credits,
         "created_at": row.created_at.isoformat() if row.created_at else "",
         "updated_at": row.updated_at.isoformat() if row.updated_at else "",
@@ -127,6 +135,7 @@ def list_available_capabilities(
                     "upstream": row.upstream,
                     "upstream_tool": row.upstream_tool,
                     "arg_schema": row.arg_schema or {"type": "object", "properties": {}},
+                    "is_default": row.is_default,
                     "unit_credits": row.unit_credits,
                 }
             )
@@ -161,6 +170,7 @@ def create_capability_registry(
         upstream_tool=payload.upstream_tool.strip(),
         arg_schema=payload.arg_schema,
         enabled=payload.enabled,
+        is_default=payload.is_default,
         unit_credits=payload.unit_credits,
     )
     db.add(row)
@@ -189,6 +199,8 @@ def update_capability_registry(
         row.arg_schema = payload.arg_schema
     if payload.enabled is not None:
         row.enabled = payload.enabled
+    if payload.is_default is not None:
+        row.is_default = payload.is_default
     if payload.unit_credits is not None:
         row.unit_credits = payload.unit_credits
     db.commit()
@@ -288,13 +300,14 @@ def record_capability_call(
         raise HTTPException(status_code=403, detail="能力未授权")
 
     credits = 0
-    if payload.should_charge and payload.success and cap.unit_credits > 0:
-        if current_user.credits < cap.unit_credits:
+    charge_amount = payload.actual_credits if payload.actual_credits is not None else cap.unit_credits
+    if payload.should_charge and payload.success and charge_amount > 0:
+        if current_user.credits < charge_amount:
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail=f"积分不足，调用该能力需 {cap.unit_credits} 积分，当前 {current_user.credits}",
+                detail=f"积分不足，调用该能力需 {charge_amount} 积分，当前 {current_user.credits}",
             )
-        credits = cap.unit_credits
+        credits = charge_amount
         add_credit_flow(
             db,
             current_user,
@@ -314,7 +327,11 @@ def record_capability_call(
         credits_charged=credits,
         latency_ms=payload.latency_ms,
         request_payload=payload.request_payload,
+        response_payload=payload.response_payload,
         error_message=(payload.error_message or "")[:2000] or None,
+        source=(payload.source or "ui")[:64],
+        chat_session_id=(payload.chat_session_id or "")[:128] or None,
+        chat_context_id=(payload.chat_context_id or "")[:128] or None,
     )
     db.add(row)
     db.commit()
@@ -325,6 +342,44 @@ def record_capability_call(
         "credits_left": current_user.credits,
         "call_log_id": row.id,
     }
+
+
+@router.get("/my-call-logs", summary="我的能力调用记录（用户态）")
+def list_my_capability_call_logs(
+    capability_id: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    q = db.query(CapabilityCallLog).filter(CapabilityCallLog.user_id == current_user.id)
+    if capability_id:
+        q = q.filter(CapabilityCallLog.capability_id == capability_id)
+    rows = (
+        q.order_by(CapabilityCallLog.created_at.desc())
+        .offset(max(offset, 0))
+        .limit(min(max(limit, 1), 500))
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "capability_id": r.capability_id,
+            "upstream": r.upstream,
+            "upstream_tool": r.upstream_tool,
+            "success": r.success,
+            "credits_charged": r.credits_charged,
+            "latency_ms": r.latency_ms,
+            "request_payload": r.request_payload,
+            "response_payload": r.response_payload,
+            "error_message": r.error_message,
+            "source": r.source,
+            "chat_session_id": r.chat_session_id,
+            "chat_context_id": r.chat_context_id,
+            "created_at": r.created_at.isoformat() if r.created_at else "",
+        }
+        for r in rows
+    ]
 
 
 @router.get("/call-logs", summary="能力调用审计（管理端）")
@@ -358,7 +413,11 @@ def list_capability_call_logs(
             "credits_charged": r.credits_charged,
             "latency_ms": r.latency_ms,
             "request_payload": r.request_payload,
+            "response_payload": r.response_payload,
             "error_message": r.error_message,
+            "source": r.source,
+            "chat_session_id": r.chat_session_id,
+            "chat_context_id": r.chat_context_id,
             "created_at": r.created_at.isoformat() if r.created_at else "",
         }
         for r in rows

@@ -4,6 +4,7 @@
     "upstream": "sutui",
     "upstream_tool": "generate",
     "enabled": true,
+    "is_default": true,
     "arg_schema": {
       "type": "object",
       "properties": {
@@ -30,6 +31,7 @@
     "upstream": "sutui",
     "upstream_tool": "get_result",
     "enabled": true,
+    "is_default": true,
     "arg_schema": {
       "type": "object",
       "properties": {

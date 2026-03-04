@@ -45,6 +45,7 @@ DEFAULT_CAPABILITY_CATALOG: Dict[str, Dict[str, Any]] = {
         "upstream": "sutui",
         "upstream_tool": "generate",
         "enabled": True,
+        "is_default": True,
         "arg_schema": {
             "type": "object",
             "properties": {
@@ -60,6 +61,7 @@ DEFAULT_CAPABILITY_CATALOG: Dict[str, Dict[str, Any]] = {
         "upstream": "sutui",
         "upstream_tool": "get_result",
         "enabled": True,
+        "is_default": True,
         "arg_schema": {
             "type": "object",
             "properties": {
@@ -212,7 +214,13 @@ async def _record_capability_call(
     success: bool,
     latency_ms: Optional[int],
     request_payload: Dict[str, Any],
+    response_payload: Optional[Dict[str, Any]],
     error_message: Optional[str],
+    should_charge: bool = True,
+    actual_credits: Optional[int] = None,
+    source: str = "mcp_invoke",
+    chat_session_id: Optional[str] = None,
+    chat_context_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """写入后端审计并按能力规则扣费。"""
     if not token:
@@ -222,8 +230,13 @@ async def _record_capability_call(
         "success": success,
         "latency_ms": latency_ms,
         "request_payload": _redact_sensitive(_truncate_payload_for_audit(request_payload or {})),
+        "response_payload": _redact_sensitive(_truncate_payload_for_audit(response_payload or {})),
         "error_message": (error_message or "")[:1000] or None,
-        "should_charge": True,
+        "should_charge": bool(should_charge),
+        "actual_credits": actual_credits if isinstance(actual_credits, int) and actual_credits >= 0 else None,
+        "source": source,
+        "chat_session_id": (chat_session_id or "")[:128] or None,
+        "chat_context_id": (chat_context_id or "")[:128] or None,
     }
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
@@ -422,6 +435,45 @@ def _redact_sensitive(value: Any) -> Any:
     return value
 
 
+def _extract_actual_credits(value: Any) -> Optional[int]:
+    """从上游响应里提取实际积分消耗（若上游返回）。"""
+    if isinstance(value, dict):
+        # 常见命名：credits_charged / cost_credits / charged_credits
+        for key in ("credits_charged", "cost_credits", "charged_credits", "actual_credits"):
+            v = value.get(key)
+            if isinstance(v, (int, float)) and v > 0:
+                return int(v)
+        for _, v in value.items():
+            found = _extract_actual_credits(v)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = _extract_actual_credits(item)
+            if found is not None:
+                return found
+    return None
+
+
+def _extract_should_charge(value: Any) -> bool:
+    """从上游响应里提取是否应计费；未显式返回时默认免费（False）。"""
+    if isinstance(value, dict):
+        for key in ("should_charge", "charged", "cost_incurred", "has_cost"):
+            if key in value:
+                v = value.get(key)
+                if isinstance(v, bool):
+                    return v
+                if isinstance(v, (int, float)):
+                    return v > 0
+                if isinstance(v, str):
+                    return v.strip().lower() in ("1", "true", "yes", "charged")
+        # 若直接给出实际费用，则视为应扣费
+        cost = _extract_actual_credits(value)
+        if cost is not None and cost > 0:
+            return True
+    return False
+
+
 async def _call_upstream_mcp_tool(server_url: str, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """
     调用上游 MCP HTTP 工具：
@@ -570,13 +622,20 @@ async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str]) -> T
                 upstream_error = ""
                 if isinstance(upstream_resp, dict) and isinstance(upstream_resp.get("error"), dict):
                     upstream_error = str((upstream_resp.get("error") or {}).get("message") or "")[:500]
+                actual_credits = _extract_actual_credits(upstream_resp)
+                should_charge = _extract_should_charge(upstream_resp)
                 await _record_capability_call(
                     token=token,
                     capability_id=capability_id,
                     success=not bool(upstream_error),
                     latency_ms=latency_ms,
                     request_payload=payload,
+                    response_payload=upstream_resp if isinstance(upstream_resp, dict) else {"raw": str(upstream_resp)},
                     error_message=upstream_error or None,
+                    should_charge=should_charge,
+                    actual_credits=actual_credits,
+                    source="mcp_invoke",
+                    chat_context_id=capability_id,
                 )
                 data = {
                     "capability_id": capability_id,

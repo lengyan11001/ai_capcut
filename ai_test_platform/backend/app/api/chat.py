@@ -2,7 +2,7 @@
 
 延迟主要来自：OpenClaw Gateway → 大模型推理（及可选 MCP 调用）。
 优化方向：限制历史条数、Gateway 与后端同机/低延迟、开启流式（若 Gateway 支持）、选用更快模型。
-计费：有 usage 时按 model_pricing 与 token 计费并写 usage_period；无 usage 时按固定积分 fallback。
+计费：有 usage 时按 model_pricing 与 token 计费并写 usage_period；无 usage 则不扣费。
 用量限制：每用户每日次数上限 + 每分钟频率限制，防过度使用（前期内部用可放宽配置）。
 """
 from __future__ import annotations
@@ -24,11 +24,10 @@ from sqlalchemy.orm import Session
 
 from ..core.config import settings
 from ..core.credit_flow import add_credit_flow
-from ..core.credits import credits_for_chat
 from ..core import model_pricing
 from ..db import get_db
 from .auth import get_current_user
-from ..models import CreditFlow, OpenClawInstance, User, UserOpenClawBinding
+from ..models import ChatTurnLog, CreditFlow, OpenClawInstance, User, UserOpenClawBinding
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -94,10 +93,33 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(..., description="当前用户输入")
     history: Optional[List[ChatMessage]] = Field(default_factory=list, description="多轮历史，用于会话上下文")
+    session_id: Optional[str] = Field(default=None, description="前端会话 ID，用于归档")
+    context_id: Optional[str] = Field(default=None, description="上下文能力 ID（如 image.generate / stock.analysis）")
 
 
 class ChatResponse(BaseModel):
     reply: str
+
+
+def _add_chat_turn_log(
+    db: Session,
+    user_id: int,
+    user_message: str,
+    assistant_reply: str,
+    session_id: Optional[str],
+    context_id: Optional[str],
+    meta: Optional[Dict[str, Any]] = None,
+) -> None:
+    """记录一条对话归档，不影响主流程可用性。"""
+    row = ChatTurnLog(
+        user_id=user_id,
+        session_id=(session_id or "")[:128] or None,
+        context_id=(context_id or "")[:128] or None,
+        user_message=(user_message or "")[:5000],
+        assistant_reply=(assistant_reply or "")[:20000],
+        meta=meta or {},
+    )
+    db.add(row)
 
 
 def _is_learn_allowlist_user(user: User) -> bool:
@@ -193,18 +215,23 @@ async def chat_endpoint(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"今日智能对话次数已达上限（{daily_cap} 次），明天再试",
             )
-    need = credits_for_chat()
-    if current_user.credits < need:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"积分不足，智能对话每轮需 {need} 积分，当前 {current_user.credits}，请充值后再试",
-        )
+    need = 0
     if not _openclaw_available(db, current_user):
         reply = (
             f"你说的是：{payload.message}\n\n"
             "当前未启用智能对话或你的账号暂无可用实例。\n"
             "请联系管理员配置 OpenClaw 或用户实例。"
         )
+        _add_chat_turn_log(
+            db=db,
+            user_id=current_user.id,
+            user_message=payload.message,
+            assistant_reply=reply,
+            session_id=payload.session_id,
+            context_id=payload.context_id,
+            meta={"type": "unavailable"},
+        )
+        db.commit()
         return ChatResponse(reply=reply)
     base, token, agent_id = _resolve_openclaw_target(db, current_user)
     url = f"{base}/v1/chat/completions"
@@ -260,15 +287,35 @@ async def chat_endpoint(
             model_id = "openclaw:default"
         if prompt_tokens or completion_tokens:
             need = model_pricing.compute_credits(db, model_id, prompt_tokens, completion_tokens)
-        if need <= 0:
-            need = credits_for_chat()
+        if need < 0:
+            need = 0
         user = db.query(User).filter(User.id == current_user.id).first()
         if user:
-            add_credit_flow(db, user, "deduct", need, "智能对话", "chat", None)
+            if need > 0 and user.credits < need:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail=f"积分不足，本次对话需 {need} 积分，当前 {user.credits}，请充值后再试",
+                )
+            if need > 0:
+                add_credit_flow(db, user, "deduct", need, "智能对话", "chat", None)
             total_tokens = prompt_tokens + completion_tokens
             if total_tokens > 0:
                 period_start = date.today().replace(day=1)
                 model_pricing.add_usage_period(db, user.id, model_id, period_start, total_tokens)
+            _add_chat_turn_log(
+                db=db,
+                user_id=current_user.id,
+                user_message=payload.message,
+                assistant_reply=reply.strip() or "（无回复内容）",
+                session_id=payload.session_id,
+                context_id=payload.context_id,
+                meta={
+                    "model_id": model_id,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "charged_credits": need,
+                },
+            )
             db.commit()
         out = ChatResponse(reply=reply.strip() or "（无回复内容）")
         return JSONResponse(
@@ -280,3 +327,34 @@ async def chat_endpoint(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"无法连接 OpenClaw Gateway: {e!s}",
         ) from e
+
+
+@router.get("/chat/history", summary="我的智能会话归档（可按能力上下文筛选）")
+def list_chat_history(
+    context_id: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    q = db.query(ChatTurnLog).filter(ChatTurnLog.user_id == current_user.id)
+    if context_id:
+        q = q.filter(ChatTurnLog.context_id == context_id)
+    rows = (
+        q.order_by(ChatTurnLog.created_at.desc())
+        .offset(max(offset, 0))
+        .limit(min(max(limit, 1), 500))
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "session_id": r.session_id,
+            "context_id": r.context_id,
+            "user_message": r.user_message,
+            "assistant_reply": r.assistant_reply,
+            "meta": r.meta,
+            "created_at": r.created_at.isoformat() if r.created_at else "",
+        }
+        for r in rows
+    ]

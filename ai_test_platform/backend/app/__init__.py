@@ -163,10 +163,73 @@ def _seed_capability_catalog():
                     upstream_tool=str(cfg.get("upstream_tool") or "").strip(),
                     arg_schema=cfg.get("arg_schema") if isinstance(cfg.get("arg_schema"), dict) else None,
                     enabled=bool(cfg.get("enabled", True)),
+                    is_default=bool(cfg.get("is_default", capability_id in {"image.generate", "task.get_result"})),
                     unit_credits=int(cfg.get("unit_credits") or 0),
                 )
             )
         db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
+def _ensure_capability_call_log_columns():
+    """为已有数据库补充 capability_call_logs 表的新列。"""
+    from sqlalchemy import text
+
+    try:
+        with engine.begin() as conn:
+            if "sqlite" in (engine.url.drivername or ""):
+                rp = conn.execute(text("PRAGMA table_info(capability_call_logs)"))
+                rows = rp.fetchall()
+                columns = [row[1] for row in rows] if rows else []
+                if "response_payload" not in columns:
+                    conn.execute(text("ALTER TABLE capability_call_logs ADD COLUMN response_payload JSON"))
+                if "source" not in columns:
+                    conn.execute(text("ALTER TABLE capability_call_logs ADD COLUMN source VARCHAR(64)"))
+                if "chat_session_id" not in columns:
+                    conn.execute(text("ALTER TABLE capability_call_logs ADD COLUMN chat_session_id VARCHAR(128)"))
+                if "chat_context_id" not in columns:
+                    conn.execute(text("ALTER TABLE capability_call_logs ADD COLUMN chat_context_id VARCHAR(128)"))
+    except Exception:
+        pass
+
+
+def _ensure_capability_config_columns():
+    """为已有数据库补充 capability_configs 表的新列。"""
+    from sqlalchemy import text
+
+    try:
+        with engine.begin() as conn:
+            if "sqlite" in (engine.url.drivername or ""):
+                rp = conn.execute(text("PRAGMA table_info(capability_configs)"))
+                rows = rp.fetchall()
+                columns = [row[1] for row in rows] if rows else []
+                if "is_default" not in columns:
+                    conn.execute(
+                        text("ALTER TABLE capability_configs ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0")
+                    )
+    except Exception:
+        pass
+
+
+def _backfill_default_capabilities():
+    """为既有能力目录补齐默认能力标记。"""
+    from .db import SessionLocal
+    from .models import CapabilityConfig
+
+    db = SessionLocal()
+    try:
+        targets = {"image.generate", "task.get_result"}
+        rows = db.query(CapabilityConfig).filter(CapabilityConfig.capability_id.in_(targets)).all()
+        changed = False
+        for row in rows:
+            if not row.is_default:
+                row.is_default = True
+                changed = True
+        if changed:
+            db.commit()
     except Exception:
         db.rollback()
     finally:
@@ -179,8 +242,11 @@ def create_app() -> FastAPI:
     _ensure_user_email_columns()
     _ensure_document_template_columns()
     _ensure_case_generate_record_credits_reserved()
+    _ensure_capability_call_log_columns()
+    _ensure_capability_config_columns()
     _seed_model_pricing()
     _seed_capability_catalog()
+    _backfill_default_capabilities()
 
     app = FastAPI(
         title="智能工作生活平台 API",

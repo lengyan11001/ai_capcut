@@ -191,6 +191,7 @@ class CapabilityConfig(Base):
     upstream_tool: Mapped[str] = mapped_column(String(128), nullable=False)
     arg_schema: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     unit_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -223,6 +224,24 @@ class CapabilityCallLog(Base):
     credits_charged: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     request_payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    response_payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # mcp_invoke | ui | other
+    chat_session_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    chat_context_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ChatTurnLog(Base):
+    """智能会话归档：按上下文（能力入口）保存用户问答，便于在各 skill 入口回看。"""
+    __tablename__ = "chat_turn_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    context_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)  # capability_id / domain
+    user_message: Mapped[str] = mapped_column(Text, nullable=False)
+    assistant_reply: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    meta: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
