@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { OrderPayload } from "@/types";
 import { isCountrySupported } from "@/lib/shipping";
+import { normalizeOrderItems } from "@/lib/order-items";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -35,10 +36,17 @@ export async function POST(request: NextRequest) {
 
   const supabase = getSupabase();
   if (supabase) {
-    const orderItems = {
+    const orderItems = normalizeOrderItems({
       lines: items,
       paymentMethod: resolvedPaymentMethod,
-    };
+      payment:
+        resolvedPaymentMethod === "crypto_manual"
+          ? {
+              coin: process.env.CRYPTO_PAY_COIN ?? "USDT",
+              network: process.env.CRYPTO_PAY_NETWORK ?? "TRON (TRC20)",
+            }
+          : undefined,
+    });
     const { data, error } = await supabase
       .from("orders")
       .insert({

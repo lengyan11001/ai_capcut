@@ -39,9 +39,14 @@ export default async function AdminProductsPage() {
     <div className="mx-auto max-w-6xl px-4 py-10">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Admin Products</h1>
-        <Link href="/admin/products/new" className="rounded bg-gray-900 px-4 py-2 text-sm text-white hover:bg-gray-800">
-          + New product
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/admin/orders" className="text-sm text-gray-700 underline hover:text-gray-900">
+            Orders
+          </Link>
+          <Link href="/admin/products/new" className="rounded bg-gray-900 px-4 py-2 text-sm text-white hover:bg-gray-800">
+            + New product
+          </Link>
+        </div>
       </div>
       <p className="mt-2 text-sm text-gray-600">Manage sale price, cost reference, and shipping strategy.</p>
       {error ? (

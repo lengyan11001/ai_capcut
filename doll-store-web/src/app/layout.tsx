@@ -3,6 +3,7 @@ import "./globals.css";
 import { CartProvider } from "@/context/CartContext";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
+import { SupportWidget } from "@/components/SupportWidget";
 import { Suspense } from "react";
 
 export const metadata: Metadata = {
@@ -23,6 +24,9 @@ export default function RootLayout({
             <Header />
           </Suspense>
           <main className="flex-1">{children}</main>
+          <Suspense fallback={null}>
+            <SupportWidget />
+          </Suspense>
           <Footer />
         </CartProvider>
       </body>

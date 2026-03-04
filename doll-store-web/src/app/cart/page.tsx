@@ -11,6 +11,8 @@ export default function CartPage() {
   const { items, updateQuantity, removeItem, subtotal, totalItems } = useCart();
   const [mounted, setMounted] = useState(false);
   const [lang, setLang] = useState<Lang>("en");
+  const summaryCurrency = (items[0]?.currency ?? "CNY") as "CNY" | "USD" | "EUR";
+  const mixedCurrencies = items.some((item) => (item.currency ?? "CNY") !== summaryCurrency);
   useEffect(() => {
     const timer = setTimeout(() => {
       setMounted(true);
@@ -113,7 +115,12 @@ export default function CartPage() {
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-6">
           <h2 className="font-semibold text-gray-900">{t(lang, "Order summary", "订单摘要")}</h2>
           <p className="mt-2 text-gray-600">
-            {t(lang, "Subtotal:", "小计:")} <span className="font-medium">{formatMoney(subtotal, "CNY")}</span>
+            {t(lang, "Subtotal:", "小计:")}{" "}
+            <span className="font-medium">
+              {mixedCurrencies
+                ? t(lang, "Mixed currencies in cart", "购物车存在多币种")
+                : formatMoney(subtotal, summaryCurrency)}
+            </span>
           </p>
           <p className="mt-1 text-sm text-gray-500">
             {t(

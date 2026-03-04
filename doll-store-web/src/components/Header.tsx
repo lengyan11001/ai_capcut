@@ -43,6 +43,9 @@ export function Header() {
           <Link href={buildHref("/guides")} className="text-sm text-gray-600 hover:text-gray-900">
             {t(lang, "Guides", "指南")}
           </Link>
+          <Link href={buildHref("/orders")} className="text-sm text-gray-600 hover:text-gray-900">
+            {t(lang, "Track order", "订单查询")}
+          </Link>
           <Link
             href={buildHref("/cart")}
             className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
@@ -110,6 +113,13 @@ export function Header() {
             onClick={() => setOpen(false)}
           >
             {t(lang, "Cart", "购物车")} {totalItems > 0 && `(${totalItems})`}
+          </Link>
+          <Link
+            href={buildHref("/orders")}
+            className="block py-2 text-gray-600"
+            onClick={() => setOpen(false)}
+          >
+            {t(lang, "Track order", "订单查询")}
           </Link>
           <div className="mt-2 flex items-center gap-3 text-sm">
             <Link href={langSwitchHref("en")} className={lang === "en" ? "font-semibold text-gray-900" : "text-gray-500"}>

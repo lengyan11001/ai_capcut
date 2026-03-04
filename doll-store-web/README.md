@@ -13,8 +13,13 @@
   - `/admin/login` 管理员密码登录
   - `/admin/products` 商品列表、双币种价格与素材状态管理
   - `/admin/products/new` 新建商品，支持上传图片/视频到 Supabase Storage
+- 订单管理：
+  - `/admin/orders` 订单列表（支付方式、状态、物流号）
+  - `/admin/orders/[id]` 订单详情编辑（状态、物流、tx hash、内部备注）
+  - `/orders` 用户查单页（按下单邮箱查询订单状态与物流）
 - 商品详情媒体区：缩略图切换 + 图片悬停放大预览（视频仅播放不放大）
 - 多语言切换：右上角支持 `EN / 中文`（通过 `lang` URL 参数切换）
+- 全局咨询入口：右下角浮动客服按钮（WhatsApp / Telegram / Email）
 - 静态页：About、Shipping & Delivery、Privacy Policy、Contact
 
 支付：当前默认为「提交订单」后由站长联系客户完成支付，并支持可选「加密货币人工转账」入口（下单后在感谢页展示钱包信息）。真实自动收款可后续对接成人友好通道（如 CCBill、Epoch），参见仓库根目录下 `docs/doll-store/` 下的《Shopify从零到上线步骤》或《自建服务器独立站从零到上线》中的支付章节。
@@ -45,6 +50,12 @@ npm run dev
 - `CRYPTO_PAY_COIN`：币种（默认 `USDT`）
 - `CRYPTO_PAY_NETWORK`：网络（默认 `TRON (TRC20)`）
 - `CRYPTO_PAY_ADDRESS`：收款地址（未配置时感谢页会提示联系客服）
+
+### 全局客服入口变量
+
+- `NEXT_PUBLIC_SUPPORT_WHATSAPP`：支持手机号（可填纯数字或完整 `https://wa.me/...`）
+- `NEXT_PUBLIC_SUPPORT_TELEGRAM`：支持 `@handle` 或完整 `https://t.me/...`
+- `NEXT_PUBLIC_SUPPORT_EMAIL`：客服邮箱（会渲染为 `mailto:`）
 
 ### Supabase 订单表
 
@@ -147,6 +158,19 @@ npm run migrate:supplier-assets
    - 人工支付：提示等待客服联系
    - 加密支付：展示币种、网络、钱包地址和转账备注（订单号）
 3. 客服人工确认到账后安排后续发货流程
+
+## 订单与发货管理（已上线）
+
+1. 后台打开 `/admin/orders` 查看全部订单，支持查看：
+   - 支付方式（人工/加密）
+   - 当前状态（`pending`/`pending_crypto`/`paid`/`shipped` 等）
+   - 物流单号
+2. 进入 `/admin/orders/[id]` 可编辑：
+   - 状态
+   - 物流公司、物流号、物流链接
+   - 加密支付 tx hash、到账金额
+   - 内部备注
+3. 前台用户可在 `/orders` 输入下单邮箱（可选订单号）查询订单状态与物流信息
 
 ## 项目结构
 

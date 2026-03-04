@@ -27,6 +27,8 @@ export default function CheckoutPage() {
     country: "",
   });
   const countrySupported = form.country ? isCountrySupported(form.country) : true;
+  const summaryCurrency = (items[0]?.currency ?? "CNY") as "CNY" | "USD" | "EUR";
+  const mixedCurrencies = items.some((item) => (item.currency ?? "CNY") !== summaryCurrency);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,7 +53,7 @@ export default function CheckoutPage() {
           shipping: form,
           items,
           total: subtotal,
-          currency: "CNY",
+          currency: summaryCurrency,
           paymentMethod,
         }),
       });
@@ -236,7 +238,10 @@ export default function CheckoutPage() {
             ))}
           </ul>
           <p className="mt-4 font-medium text-gray-900">
-            {t(lang, "Subtotal:", "小计:")} {formatMoney(subtotal, "CNY")}
+            {t(lang, "Subtotal:", "小计:")}{" "}
+            {mixedCurrencies
+              ? t(lang, "Mixed currencies in cart", "购物车存在多币种")
+              : formatMoney(subtotal, summaryCurrency)}
           </p>
           <p className="mt-1 text-xs text-gray-500">
             {t(lang, "Freight: quoted after destination confirmation.", "运费：确认收货地区后报价。")}
