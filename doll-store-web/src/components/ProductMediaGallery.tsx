@@ -71,7 +71,7 @@ export function ProductMediaGallery({ name, images, videoUrl }: Props) {
   const isProxyImage = active.url.startsWith("/api/image-proxy");
 
   return (
-    <div className="space-y-3">
+    <div className="relative space-y-3 overflow-visible">
       <div
         className="group relative aspect-[3/4] overflow-hidden rounded-lg bg-gray-100"
         onMouseEnter={() => setZooming(true)}
@@ -102,10 +102,10 @@ export function ProductMediaGallery({ name, images, videoUrl }: Props) {
 
       {zooming && (
         <div
-          className="hidden h-44 rounded-lg border border-gray-200 bg-white lg:block"
+          className="pointer-events-none absolute left-[calc(100%+16px)] top-0 z-50 hidden h-[520px] w-[360px] rounded-lg border border-gray-200 bg-white shadow-2xl lg:block"
           style={{
             backgroundImage: `url("${active.url}")`,
-            backgroundSize: "220%",
+            backgroundSize: "230%",
             backgroundPosition: `${zoomPos.x}% ${zoomPos.y}%`,
           }}
         />
