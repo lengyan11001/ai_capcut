@@ -25,6 +25,8 @@ const rows = products.map((p) => ({
   category_id: p.categoryId ?? "silicone",
   material: p.material ?? "",
   currency: p.currency ?? "CNY",
+  cost_currency: p.costCurrency ?? p.currency ?? "CNY",
+  sale_currency: p.saleCurrency ?? p.currency ?? "CNY",
   cost_price: p.costPrice ?? p.price ?? 0,
   sale_price: p.salePrice ?? p.price ?? 0,
   compare_at_price: p.compareAtPrice ?? null,
@@ -38,6 +40,7 @@ const rows = products.map((p) => ({
   visible_regions: Array.isArray(p.visibleRegions) ? p.visibleRegions : ["ALL"],
   shippable_countries: Array.isArray(p.shippableCountries) ? p.shippableCountries : [],
   featured: Boolean(p.featured),
+  asset_status: p.assetStatus ?? "published",
 }));
 
 const { error } = await supabase.from("products").upsert(rows, { onConflict: "slug" });

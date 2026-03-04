@@ -9,7 +9,10 @@ import { formatMoney } from "@/lib/money";
 export default function CartPage() {
   const { items, updateQuantity, removeItem, subtotal, totalItems } = useCart();
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const timer = setTimeout(() => setMounted(true), 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   if (!mounted) {
     return (

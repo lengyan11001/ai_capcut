@@ -11,6 +11,8 @@ type DbProduct = {
   category_id: string;
   material: string;
   currency: "CNY" | "USD" | "EUR";
+  cost_currency: "CNY" | "USD" | "EUR" | null;
+  sale_currency: "CNY" | "USD" | "EUR" | null;
   cost_price: number;
   sale_price: number;
   compare_at_price: number | null;
@@ -21,6 +23,7 @@ type DbProduct = {
   video_url: string | null;
   add_on_options: string[] | null;
   featured: boolean;
+  asset_status: "raw" | "processed" | "published" | null;
   visible_regions: string[] | null;
   shippable_countries: string[] | null;
 };
@@ -53,7 +56,8 @@ export default async function AdminEditProductPage({
             description: row.description ?? "",
             categoryId: row.category_id ?? "silicone",
             material: row.material ?? "",
-            currency: row.currency ?? "CNY",
+            costCurrency: row.cost_currency ?? row.currency ?? "CNY",
+            saleCurrency: row.sale_currency ?? row.currency ?? "CNY",
             costPrice: Number(row.cost_price ?? 0),
             salePrice: Number(row.sale_price ?? 0),
             compareAtPrice: row.compare_at_price ?? undefined,
@@ -64,6 +68,7 @@ export default async function AdminEditProductPage({
             videoUrl: row.video_url ?? "",
             addOnOptions: row.add_on_options ?? [],
             featured: row.featured ?? false,
+            assetStatus: row.asset_status ?? "published",
             visibleRegions: row.visible_regions ?? ["ALL"],
             shippableCountries: row.shippable_countries ?? [],
           }}

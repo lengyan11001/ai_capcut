@@ -9,6 +9,8 @@ type PartialAdminProductPayload = {
   categoryId?: string;
   material?: string;
   currency?: "CNY" | "USD" | "EUR";
+  costCurrency?: "CNY" | "USD" | "EUR";
+  saleCurrency?: "CNY" | "USD" | "EUR";
   costPrice?: number;
   salePrice?: number;
   compareAtPrice?: number | null;
@@ -22,6 +24,7 @@ type PartialAdminProductPayload = {
   visibleRegions?: string[];
   shippableCountries?: string[];
   featured?: boolean;
+  assetStatus?: "raw" | "processed" | "published";
 };
 
 export async function PATCH(
@@ -53,6 +56,8 @@ export async function PATCH(
     ...(payload.categoryId !== undefined ? { category_id: payload.categoryId } : {}),
     ...(payload.material !== undefined ? { material: payload.material } : {}),
     ...(payload.currency !== undefined ? { currency: payload.currency } : {}),
+    ...(payload.costCurrency !== undefined ? { cost_currency: payload.costCurrency } : {}),
+    ...(payload.saleCurrency !== undefined ? { sale_currency: payload.saleCurrency } : {}),
     ...(payload.costPrice !== undefined ? { cost_price: payload.costPrice } : {}),
     ...(payload.salePrice !== undefined ? { sale_price: payload.salePrice } : {}),
     ...(payload.compareAtPrice !== undefined ? { compare_at_price: payload.compareAtPrice } : {}),
@@ -68,6 +73,7 @@ export async function PATCH(
     ...(payload.visibleRegions !== undefined ? { visible_regions: payload.visibleRegions } : {}),
     ...(payload.shippableCountries !== undefined ? { shippable_countries: payload.shippableCountries } : {}),
     ...(payload.featured !== undefined ? { featured: payload.featured } : {}),
+    ...(payload.assetStatus !== undefined ? { asset_status: payload.assetStatus } : {}),
     updated_at: new Date().toISOString(),
   };
 

@@ -8,6 +8,7 @@ export function ProductCard({ product }: { product: Product }) {
   const isPlaceholder = imageUrl.startsWith("https://placehold.co");
   const isProxyImage = imageUrl.startsWith("/api/image-proxy");
   const displayPrice = product.salePrice ?? product.price;
+  const displayCurrency = product.saleCurrency ?? product.currency ?? "CNY";
   const shippingText =
     (product.sourceType === "overseas_us" || product.sourceType === "overseas_eu") &&
     product.isFreeShippingOverseas
@@ -42,11 +43,11 @@ export function ProductCard({ product }: { product: Product }) {
         </p>
         <div className="mt-2 flex items-center gap-2">
           <span className="font-semibold text-gray-900">
-            {formatMoney(displayPrice, product.currency ?? "CNY")}
+            {formatMoney(displayPrice, displayCurrency)}
           </span>
           {product.compareAtPrice != null && product.compareAtPrice > displayPrice && (
             <span className="text-sm text-gray-400 line-through">
-              {formatMoney(product.compareAtPrice, product.currency ?? "CNY")}
+              {formatMoney(product.compareAtPrice, displayCurrency)}
             </span>
           )}
         </div>

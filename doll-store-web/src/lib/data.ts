@@ -17,8 +17,12 @@ const staticProducts = (productsData as unknown as Product[]).map((product) => (
   ...product,
   costPrice: product.costPrice ?? product.price,
   salePrice: product.salePrice ?? product.price,
+  costCurrency: product.costCurrency ?? product.currency ?? "CNY",
+  saleCurrency: product.saleCurrency ?? product.currency ?? "CNY",
+  currency: product.saleCurrency ?? product.currency ?? "CNY",
   shippingQuoteMode: product.shippingQuoteMode ?? "quote_after_confirm",
   isFreeShippingOverseas: product.isFreeShippingOverseas ?? false,
+  assetStatus: product.assetStatus ?? "published",
   images: (product.images ?? []).map(normalizeImageUrl),
 }));
 
@@ -63,6 +67,8 @@ type DbProductRow = {
   category_id: string;
   material: string;
   currency: "CNY" | "USD" | "EUR";
+  cost_currency: "CNY" | "USD" | "EUR" | null;
+  sale_currency: "CNY" | "USD" | "EUR" | null;
   cost_price: number;
   sale_price: number;
   compare_at_price: number | null;
@@ -71,6 +77,7 @@ type DbProductRow = {
   source_type: "origin" | "overseas_us" | "overseas_eu";
   shipping_quote_mode: "included" | "quote_after_confirm";
   is_free_shipping_overseas: boolean;
+  asset_status: "raw" | "processed" | "published" | null;
   specs: Record<string, string> | null;
   add_on_options: string[] | null;
   visible_regions: Array<"US" | "EU" | "ROW" | "ALL"> | null;
@@ -88,7 +95,9 @@ function mapDbProduct(row: DbProductRow): Product {
     costPrice: Number(row.cost_price ?? row.sale_price ?? 0),
     salePrice: Number(row.sale_price ?? 0),
     compareAtPrice: row.compare_at_price == null ? undefined : Number(row.compare_at_price),
-    currency: row.currency ?? "CNY",
+    costCurrency: row.cost_currency ?? row.currency ?? "CNY",
+    saleCurrency: row.sale_currency ?? row.currency ?? "CNY",
+    currency: row.sale_currency ?? row.currency ?? "CNY",
     images: (row.images ?? []).map(normalizeImageUrl),
     videoUrl: row.video_url ?? undefined,
     categoryId: row.category_id,
@@ -96,6 +105,7 @@ function mapDbProduct(row: DbProductRow): Product {
     sourceType: row.source_type ?? "origin",
     shippingQuoteMode: row.shipping_quote_mode ?? "quote_after_confirm",
     isFreeShippingOverseas: row.is_free_shipping_overseas ?? false,
+    assetStatus: row.asset_status ?? "published",
     specs: row.specs ?? {},
     addOnOptions: row.add_on_options ?? [],
     visibleRegions: row.visible_regions ?? ["ALL"],
@@ -132,11 +142,12 @@ export async function getProducts(
   const base = options?.debugAll
     ? products
     : products.filter((p) => canShowByRegion(p, options?.region ?? "ROW"));
+  const publishedOnly = base.filter((p) => (p.assetStatus ?? "published") === "published");
 
-  if (!categorySlug) return base;
+  if (!categorySlug) return publishedOnly;
   const cat = categories.find((c) => c.slug === categorySlug);
-  if (!cat) return base;
-  return base.filter((p) => p.categoryId === cat.id);
+  if (!cat) return publishedOnly;
+  return publishedOnly.filter((p) => p.categoryId === cat.id);
 }
 
 export async function getProductBySlug(

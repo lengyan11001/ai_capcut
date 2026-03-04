@@ -13,8 +13,11 @@ export interface Product {
   price: number;
   /** 兼容历史字段：旧逻辑价格（建议逐步只使用 salePrice） */
   currency?: "CNY" | "USD" | "EUR";
+  costCurrency?: "CNY" | "USD" | "EUR";
+  saleCurrency?: "CNY" | "USD" | "EUR";
   costPrice?: number;
   salePrice?: number;
+  assetStatus?: "raw" | "processed" | "published";
   shippingQuoteMode?: "included" | "quote_after_confirm";
   isFreeShippingOverseas?: boolean;
   compareAtPrice?: number;

@@ -9,12 +9,15 @@ create table if not exists products (
   category_id text not null,
   material text default '',
   currency text default 'CNY',
+  cost_currency text default 'CNY',
+  sale_currency text default 'CNY',
   cost_price numeric not null,
   sale_price numeric not null,
   compare_at_price numeric,
   source_type text default 'origin',
   shipping_quote_mode text default 'quote_after_confirm',
   is_free_shipping_overseas boolean default false,
+  asset_status text default 'published',
   images text[] default '{}',
   video_url text,
   specs jsonb default '{}'::jsonb,
@@ -25,6 +28,10 @@ create table if not exists products (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+alter table products add column if not exists cost_currency text default 'CNY';
+alter table products add column if not exists sale_currency text default 'CNY';
+alter table products add column if not exists asset_status text default 'published';
 
 alter table products enable row level security;
 drop policy if exists "Allow select products" on products;

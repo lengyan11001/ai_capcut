@@ -16,7 +16,8 @@ export default async function AdminNewProductPage() {
             description: "",
             categoryId: "silicone",
             material: "Silicone",
-            currency: "CNY",
+            costCurrency: "CNY",
+            saleCurrency: "CNY",
             costPrice: 0,
             salePrice: 0,
             compareAtPrice: undefined,
@@ -27,6 +28,7 @@ export default async function AdminNewProductPage() {
             videoUrl: "",
             addOnOptions: [],
             featured: false,
+            assetStatus: "published",
             visibleRegions: ["ALL"],
             shippableCountries: [],
           }}

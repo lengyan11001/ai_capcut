@@ -9,6 +9,8 @@ type AdminProductPayload = {
   categoryId: string;
   material: string;
   currency?: "CNY" | "USD" | "EUR";
+  costCurrency?: "CNY" | "USD" | "EUR";
+  saleCurrency?: "CNY" | "USD" | "EUR";
   costPrice: number;
   salePrice: number;
   compareAtPrice?: number | null;
@@ -22,6 +24,7 @@ type AdminProductPayload = {
   visibleRegions?: string[];
   shippableCountries?: string[];
   featured?: boolean;
+  assetStatus?: "raw" | "processed" | "published";
 };
 
 export async function POST(request: NextRequest) {
@@ -58,6 +61,8 @@ export async function POST(request: NextRequest) {
       category_id: payload.categoryId,
       material: payload.material ?? "",
       currency: payload.currency ?? "CNY",
+      cost_currency: payload.costCurrency ?? payload.currency ?? "CNY",
+      sale_currency: payload.saleCurrency ?? payload.currency ?? "CNY",
       cost_price: payload.costPrice,
       sale_price: payload.salePrice,
       compare_at_price: payload.compareAtPrice ?? null,
@@ -71,6 +76,7 @@ export async function POST(request: NextRequest) {
       visible_regions: payload.visibleRegions ?? ["ALL"],
       shippable_countries: payload.shippableCountries ?? [],
       featured: payload.featured ?? false,
+      asset_status: payload.assetStatus ?? "published",
     })
     .select("id")
     .single();

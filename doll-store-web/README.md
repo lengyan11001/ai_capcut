@@ -11,8 +11,9 @@
 - 结账 `/checkout`：收货信息表单 + 订单摘要，提交后写入 Supabase（若已配置）
 - 后台管理（MVP）：
   - `/admin/login` 管理员密码登录
-  - `/admin/products` 商品列表与销售价管理
+  - `/admin/products` 商品列表、双币种价格与素材状态管理
   - `/admin/products/new` 新建商品，支持上传图片/视频到 Supabase Storage
+- 商品详情媒体区：缩略图切换 + 图片悬停放大预览（视频仅播放不放大）
 - 静态页：About、Shipping & Delivery、Privacy Policy、Contact
 
 支付：当前为「提交订单」后由站长联系客户完成支付。真实收款需自行对接成人友好通道（如 CCBill、Epoch），参见仓库根目录下 `docs/doll-store/` 下的《Shopify从零到上线步骤》或《自建服务器独立站从零到上线》中的支付章节。
@@ -72,6 +73,24 @@ create policy "Allow select by service" on orders for select using (true);
 npm run import:products
 ```
 
+如需将供应商外链素材（如 `47.107.244.246`）迁移到你自己的 Supabase Storage，并自动回写商品图片/视频 URL：
+
+```bash
+# 先演练，不写库
+npm run migrate:supplier-assets -- --dry-run
+
+# 正式执行
+npm run migrate:supplier-assets
+```
+
+### 素材状态流（无水印版）
+
+- `raw`：原始素材，仅后台可见，不在前台展示
+- `processed`：已处理待发布，仅后台可见，不在前台展示
+- `published`：可公开展示，前台可见
+
+前台商品列表与详情默认只显示 `asset_status = published` 的商品。
+
 ## 数据与素材
 
 - 商品与分类：`src/data/products.json`、`src/data/categories.json`。可替换为 CMS 或 API。
@@ -91,7 +110,7 @@ npm run import:products
 2. 在 Supabase Storage 创建 bucket：`product-media`（或你自定义名字并填到 `.env`）
 3. 本地执行 `npm run import:products` 初始化商品
 4. 打开 `/admin/login` 登录后台
-5. 在 `/admin/products` 设置 `sale_price`、海外仓包邮开关和素材
+5. 在 `/admin/products` 设置 `cost_price/cost_currency`、`sale_price/sale_currency`、素材状态、海外仓包邮开关和素材
 
 ## 项目结构
 

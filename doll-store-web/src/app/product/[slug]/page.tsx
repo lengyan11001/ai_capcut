@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import { getProductBySlug } from "@/lib/data";
 import { AddToCartButton } from "./AddToCartButton";
 import { formatMoney } from "@/lib/money";
 import { resolveRegionContext } from "@/lib/request-context";
+import { ProductMediaGallery } from "@/components/ProductMediaGallery";
 
 export default async function ProductPage({
   params,
@@ -18,10 +18,8 @@ export default async function ProductPage({
   const ctx = await resolveRegionContext(resolvedSearchParams);
   const product = await getProductBySlug(slug, { region: ctx.region, debugAll: ctx.debugAll });
   if (!product) notFound();
-  const imageUrl = product.images[0] ?? "https://placehold.co/600x800?text=Product";
-  const isPlaceholder = imageUrl.startsWith("https://placehold.co");
-  const isProxyImage = imageUrl.startsWith("/api/image-proxy");
   const displayPrice = product.salePrice ?? product.price;
+  const displayCurrency = product.saleCurrency ?? product.currency ?? "CNY";
   const shippingText =
     (product.sourceType === "overseas_us" || product.sourceType === "overseas_eu") &&
     product.isFreeShippingOverseas
@@ -32,30 +30,11 @@ export default async function ProductPage({
     <div className="mx-auto max-w-6xl px-4 py-10">
       <div className="grid gap-8 lg:grid-cols-2">
         <div className="space-y-4">
-          <div className="relative aspect-[3/4] overflow-hidden rounded-lg bg-gray-100">
-            <Image
-            src={imageUrl}
-            alt={product.name}
-            fill
-            className="object-cover"
-            sizes="(max-width: 1024px) 100vw, 50vw"
-            priority
-            unoptimized={isPlaceholder || isProxyImage}
+          <ProductMediaGallery
+            name={product.name}
+            images={product.images.length > 0 ? product.images : ["https://placehold.co/600x800?text=Product"]}
+            videoUrl={product.videoUrl}
           />
-          </div>
-          {/* 商品视频占位：videoUrl 填入自有或供应商授权视频 URL */}
-          {product.videoUrl && (
-            <div className="rounded-lg overflow-hidden bg-gray-900">
-              <video
-                src={product.videoUrl}
-                controls
-                className="w-full aspect-video object-contain"
-                preload="metadata"
-              >
-                Your browser does not support the video tag.
-              </video>
-            </div>
-          )}
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{product.name}</h1>
@@ -68,11 +47,11 @@ export default async function ProductPage({
           </p>
           <div className="mt-4 flex items-center gap-3">
             <span className="text-2xl font-semibold text-gray-900">
-              {formatMoney(displayPrice, product.currency ?? "CNY")}
+              {formatMoney(displayPrice, displayCurrency)}
             </span>
             {product.compareAtPrice != null && product.compareAtPrice > displayPrice && (
               <span className="text-lg text-gray-400 line-through">
-                {formatMoney(product.compareAtPrice, product.currency ?? "CNY")}
+                {formatMoney(product.compareAtPrice, displayCurrency)}
               </span>
             )}
           </div>
@@ -87,7 +66,7 @@ export default async function ProductPage({
               slug={product.slug}
               name={product.name}
               price={displayPrice}
-              currency={product.currency}
+              currency={displayCurrency}
               image={product.images[0]}
             />
           </div>

@@ -9,7 +9,8 @@ type FormValues = {
   description: string;
   categoryId: string;
   material: string;
-  currency: "CNY" | "USD" | "EUR";
+  costCurrency: "CNY" | "USD" | "EUR";
+  saleCurrency: "CNY" | "USD" | "EUR";
   costPrice: number;
   salePrice: number;
   compareAtPrice?: number;
@@ -20,6 +21,7 @@ type FormValues = {
   videoUrl?: string;
   addOnOptions: string[];
   featured: boolean;
+  assetStatus: "raw" | "processed" | "published";
   visibleRegions: string[];
   shippableCountries: string[];
 };
@@ -105,6 +107,7 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
     try {
       const payload = {
         ...form,
+        currency: form.saleCurrency,
         images: parseCommaList(imageInput),
         addOnOptions: parseCommaList(addOnInput),
         visibleRegions: parseCommaList(visibleRegionsInput),
@@ -164,7 +167,7 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
         />
       </label>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <label className="text-sm">
           <span className="block font-medium text-gray-700">Cost price *</span>
           <input
@@ -184,6 +187,37 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
             onChange={(e) => setForm((f) => ({ ...f, salePrice: Number(e.target.value) }))}
             className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
           />
+        </label>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <label className="text-sm">
+          <span className="block font-medium text-gray-700">Cost currency</span>
+          <select
+            value={form.costCurrency}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, costCurrency: e.target.value as FormValues["costCurrency"] }))
+            }
+            className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+          >
+            <option value="CNY">CNY</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="block font-medium text-gray-700">Sale currency</span>
+          <select
+            value={form.saleCurrency}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, saleCurrency: e.target.value as FormValues["saleCurrency"] }))
+            }
+            className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+          >
+            <option value="CNY">CNY</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+          </select>
         </label>
         <label className="text-sm">
           <span className="block font-medium text-gray-700">Compare-at</span>
@@ -230,6 +264,20 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
             <option value="origin">origin</option>
             <option value="overseas_us">overseas_us</option>
             <option value="overseas_eu">overseas_eu</option>
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="block font-medium text-gray-700">Asset status</span>
+          <select
+            value={form.assetStatus}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, assetStatus: e.target.value as FormValues["assetStatus"] }))
+            }
+            className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+          >
+            <option value="raw">raw</option>
+            <option value="processed">processed</option>
+            <option value="published">published</option>
           </select>
         </label>
       </div>

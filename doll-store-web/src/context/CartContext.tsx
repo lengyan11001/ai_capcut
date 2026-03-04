@@ -45,8 +45,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setItems(loadCart());
-    setMounted(true);
+    const timer = setTimeout(() => {
+      setItems(loadCart());
+      setMounted(true);
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
