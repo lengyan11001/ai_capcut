@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -29,6 +30,7 @@ from .auth import get_current_user
 
 
 router = APIRouter(prefix="/group-control", tags=["group-control"])
+logger = logging.getLogger(__name__)
 
 
 class DeviceStateIn(BaseModel):
@@ -767,94 +769,106 @@ def poll_next_task(
     db: Session = Depends(get_db),
     x_agent_secret: Optional[str] = Header(None, alias="X-Agent-Secret"),
 ):
-    _ensure_agent_secret(x_agent_secret)
-    agent = db.query(ControlAgent).filter(ControlAgent.agent_key == agent_key).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="agent not found")
+    try:
+        _ensure_agent_secret(x_agent_secret)
+        agent = db.query(ControlAgent).filter(ControlAgent.agent_key == agent_key).first()
+        if not agent:
+            raise HTTPException(status_code=404, detail="agent not found")
 
-    agent.status = "online"
-    agent.last_seen_at = datetime.utcnow()
-    db.add(agent)
+        agent.status = "online"
+        agent.last_seen_at = datetime.utcnow()
+        db.add(agent)
 
-    device_ids: list[int] = []
-    serials = {x.strip() for x in payload.device_serials if x and x.strip()}
-    if serials:
-        rows = db.query(MobileDevice).filter(MobileDevice.serial.in_(serials)).all()
-        for item in rows:
-            item.agent_id = agent.id
-            item.last_seen_at = datetime.utcnow()
-            db.add(item)
-            device_ids.append(item.id)
+        device_ids: list[int] = []
+        serials = {x.strip() for x in payload.device_serials if x and x.strip()}
+        if serials:
+            rows = db.query(MobileDevice).filter(MobileDevice.serial.in_(serials)).all()
+            for item in rows:
+                item.agent_id = agent.id
+                item.last_seen_at = datetime.utcnow()
+                db.add(item)
+                device_ids.append(item.id)
 
-    now = datetime.utcnow()
-    q = db.query(ControlTask).filter(
-        ControlTask.status == "pending",
-        or_(ControlTask.lease_until.is_(None), ControlTask.lease_until < now),
-    )
-    if device_ids:
-        q = q.filter(or_(ControlTask.target_device_id.is_(None), ControlTask.target_device_id.in_(device_ids)))
-    rows = q.order_by(ControlTask.priority.asc(), ControlTask.created_at.asc()).all()
-    row = None
-    matched_device_id: Optional[int] = None
-    for r in rows:
-        flt = getattr(r, "device_filter", None)
-        if not flt:
-            row = r
-            break
-        for did in device_ids:
-            dev = db.query(MobileDevice).filter(MobileDevice.id == did).first()
-            if dev and _device_matches_filter(getattr(dev, "account_attrs", None), flt):
-                if r.target_device_id is None or r.target_device_id == did:
-                    row = r
-                    matched_device_id = did
-                    break
-        if row:
-            break
-    if not row:
+        now = datetime.utcnow()
+        q = db.query(ControlTask).filter(
+            ControlTask.status == "pending",
+            or_(ControlTask.lease_until.is_(None), ControlTask.lease_until < now),
+        )
+        if device_ids:
+            q = q.filter(or_(ControlTask.target_device_id.is_(None), ControlTask.target_device_id.in_(device_ids)))
+        rows = q.order_by(ControlTask.priority.asc(), ControlTask.created_at.asc()).all()
+        row = None
+        matched_device_id: Optional[int] = None
+        for r in rows:
+            flt = getattr(r, "device_filter", None)
+            if not flt:
+                row = r
+                break
+            for did in device_ids:
+                dev = db.query(MobileDevice).filter(MobileDevice.id == did).first()
+                if dev and _device_matches_filter(getattr(dev, "account_attrs", None), flt):
+                    if r.target_device_id is None or r.target_device_id == did:
+                        row = r
+                        matched_device_id = did
+                        break
+            if row:
+                break
+        if not row:
+            db.commit()
+            return {"task": None}
+
+        row.status = "running"
+        row.assigned_agent_id = agent.id
+        if matched_device_id is not None:
+            row.assigned_device_id = matched_device_id
+        else:
+            row.assigned_device_id = row.target_device_id if row.target_device_id in device_ids else (device_ids[0] if device_ids else row.target_device_id)
+        row.lease_until = now + timedelta(seconds=max(settings.control_task_lease_seconds, 30))
+        row.started_at = row.started_at or now
+        db.add(row)
+
+        execution = TaskExecution(
+            task_id=row.id,
+            user_id=row.user_id,
+            agent_id=agent.id,
+            device_id=row.assigned_device_id,
+            status="running",
+            started_at=now,
+        )
+        db.add(execution)
         db.commit()
-        return {"task": None}
+        db.refresh(execution)
+        db.refresh(row)
+        assigned_serial = None
+        if row.assigned_device_id:
+            d = db.query(MobileDevice).filter(MobileDevice.id == row.assigned_device_id).first()
+            assigned_serial = d.serial if d else None
 
-    row.status = "running"
-    row.assigned_agent_id = agent.id
-    if matched_device_id is not None:
-        row.assigned_device_id = matched_device_id
-    else:
-        row.assigned_device_id = row.target_device_id if row.target_device_id in device_ids else (device_ids[0] if device_ids else row.target_device_id)
-    row.lease_until = now + timedelta(seconds=max(settings.control_task_lease_seconds, 30))
-    row.started_at = row.started_at or now
-    db.add(row)
-
-    execution = TaskExecution(
-        task_id=row.id,
-        user_id=row.user_id,
-        agent_id=agent.id,
-        device_id=row.assigned_device_id,
-        status="running",
-        started_at=now,
-    )
-    db.add(execution)
-    db.commit()
-    db.refresh(execution)
-    db.refresh(row)
-    assigned_serial = None
-    if row.assigned_device_id:
-        d = db.query(MobileDevice).filter(MobileDevice.id == row.assigned_device_id).first()
-        assigned_serial = d.serial if d else None
-
-    return {
-        "task": {
-            "id": row.id,
-            "platform": row.platform,
-            "task_type": row.task_type,
-            "title": row.title,
-            "payload": row.payload,
-            "assigned_device_id": row.assigned_device_id,
-            "assigned_device_serial": assigned_serial,
-            "target_account_id": getattr(row, "target_account_id", None),
-            "execution_id": execution.id,
-            "lease_until": row.lease_until.isoformat() if row.lease_until else None,
+        return {
+            "task": {
+                "id": row.id,
+                "platform": row.platform,
+                "task_type": row.task_type,
+                "title": row.title,
+                "payload": row.payload,
+                "assigned_device_id": row.assigned_device_id,
+                "assigned_device_serial": assigned_serial,
+                "target_account_id": getattr(row, "target_account_id", None),
+                "execution_id": execution.id,
+                "lease_until": row.lease_until.isoformat() if row.lease_until else None,
+            }
         }
-    }
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception(
+            "poll_next_task internal error",
+            extra={
+                "agent_key": agent_key,
+                "serial_count": len(payload.device_serials or []),
+            },
+        )
+        raise HTTPException(status_code=502, detail="poll_next_task_internal_error")
 
 
 @router.post("/tasks/{task_id}/report", summary="上报执行进度或结果（Agent）")

@@ -15,6 +15,8 @@ pip install -r requirements-agent.txt
 
 ```bash
 export CLOUD_BASE_URL=http://<腾讯云IP>:8000
+# 推荐：Agent 轮询/心跳直连后端（内网或回环），避免高频请求走公网 Nginx 导致 502
+# export CLOUD_BASE_URL_DIRECT=http://127.0.0.1:8000
 export AGENT_NAME=pc-agent-1
 export AGENT_KEY=pc-agent-1
 export AGENT_SECRET=<与后端CONTROL_AGENT_SECRET一致>
@@ -29,7 +31,22 @@ export APPIUM_SERVER_URL=http://127.0.0.1:4723
 python -m local_agent.main
 ```
 
-## 3.1) 启动前绑定校验（推荐）
+## 3.2) `/next-task` 502 诊断（代理 vs 直连）
+
+当出现 `next-task failed: 502` 时，可用下列命令一次对比两条链路：
+
+```bash
+python -m local_agent.diagnose_next_task \
+  --proxy-base http://<公网域名或IP>:8000 \
+  --direct-base http://127.0.0.1:8000 \
+  --agent-key pc-agent-1 \
+  --agent-secret <AGENT_SECRET> \
+  --serials 192.168.1.93:5555
+```
+
+输出会同时给出 `status_code/server/via/body`，便于确认 502 是否由代理层引入。
+
+## 3.3) 启动前绑定校验（推荐）
 
 先维护 `docs/ASSET_BINDING_TEMPLATE.csv`（可重命名为你自己的文件），再执行：
 
@@ -41,6 +58,22 @@ python -m local_agent.check_asset_bindings docs/ASSET_BINDING_TEMPLATE.csv
 - 同一个 `reddit_username` 不应绑定多个 `device_serial`
 - 同一个 `reddit_username` 不应绑定多个 `proxy_exit_ip`
 - 一个设备绑定多个账号仅给出告警（建议减少切号）
+
+## 3.4) 稳定性回归（轮询压测）
+
+用于验证 `next-task` 在 10-15 分钟内是否存在 502/超时：
+
+```bash
+python -m local_agent.check_next_task_stability \
+  --base-url http://127.0.0.1:8000 \
+  --agent-key pc-agent-1 \
+  --agent-secret <AGENT_SECRET> \
+  --serials 192.168.1.93:5555 \
+  --loops 600 \
+  --interval 1
+```
+
+若输出里 `errors` 为空且 `ok` 接近 `loops`，说明轮询链路稳定。
 
 ## 4) 说明
 
