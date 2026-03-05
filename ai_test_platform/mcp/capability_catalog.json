@@ -44,5 +44,197 @@
         "task_id"
       ]
     }
+  },
+  "sutui.search_models": {
+    "description": "搜索速推可用模型与参数 Schema",
+    "upstream": "sutui",
+    "upstream_tool": "search_models",
+    "enabled": true,
+    "is_default": false,
+    "arg_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "自由文本搜索"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "image",
+            "video",
+            "audio",
+            "all"
+          ]
+        },
+        "capability": {
+          "type": "string",
+          "enum": [
+            "t2i",
+            "i2i",
+            "t2v",
+            "i2v",
+            "v2v",
+            "t2a",
+            "stt",
+            "i2t",
+            "v2t"
+          ]
+        },
+        "model_id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "sutui.guide": {
+    "description": "获取速推模型教程与最佳实践",
+    "upstream": "sutui",
+    "upstream_tool": "guide",
+    "enabled": true,
+    "is_default": false,
+    "arg_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "skill_id": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "image",
+            "video",
+            "audio",
+            "tool"
+          ]
+        }
+      }
+    }
+  },
+  "sutui.account": {
+    "description": "速推账户管理（余额/签到/套餐/支付）",
+    "upstream": "sutui",
+    "upstream_tool": "account",
+    "enabled": true,
+    "is_default": false,
+    "arg_schema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "balance",
+            "checkin",
+            "packages",
+            "pay"
+          ],
+          "default": "balance"
+        },
+        "package_id": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  "sutui.parse_video": {
+    "description": "解析视频分享链接并获取下载地址",
+    "upstream": "sutui",
+    "upstream_tool": "parse_video",
+    "enabled": true,
+    "is_default": false,
+    "arg_schema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  },
+  "sutui.transfer_url": {
+    "description": "转存外部媒体 URL 到 CDN",
+    "upstream": "sutui",
+    "upstream_tool": "transfer_url",
+    "enabled": true,
+    "is_default": false,
+    "arg_schema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "image",
+            "audio"
+          ],
+          "default": "image"
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  },
+  "sutui.speak": {
+    "description": "语音合成和音色管理",
+    "upstream": "sutui",
+    "upstream_tool": "speak",
+    "enabled": true,
+    "is_default": false,
+    "arg_schema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "synthesize",
+            "list_voices",
+            "design_voice",
+            "clone_voice"
+          ],
+          "default": "synthesize"
+        },
+        "text": {
+          "type": "string"
+        },
+        "voice_id": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "audio_url": {
+          "type": "string"
+        },
+        "file_id": {
+          "type": "integer"
+        },
+        "voice_name": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string",
+          "enum": [
+            "speech-2.8-hd",
+            "speech-2.8-turbo",
+            "speech-2.6-hd",
+            "speech-2.6-turbo"
+          ],
+          "default": "speech-2.8-hd"
+        },
+        "speed": {
+          "type": "number",
+          "default": 1
+        }
+      }
+    }
   }
 }

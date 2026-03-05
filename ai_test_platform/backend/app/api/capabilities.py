@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..core.config import settings
 from ..core.credit_flow import add_credit_flow
 from ..db import get_db
 from ..models import CapabilityCallLog, CapabilityConfig, CapabilityPolicy, User
@@ -123,6 +127,99 @@ def _serialize_capability(row: CapabilityConfig) -> Dict[str, Any]:
         "created_at": row.created_at.isoformat() if row.created_at else "",
         "updated_at": row.updated_at.isoformat() if row.updated_at else "",
     }
+
+
+def _project_root() -> Path:
+    # backend/app/api/capabilities.py -> ai_test_platform
+    return Path(__file__).resolve().parents[3]
+
+
+def _sanitize_slug(text: str) -> str:
+    x = re.sub(r"[^a-zA-Z0-9._-]+", "_", (text or "").strip()).strip("._-").lower()
+    return x or "custom"
+
+
+def _read_catalog_file(path: Path) -> Dict[str, Dict[str, Any]]:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for capability_id, cfg in raw.items():
+        if isinstance(capability_id, str) and isinstance(cfg, dict):
+            out[capability_id.strip()] = cfg
+    return out
+
+
+def _load_capabilities_from_catalog_files() -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    candidates: List[Path] = []
+    custom_path = (settings.capability_catalog_path or "").strip()
+    if custom_path:
+        candidates.append(Path(custom_path))
+    mcp_dir = _project_root() / "mcp"
+    candidates.extend([
+        mcp_dir / "capability_catalog.local.json",
+        mcp_dir / "capability_catalog.json",
+    ])
+    for p in candidates:
+        try:
+            if p.exists():
+                data = _read_catalog_file(p)
+                if data:
+                    out.update(data)
+        except Exception:
+            continue
+    return out
+
+
+def _normalize_upstream(server_dir_name: str, server_name: str) -> str:
+    s = f"{server_dir_name} {server_name}".lower()
+    if "sutui" in s or "速推" in server_name:
+        return "sutui"
+    return _sanitize_slug(server_dir_name or server_name or "custom")
+
+
+def _load_capabilities_from_cursor_mcp_tools() -> Dict[str, Dict[str, Any]]:
+    """
+    从本机 Cursor MCP 描述中抽取能力。
+    仅用于“管理员重扫能力目录”时的本地增强发现；若路径不存在会自动跳过。
+    """
+    out: Dict[str, Dict[str, Any]] = {}
+    root = Path.home() / ".cursor" / "projects"
+    if not root.exists():
+        return out
+    for tool_file in root.glob("*/mcps/*/tools/*.json"):
+        try:
+            server_dir = tool_file.parents[1]
+            meta_file = server_dir / "SERVER_METADATA.json"
+            server_name = ""
+            if meta_file.exists():
+                meta_raw = json.loads(meta_file.read_text(encoding="utf-8"))
+                if isinstance(meta_raw, dict):
+                    server_name = str(meta_raw.get("serverName") or "").strip()
+            tool_raw = json.loads(tool_file.read_text(encoding="utf-8"))
+            if not isinstance(tool_raw, dict):
+                continue
+            tool_name = str(tool_raw.get("name") or "").strip()
+            if not tool_name:
+                continue
+            upstream = _normalize_upstream(server_dir.name, server_name)
+            capability_id = f"{upstream}.{_sanitize_slug(tool_name)}"
+            arg_schema = tool_raw.get("arguments")
+            if not isinstance(arg_schema, dict):
+                arg_schema = {"type": "object", "properties": {}}
+            out[capability_id] = {
+                "description": str(tool_raw.get("description") or capability_id).strip() or capability_id,
+                "upstream": upstream,
+                "upstream_tool": tool_name,
+                "arg_schema": arg_schema,
+                "enabled": True,
+                "is_default": False,
+                "unit_credits": 0,
+            }
+        except Exception:
+            continue
+    return out
 
 
 @router.get("/available", summary="当前用户可用能力（已做策略过滤）")
@@ -444,6 +541,80 @@ def admin_registry_bearer(
         raise HTTPException(status_code=403, detail="admin only")
     rows = db.query(CapabilityConfig).order_by(CapabilityConfig.capability_id.asc()).all()
     return [_serialize_capability(x) for x in rows]
+
+
+@router.post("/admin/registry/rescan", summary="管理员重扫并同步能力目录（Bearer）")
+def admin_rescan_registry_bearer(
+    include_cursor_mcp: bool = True,
+    overwrite_existing: bool = True,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="admin only")
+
+    merged: Dict[str, Dict[str, Any]] = {}
+    merged.update(_load_capabilities_from_catalog_files())
+    if include_cursor_mcp:
+        mcp_caps = _load_capabilities_from_cursor_mcp_tools()
+        # 显式目录优先，MCP 自动发现仅补充缺失项
+        for cid, cfg in mcp_caps.items():
+            if cid not in merged:
+                merged[cid] = cfg
+
+    created = 0
+    updated = 0
+    ignored = 0
+    for capability_id in sorted(merged.keys()):
+        cfg = merged[capability_id] if isinstance(merged[capability_id], dict) else {}
+        if not capability_id:
+            ignored += 1
+            continue
+
+        row = db.query(CapabilityConfig).filter(CapabilityConfig.capability_id == capability_id).first()
+        if not row:
+            row = CapabilityConfig(
+                capability_id=capability_id,
+                description=str(cfg.get("description") or capability_id),
+                upstream=str(cfg.get("upstream") or "sutui"),
+                upstream_tool=str(cfg.get("upstream_tool") or "").strip(),
+                arg_schema=cfg.get("arg_schema") if isinstance(cfg.get("arg_schema"), dict) else None,
+                enabled=bool(cfg.get("enabled", True)),
+                is_default=bool(cfg.get("is_default", False)),
+                unit_credits=int(cfg.get("unit_credits") or 0),
+            )
+            db.add(row)
+            created += 1
+            continue
+
+        if not overwrite_existing:
+            ignored += 1
+            continue
+
+        row.description = str(cfg.get("description") or row.description or capability_id)
+        row.upstream = str(cfg.get("upstream") or row.upstream or "sutui")
+        row.upstream_tool = str(cfg.get("upstream_tool") or row.upstream_tool or "").strip()
+        if isinstance(cfg.get("arg_schema"), dict):
+            row.arg_schema = cfg.get("arg_schema")
+        if "enabled" in cfg:
+            row.enabled = bool(cfg.get("enabled"))
+        if "is_default" in cfg:
+            row.is_default = bool(cfg.get("is_default"))
+        if "unit_credits" in cfg:
+            try:
+                row.unit_credits = int(cfg.get("unit_credits") or 0)
+            except Exception:
+                pass
+        updated += 1
+
+    db.commit()
+    return {
+        "detail": "ok",
+        "created": created,
+        "updated": updated,
+        "ignored": ignored,
+        "total_from_scan": len(merged),
+    }
 
 
 @router.get("/admin/policies", summary="能力策略列表（管理员Bearer）")

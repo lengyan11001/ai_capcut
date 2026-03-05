@@ -3117,7 +3117,28 @@
     }
     var adminReloadCapabilitiesBtn = document.getElementById('adminReloadCapabilitiesBtn');
     if (adminReloadCapabilitiesBtn) {
-      adminReloadCapabilitiesBtn.addEventListener('click', function() { loadAdminCapabilities(); });
+      adminReloadCapabilitiesBtn.addEventListener('click', function() {
+        var msgEl = document.getElementById('adminSkillMsg');
+        fetch(API_BASE + '/capabilities/admin/registry/rescan?include_cursor_mcp=true&overwrite_existing=true', {
+          method: 'POST',
+          headers: authHeaders()
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!x.ok) {
+              setMessage(msgEl, (x.data && x.data.detail) || '重扫失败', 'error');
+              return;
+            }
+            return loadAdminCapabilities().then(function(list) {
+              var d = x.data || {};
+              var text = '重扫完成：新增 ' + (d.created || 0) + '，更新 ' + (d.updated || 0) + '，总计 ' + (d.total_from_scan || (list || []).length);
+              setMessage(msgEl, text, 'ok');
+            });
+          })
+          .catch(function(err) {
+            setMessage(msgEl, String((err && err.message) || err || '重扫失败'), 'error');
+          });
+      });
     }
     var adminAssignUserSelect = document.getElementById('adminAssignUserSelect');
     if (adminAssignUserSelect) {
