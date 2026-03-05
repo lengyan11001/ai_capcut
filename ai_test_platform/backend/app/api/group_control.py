@@ -940,7 +940,7 @@ class NurturePlanGenerateByDeviceIn(BaseModel):
     risk_preference: str = Field(default="conservative", max_length=32)
     start_date: Optional[str] = None
     name: Optional[str] = Field(default=None, max_length=128)
-    auto_approve: bool = True
+    auto_approve: bool = False
 
 
 @router.get("/nurture/bindings", summary="养号绑定列表（用户态）")
@@ -1304,7 +1304,12 @@ def list_nurture_schedule(
     if status_filter:
         q = q.filter(NurtureScheduleItem.status == status_filter.strip())
     rows = (
-        q.order_by(NurtureScheduleItem.scheduled_at.desc(), NurtureScheduleItem.id.desc())
+        q.order_by(
+            NurtureScheduleItem.day_no.asc(),
+            NurtureScheduleItem.seq_no.asc(),
+            NurtureScheduleItem.scheduled_at.asc(),
+            NurtureScheduleItem.id.asc(),
+        )
         .offset(max(offset, 0))
         .limit(min(max(limit, 1), 500))
         .all()
