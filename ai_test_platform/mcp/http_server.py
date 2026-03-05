@@ -33,6 +33,7 @@ from starlette.routing import Route
 
 
 BASE_URL = os.environ.get("AI_TEST_PLATFORM_BASE_URL", "http://localhost:8000").rstrip("/")
+AI_TEST_PLATFORM_ADMIN_TOKEN = os.environ.get("AI_TEST_PLATFORM_ADMIN_TOKEN", "").strip()
 CAPABILITY_SUTUI_MCP_URL = os.environ.get("CAPABILITY_SUTUI_MCP_URL", "").strip()
 _allowlist_raw = os.environ.get("CAPABILITY_ALLOWLIST", "").strip()
 CAPABILITY_ALLOWLIST = {x.strip() for x in _allowlist_raw.split(",") if x.strip()}
@@ -160,9 +161,6 @@ def _enabled_capability_ids() -> List[str]:
 async def _fetch_backend_available_capabilities(token: Optional[str]) -> Optional[Dict[str, Dict[str, Any]]]:
     """从后端读取当前用户可用能力；失败时返回 None（由调用方回退本地目录）。"""
     if not token:
-        env_token = (os.environ.get("AI_TEST_PLATFORM_TOKEN") or "").strip()
-        token = env_token or None
-    if not token:
         return None
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
@@ -193,11 +191,124 @@ async def _fetch_backend_available_capabilities(token: Optional[str]) -> Optiona
         return None
 
 
-async def _runtime_catalog(token: Optional[str]) -> Dict[str, Dict[str, Any]]:
+def _extract_user_id_from_request(request: Request) -> Optional[int]:
+    """
+    尝试从请求上下文解析 user_id。
+    兼容 query 与常见 header，尤其 OpenClaw 的 agent_id（如 user_12）。
+    """
+    qp = request.query_params
+    q_user_id = (qp.get("user_id") or "").strip()
+    if q_user_id.isdigit():
+        return int(q_user_id)
+    candidates = [
+        request.headers.get("x-openclaw-agent-id") or "",
+        request.headers.get("openclaw-agent-id") or "",
+        request.headers.get("x-agent-id") or "",
+        request.headers.get("x-user-id") or "",
+    ]
+    for raw in candidates:
+        v = str(raw or "").strip()
+        if not v:
+            continue
+        if v.isdigit():
+            return int(v)
+        m = re.search(r"user[_-]?(\d+)$", v, flags=re.I)
+        if m:
+            return int(m.group(1))
+    return None
+
+
+async def _fetch_backend_capabilities_by_user_id(user_id: int) -> Optional[Dict[str, Dict[str, Any]]]:
+    """
+    当调用链未透传用户 token 时，用管理员 token 按 user_id 读取能力（避免退化到本地默认目录）。
+    依赖 AI_TEST_PLATFORM_ADMIN_TOKEN（可回退 AI_TEST_PLATFORM_TOKEN）。
+    """
+    admin_token = AI_TEST_PLATFORM_ADMIN_TOKEN or (os.environ.get("AI_TEST_PLATFORM_TOKEN") or "").strip()
+    if not admin_token:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r_registry = await client.get(
+                f"{BASE_URL}/capabilities/admin/registry",
+                headers=_backend_headers(admin_token),
+            )
+            r_policies = await client.get(
+                f"{BASE_URL}/capabilities/admin/policies?user_id={int(user_id)}",
+                headers=_backend_headers(admin_token),
+            )
+        if r_registry.status_code != 200 or r_policies.status_code != 200:
+            return None
+        registry = r_registry.json()
+        policies = r_policies.json()
+        if not isinstance(registry, list) or not isinstance(policies, list):
+            return None
+
+        reg_map: Dict[str, Dict[str, Any]] = {}
+        for row in registry:
+            if not isinstance(row, dict):
+                continue
+            cid = str(row.get("capability_id") or "").strip()
+            if not cid or row.get("enabled") is False:
+                continue
+            reg_map[cid] = {
+                "description": str(row.get("description") or cid),
+                "upstream": str(row.get("upstream") or "sutui"),
+                "upstream_tool": str(row.get("upstream_tool") or "").strip(),
+                "arg_schema": row.get("arg_schema") if isinstance(row.get("arg_schema"), dict) else {"type": "object", "properties": {}},
+                "unit_credits": int(row.get("unit_credits") or 0),
+                "enabled": True,
+            }
+
+        allow_set: set[str] = set()
+        deny_set: set[str] = set()
+        has_any_user_policy = False
+        for p in policies:
+            if not isinstance(p, dict):
+                continue
+            if not p.get("enabled"):
+                continue
+            st = str(p.get("subject_type") or "").strip().lower()
+            sv = str(p.get("subject_value") or "").strip()
+            if st != "user_id" or sv != str(int(user_id)):
+                continue
+            has_any_user_policy = True
+            cid = str(p.get("capability_id") or "").strip()
+            if not cid:
+                continue
+            effect = str(p.get("effect") or "allow").strip().lower()
+            if effect == "deny":
+                deny_set.add(cid)
+            else:
+                allow_set.add(cid)
+
+        out: Dict[str, Dict[str, Any]] = {}
+        if has_any_user_policy:
+            for cid in sorted(allow_set):
+                if cid in deny_set:
+                    continue
+                if cid in reg_map:
+                    out[cid] = reg_map[cid]
+            return out
+        # 无策略时保持兼容：返回全部启用能力
+        return reg_map
+    except Exception:
+        return None
+
+
+async def _runtime_catalog(token: Optional[str], request: Optional[Request] = None) -> Dict[str, Dict[str, Any]]:
     backend_catalog = await _fetch_backend_available_capabilities(token)
     if backend_catalog is not None:
         return backend_catalog
-    # 回退到本地目录（向后兼容）
+    if request is not None:
+        uid = _extract_user_id_from_request(request)
+        if uid:
+            by_user_catalog = await _fetch_backend_capabilities_by_user_id(uid)
+            if by_user_catalog is not None:
+                return by_user_catalog
+    # 无用户上下文时不再回退本地目录，避免误导能力列表。
+    if token is None:
+        return {}
+    # 有 token 但后端暂不可用时，回退到本地目录（向后兼容）
     out: Dict[str, Dict[str, Any]] = {}
     for cid in _enabled_capability_ids():
         out[cid] = CAPABILITY_CATALOG[cid]
@@ -266,10 +377,6 @@ def _get_token_from_request(request: Request) -> Optional[str]:
         auth = request.headers.get("Authorization") or ""
         if auth.lower().startswith("bearer "):
             token = auth[7:].strip() or None
-    if not token:
-        # 回退到服务环境变量，避免上游未透传 token 时能力列表退化到本地默认目录。
-        env_token = (os.environ.get("AI_TEST_PLATFORM_TOKEN") or "").strip()
-        token = env_token or None
     return token or None
 
 
@@ -569,7 +676,7 @@ async def _call_upstream_mcp_tool(server_url: str, tool_name: str, arguments: Di
             return {"error": {"message": f"Upstream MCP 返回非 JSON: status={r.status_code}"}}
 
 
-async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str]) -> Tuple[List[Dict[str, Any]], bool]:
+async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str], request: Optional[Request] = None) -> Tuple[List[Dict[str, Any]], bool]:
     """根据工具名调用控制台后端，返回 (content, is_error)。"""
     r: Optional[httpx.Response] = None
     try:
@@ -622,7 +729,7 @@ async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str]) -> T
                 r = await client.get(f"{BASE_URL}/auth/pricing", headers=_backend_headers(token))
                 data = r.json()
             elif name == "list_capabilities":
-                catalog = await _runtime_catalog(token)
+                catalog = await _runtime_catalog(token, request=request)
                 data = {
                     "capabilities": [
                         {
@@ -633,11 +740,13 @@ async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str]) -> T
                     ]
                 }
             elif name == "invoke_capability":
-                catalog = await _runtime_catalog(token)
+                catalog = await _runtime_catalog(token, request=request)
                 capability_id = (args.get("capability_id") or "").strip()
                 payload = args.get("payload") or {}
                 if not isinstance(payload, dict):
                     payload = {}
+                if not token:
+                    return ([{"type": "text", "text": "缺少用户 token，无法调用能力。请检查 OpenClaw/Gateway 是否透传 Authorization。"}], True)
                 if not capability_id:
                     return ([{"type": "text", "text": "capability_id 不能为空"}], True)
                 if capability_id not in catalog:
@@ -803,7 +912,7 @@ async def _handle_single_message(msg: Dict[str, Any], request: Request) -> Optio
 
     if method == "tools/list":
         token = _get_token_from_request(request)
-        catalog = await _runtime_catalog(token)
+        catalog = await _runtime_catalog(token, request=request)
         tools = _tool_definitions(catalog)
         return {
             "jsonrpc": "2.0",
@@ -817,7 +926,7 @@ async def _handle_single_message(msg: Dict[str, Any], request: Request) -> Optio
         name = params.get("name")
         arguments = params.get("arguments") or {}
         token = _get_token_from_request(request)
-        content, is_error = await _call_tool(name, arguments, token)
+        content, is_error = await _call_tool(name, arguments, token, request=request)
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
