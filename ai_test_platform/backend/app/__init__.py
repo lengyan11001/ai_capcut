@@ -57,6 +57,21 @@ def _ensure_user_email_columns():
         pass
 
 
+def _ensure_user_role_column():
+    """为已有数据库补充 users.role 列。"""
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            if "sqlite" in (engine.url.drivername or ""):
+                rp = conn.execute(text("PRAGMA table_info(users)"))
+                rows = rp.fetchall()
+                columns = [row[1] for row in rows] if rows else []
+                if "role" not in columns:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'user'"))
+    except Exception:
+        pass
+
+
 def _ensure_document_template_columns():
     """为已有数据库补充 document_templates 表的新列（如 file_content）。"""
     from sqlalchemy import text
@@ -245,6 +260,23 @@ def _ensure_control_task_device_filter():
         pass
 
 
+def _ensure_control_task_extra_columns():
+    """为已有数据库补充 control_tasks 的账号与分组列。"""
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            if "sqlite" in (engine.url.drivername or ""):
+                rp = conn.execute(text("PRAGMA table_info(control_tasks)"))
+                rows = rp.fetchall()
+                columns = [row[1] for row in rows] if rows else []
+                if "target_account_id" not in columns:
+                    conn.execute(text("ALTER TABLE control_tasks ADD COLUMN target_account_id INTEGER"))
+                if "dispatch_group_id" not in columns:
+                    conn.execute(text("ALTER TABLE control_tasks ADD COLUMN dispatch_group_id INTEGER"))
+    except Exception:
+        pass
+
+
 def _backfill_default_capabilities():
     """为既有能力目录补齐默认能力标记。"""
     from .db import SessionLocal
@@ -271,12 +303,14 @@ def create_app() -> FastAPI:
     Base.metadata.create_all(bind=engine)
     _ensure_accounts_columns()
     _ensure_user_email_columns()
+    _ensure_user_role_column()
     _ensure_document_template_columns()
     _ensure_case_generate_record_credits_reserved()
     _ensure_capability_call_log_columns()
     _ensure_capability_config_columns()
     _ensure_mobile_device_account_attrs()
     _ensure_control_task_device_filter()
+    _ensure_control_task_extra_columns()
     _seed_model_pricing()
     _seed_capability_catalog()
     _backfill_default_capabilities()

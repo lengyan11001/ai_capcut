@@ -17,6 +17,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     credits: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    role: Mapped[str] = mapped_column(String(32), default="user", nullable=False)  # admin|user
     is_email_verified: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
@@ -291,6 +292,8 @@ class ControlTask(Base):
     task_type: Mapped[str] = mapped_column(String(64), default="reddit_flow", nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     target_device_id: Mapped[Optional[int]] = mapped_column(ForeignKey("mobile_devices.id"), nullable=True, index=True)
+    target_account_id: Mapped[Optional[int]] = mapped_column(ForeignKey("reddit_account_assets.id"), nullable=True, index=True)
+    dispatch_group_id: Mapped[Optional[int]] = mapped_column(ForeignKey("control_dispatch_groups.id"), nullable=True, index=True)
     device_filter: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # niche, min_phase, min_karma, tags 等，按账号属性筛选设备
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
@@ -323,6 +326,60 @@ class TaskExecution(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     metrics: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+
+class RedditAccountAsset(Base):
+    """Reddit 账号资产（系统录入或用户自有）。"""
+    __tablename__ = "reddit_account_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default="user", nullable=False)  # user|system
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)  # active|paused|disabled
+    tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    account_attrs: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ControlDispatchGroup(Base):
+    """任务分组：保存一组设备与账号，供批量下发。"""
+    __tablename__ = "control_dispatch_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    device_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    account_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class UserDeviceAssignment(Base):
+    """设备分配：普通用户只能看到被分配设备。"""
+    __tablename__ = "user_device_assignments"
+    __table_args__ = (UniqueConstraint("user_id", "device_id", name="uq_user_device_assignment"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("mobile_devices.id"), nullable=False, index=True)
+    assigned_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class UserRedditAccountAssignment(Base):
+    """系统账号分配：普通用户可见分配给自己的系统账号。"""
+    __tablename__ = "user_reddit_account_assignments"
+    __table_args__ = (UniqueConstraint("user_id", "reddit_account_id", name="uq_user_reddit_account_assignment"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    reddit_account_id: Mapped[int] = mapped_column(ForeignKey("reddit_account_assets.id"), nullable=False, index=True)
+    assigned_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class TaskExecutionLog(Base):

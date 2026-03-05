@@ -22,7 +22,9 @@ def _collect_devices() -> list[dict]:
         ensure_adb_connect(serial)
     adb_rows = list_adb_devices()
     wanted = set(settings.device_serials)
-    out = [x for x in adb_rows if x.get("serial") in wanted] if wanted else adb_rows
+    # 未指定 DEVICE_SERIALS 时，自动使用所有 adb 在线设备
+    online_rows = [x for x in adb_rows if x.get("adb_status") == "device"]
+    out = [x for x in online_rows if x.get("serial") in wanted] if wanted else online_rows
     return out
 
 

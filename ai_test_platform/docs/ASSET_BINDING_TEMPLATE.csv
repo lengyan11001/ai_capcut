@@ -1,0 +1,3 @@
+reddit_username,device_serial,device_alias,proxy_name,proxy_exit_ip,region,status,owner_type,owner_user_email,last_change_at,note
+reddit_demo_01,192.168.1.93:5555,slot-01,clash-us-01,23.10.20.31,us,active,system,,2026-03-05T00:00:00Z,system account
+reddit_demo_02,192.168.1.94:5555,slot-02,clash-us-02,23.10.20.32,us,active,user,user1@example.com,2026-03-05T00:00:00Z,user self-added account

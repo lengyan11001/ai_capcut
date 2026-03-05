@@ -12,14 +12,18 @@ from ..core.config import settings
 from ..db import get_db
 from ..core.reddit_ai import analyze_risk, generate_strategy
 from ..models import (
+    ControlDispatchGroup,
     ControlAgent,
     ControlTask,
     MobileDevice,
+    RedditAccountAsset,
     RedditStrategyConfig,
     RiskAnalysisReport,
     TaskExecution,
     TaskExecutionLog,
     User,
+    UserDeviceAssignment,
+    UserRedditAccountAssignment,
 )
 from .auth import get_current_user
 
@@ -64,6 +68,10 @@ class CreateTaskIn(BaseModel):
     task_type: str = Field(default="reddit_flow")
     payload: dict[str, Any] = Field(default_factory=dict)
     target_device_id: Optional[int] = None
+    target_device_ids: Optional[list[int]] = None
+    target_account_id: Optional[int] = None
+    target_account_ids: Optional[list[int]] = None
+    target_group_id: Optional[int] = None
     device_filter: Optional[dict[str, Any]] = None  # niche, min_phase, min_karma, tags
     priority: int = Field(default=50, ge=0, le=100)
     max_retries: int = Field(default=0, ge=0, le=10)
@@ -94,6 +102,11 @@ def _ensure_agent_secret(x_agent_secret: Optional[str]) -> None:
     configured = (settings.control_agent_secret or "").strip()
     if configured and x_agent_secret != configured:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Agent secret invalid")
+
+
+def _is_admin(user: User) -> bool:
+    role = (getattr(user, "role", "") or "").strip().lower()
+    return role == "admin" or getattr(user, "id", None) == 1
 
 
 def _device_matches_filter(attrs: Optional[dict], flt: Optional[dict]) -> bool:
@@ -218,8 +231,22 @@ def list_devices(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _ = current_user
-    rows = db.query(MobileDevice).order_by(MobileDevice.updated_at.desc()).all()
+    if _is_admin(current_user):
+        rows = db.query(MobileDevice).order_by(MobileDevice.updated_at.desc()).all()
+    else:
+        assigned_device_ids = [
+            x.device_id
+            for x in db.query(UserDeviceAssignment).filter(UserDeviceAssignment.user_id == current_user.id).all()
+        ]
+        if not assigned_device_ids:
+            rows = []
+        else:
+            rows = (
+                db.query(MobileDevice)
+                .filter(MobileDevice.id.in_(assigned_device_ids))
+                .order_by(MobileDevice.updated_at.desc())
+                .all()
+            )
     return [
         {
             "id": r.id,
@@ -231,6 +258,9 @@ def list_devices(
             "appium_status": r.appium_status,
             "meta": r.meta,
             "account_attrs": r.account_attrs if hasattr(r, "account_attrs") else None,
+            "model": (r.meta or {}).get("model") if isinstance(r.meta, dict) else None,
+            "brand": (r.meta or {}).get("brand") if isinstance(r.meta, dict) else None,
+            "device_uid": (r.meta or {}).get("device_uid") if isinstance(r.meta, dict) else None,
             "last_seen_at": r.last_seen_at.isoformat() if r.last_seen_at else "",
             "updated_at": r.updated_at.isoformat() if r.updated_at else "",
         }
@@ -264,28 +294,339 @@ def patch_device(
     return {"id": row.id, "alias": row.alias, "account_attrs": getattr(row, "account_attrs", None)}
 
 
+class RedditAccountIn(BaseModel):
+    username: str = Field(..., min_length=2, max_length=128)
+    password: Optional[str] = Field(default=None, max_length=255)
+    source: str = Field(default="user", max_length=32)  # user|system
+    status: str = Field(default="active", max_length=32)  # active|paused|disabled
+    tags: Optional[list[str]] = None
+    account_attrs: Optional[dict[str, Any]] = None
+
+
+@router.get("/reddit-accounts", summary="Reddit账号资产列表（用户态）")
+def list_reddit_accounts(
+    status_filter: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if _is_admin(current_user):
+        q = db.query(RedditAccountAsset)
+    else:
+        assigned_ids = [
+            x.reddit_account_id
+            for x in db.query(UserRedditAccountAssignment)
+            .filter(UserRedditAccountAssignment.user_id == current_user.id)
+            .all()
+        ]
+        q = db.query(RedditAccountAsset).filter(
+            or_(
+                RedditAccountAsset.user_id == current_user.id,  # 用户自有账号
+                RedditAccountAsset.id.in_(assigned_ids) if assigned_ids else RedditAccountAsset.id == -1,  # 系统分配账号
+            )
+        )
+    if status_filter:
+        q = q.filter(RedditAccountAsset.status == status_filter.strip())
+    rows = q.order_by(RedditAccountAsset.updated_at.desc()).all()
+    return [
+        {
+            "id": r.id,
+            "username": r.username,
+            "source": r.source,
+            "status": r.status,
+            "tags": r.tags,
+            "account_attrs": r.account_attrs,
+            "created_at": r.created_at.isoformat() if r.created_at else "",
+            "updated_at": r.updated_at.isoformat() if r.updated_at else "",
+        }
+        for r in rows
+    ]
+
+
+@router.post("/reddit-accounts", summary="创建Reddit账号资产（用户态）")
+def create_reddit_account(
+    payload: RedditAccountIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    source = (payload.source or "user").strip() or "user"
+    if source == "system" and not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="only admin can create system accounts")
+    row = RedditAccountAsset(
+        user_id=current_user.id,
+        username=payload.username.strip(),
+        password=payload.password,
+        source=source,
+        status=(payload.status or "active").strip() or "active",
+        tags=payload.tags,
+        account_attrs=payload.account_attrs,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "username": row.username, "status": row.status}
+
+
+class DispatchGroupIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128)
+    device_ids: Optional[list[int]] = None
+    account_ids: Optional[list[int]] = None
+    notes: Optional[str] = Field(default=None, max_length=512)
+
+
+@router.get("/dispatch-groups", summary="分组列表（用户态）")
+def list_dispatch_groups(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = (
+        db.query(ControlDispatchGroup)
+        .filter(ControlDispatchGroup.user_id == current_user.id)
+        .order_by(ControlDispatchGroup.updated_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "device_ids": r.device_ids or [],
+            "account_ids": r.account_ids or [],
+            "notes": r.notes,
+            "created_at": r.created_at.isoformat() if r.created_at else "",
+            "updated_at": r.updated_at.isoformat() if r.updated_at else "",
+        }
+        for r in rows
+    ]
+
+
+@router.post("/dispatch-groups", summary="创建分组（用户态）")
+def create_dispatch_group(
+    payload: DispatchGroupIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = ControlDispatchGroup(
+        user_id=current_user.id,
+        name=payload.name.strip(),
+        device_ids=payload.device_ids or [],
+        account_ids=payload.account_ids or [],
+        notes=payload.notes,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "name": row.name}
+
+
+@router.patch("/dispatch-groups/{group_id}", summary="更新分组（用户态）")
+def patch_dispatch_group(
+    group_id: int,
+    payload: DispatchGroupIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(ControlDispatchGroup)
+        .filter(ControlDispatchGroup.id == group_id, ControlDispatchGroup.user_id == current_user.id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="dispatch group not found")
+    row.name = payload.name.strip()
+    row.device_ids = payload.device_ids or []
+    row.account_ids = payload.account_ids or []
+    row.notes = payload.notes
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "name": row.name}
+
+
+@router.delete("/dispatch-groups/{group_id}", summary="删除分组（用户态）")
+def delete_dispatch_group(
+    group_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(ControlDispatchGroup)
+        .filter(ControlDispatchGroup.id == group_id, ControlDispatchGroup.user_id == current_user.id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="dispatch group not found")
+    db.delete(row)
+    db.commit()
+    return {"detail": "deleted"}
+
+
+class AssignDevicesIn(BaseModel):
+    user_id: int
+    device_ids: list[int] = Field(default_factory=list)
+
+
+class AssignAccountsIn(BaseModel):
+    user_id: int
+    account_ids: list[int] = Field(default_factory=list)
+
+
+@router.get("/admin/users", summary="管理员查看用户列表")
+def list_users_for_admin(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="admin only")
+    rows = db.query(User).order_by(User.id.asc()).all()
+    return [{"id": u.id, "email": u.email, "role": getattr(u, "role", "user")} for u in rows]
+
+
+@router.post("/admin/assign-devices", summary="管理员分配设备")
+def assign_devices_to_user(
+    payload: AssignDevicesIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="admin only")
+    # 全量替换分配
+    db.query(UserDeviceAssignment).filter(UserDeviceAssignment.user_id == payload.user_id).delete()
+    for did in payload.device_ids:
+        db.add(
+            UserDeviceAssignment(
+                user_id=payload.user_id,
+                device_id=did,
+                assigned_by=current_user.id,
+            )
+        )
+    db.commit()
+    return {"detail": "ok", "assigned_count": len(payload.device_ids)}
+
+
+@router.post("/admin/assign-reddit-accounts", summary="管理员分配系统账号")
+def assign_accounts_to_user(
+    payload: AssignAccountsIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="admin only")
+    db.query(UserRedditAccountAssignment).filter(UserRedditAccountAssignment.user_id == payload.user_id).delete()
+    for aid in payload.account_ids:
+        db.add(
+            UserRedditAccountAssignment(
+                user_id=payload.user_id,
+                reddit_account_id=aid,
+                assigned_by=current_user.id,
+            )
+        )
+    db.commit()
+    return {"detail": "ok", "assigned_count": len(payload.account_ids)}
+
+
 @router.post("/tasks", summary="创建群控任务（用户态）")
 def create_task(
     payload: CreateTaskIn,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    row = ControlTask(
-        user_id=current_user.id,
-        title=payload.title.strip(),
-        platform=(payload.platform or "reddit").strip() or "reddit",
-        task_type=(payload.task_type or "reddit_flow").strip() or "reddit_flow",
-        payload=payload.payload,
-        target_device_id=payload.target_device_id,
-        device_filter=payload.device_filter,
-        priority=payload.priority,
-        max_retries=payload.max_retries,
-        status="pending",
-    )
-    db.add(row)
+    device_ids = list(payload.target_device_ids or [])
+    account_ids = list(payload.target_account_ids or [])
+    if payload.target_device_id is not None:
+        device_ids.append(payload.target_device_id)
+    if payload.target_account_id is not None:
+        account_ids.append(payload.target_account_id)
+    # 去重并保序
+    device_ids = list(dict.fromkeys([x for x in device_ids if isinstance(x, int)]))
+    account_ids = list(dict.fromkeys([x for x in account_ids if isinstance(x, int)]))
+
+    if payload.target_group_id is not None:
+        grp = (
+            db.query(ControlDispatchGroup)
+            .filter(
+                ControlDispatchGroup.id == payload.target_group_id,
+                ControlDispatchGroup.user_id == current_user.id,
+            )
+            .first()
+        )
+        if not grp:
+            raise HTTPException(status_code=404, detail="dispatch group not found")
+        if not device_ids:
+            device_ids = [int(x) for x in (grp.device_ids or []) if isinstance(x, int) or str(x).isdigit()]
+        if not account_ids:
+            account_ids = [int(x) for x in (grp.account_ids or []) if isinstance(x, int) or str(x).isdigit()]
+
+    if not _is_admin(current_user):
+        allowed_device_ids = {
+            x.device_id
+            for x in db.query(UserDeviceAssignment).filter(UserDeviceAssignment.user_id == current_user.id).all()
+        }
+        if device_ids and not set(device_ids).issubset(allowed_device_ids):
+            raise HTTPException(status_code=403, detail="contains unassigned devices")
+        allowed_account_ids = {x.id for x in db.query(RedditAccountAsset).filter(RedditAccountAsset.user_id == current_user.id).all()}
+        assigned_system_account_ids = {
+            x.reddit_account_id
+            for x in db.query(UserRedditAccountAssignment)
+            .filter(UserRedditAccountAssignment.user_id == current_user.id)
+            .all()
+        }
+        allowed_account_ids |= assigned_system_account_ids
+        if account_ids and not set(account_ids).issubset(allowed_account_ids):
+            raise HTTPException(status_code=403, detail="contains unassigned accounts")
+
+    task_rows: list[ControlTask] = []
+    base_payload = dict(payload.payload or {})
+
+    def _new_row(dev_id: Optional[int], acc_id: Optional[int]) -> ControlTask:
+        task_payload = dict(base_payload)
+        if acc_id is not None:
+            task_payload["reddit_account_id"] = acc_id
+        return ControlTask(
+            user_id=current_user.id,
+            title=payload.title.strip(),
+            platform=(payload.platform or "reddit").strip() or "reddit",
+            task_type=(payload.task_type or "reddit_flow").strip() or "reddit_flow",
+            payload=task_payload,
+            target_device_id=dev_id,
+            target_account_id=acc_id,
+            dispatch_group_id=payload.target_group_id,
+            device_filter=payload.device_filter,
+            priority=payload.priority,
+            max_retries=payload.max_retries,
+            status="pending",
+        )
+
+    if device_ids and account_ids:
+        if len(account_ids) == 1:
+            for dev_id in device_ids:
+                task_rows.append(_new_row(dev_id, account_ids[0]))
+        elif len(device_ids) == len(account_ids):
+            for dev_id, acc_id in zip(device_ids, account_ids):
+                task_rows.append(_new_row(dev_id, acc_id))
+        else:
+            # 默认降级为前 N 个一一对应，避免组合爆炸
+            size = min(len(device_ids), len(account_ids))
+            for i in range(size):
+                task_rows.append(_new_row(device_ids[i], account_ids[i]))
+    elif device_ids:
+        for dev_id in device_ids:
+            task_rows.append(_new_row(dev_id, None))
+    elif account_ids:
+        for acc_id in account_ids:
+            task_rows.append(_new_row(None, acc_id))
+    else:
+        task_rows.append(_new_row(None, None))
+
+    for row in task_rows:
+        db.add(row)
     db.commit()
-    db.refresh(row)
-    return {"id": row.id, "status": row.status}
+    for row in task_rows:
+        db.refresh(row)
+    return {
+        "id": task_rows[0].id if task_rows else None,
+        "status": "pending",
+        "created_count": len(task_rows),
+        "task_ids": [r.id for r in task_rows],
+    }
 
 
 @router.get("/tasks", summary="任务列表（用户态）")
@@ -313,6 +654,8 @@ def list_tasks(
             "task_type": r.task_type,
             "status": r.status,
             "target_device_id": r.target_device_id,
+            "target_account_id": getattr(r, "target_account_id", None),
+            "dispatch_group_id": getattr(r, "dispatch_group_id", None),
             "device_filter": getattr(r, "device_filter", None),
             "assigned_agent_id": r.assigned_agent_id,
             "assigned_device_id": r.assigned_device_id,
@@ -353,6 +696,8 @@ def get_task(
             "status": row.status,
             "payload": row.payload,
             "target_device_id": row.target_device_id,
+            "target_account_id": getattr(row, "target_account_id", None),
+            "dispatch_group_id": getattr(row, "dispatch_group_id", None),
             "device_filter": getattr(row, "device_filter", None),
             "assigned_agent_id": row.assigned_agent_id,
             "assigned_device_id": row.assigned_device_id,
@@ -486,6 +831,7 @@ def poll_next_task(
             "payload": row.payload,
             "assigned_device_id": row.assigned_device_id,
             "assigned_device_serial": assigned_serial,
+            "target_account_id": getattr(row, "target_account_id", None),
             "execution_id": execution.id,
             "lease_until": row.lease_until.isoformat() if row.lease_until else None,
         }

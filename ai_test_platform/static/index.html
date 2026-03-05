@@ -551,9 +551,21 @@
                   <label>任务标题</label>
                   <input type="text" name="title" required placeholder="例如：Reddit 关键词浏览任务">
                   <label>设备</label>
-                  <select name="target_device_id" id="controlTargetDeviceSelect">
-                    <option value="">自动分配</option>
+                  <select name="target_device_ids" id="controlTargetDeviceSelect" multiple size="6">
                   </select>
+                  <div class="meta" style="margin-top:0.25rem;">可多选；不选则自动分配。</div>
+                  <label>Reddit账号（可多选）</label>
+                  <select name="target_account_ids" id="controlTargetAccountSelect" multiple size="6"></select>
+                  <label>分组（可选）</label>
+                  <select name="target_group_id" id="controlTargetGroupSelect">
+                    <option value="">不使用分组</option>
+                  </select>
+                  <div style="display:flex;gap:0.5rem;margin-top:0.35rem;">
+                    <input type="text" id="newDispatchGroupName" placeholder="新分组名称（例如：US-稳定组）">
+                    <button type="button" id="createDispatchGroupBtn" class="btn btn-ghost btn-sm">按当前多选创建分组</button>
+                    <button type="button" id="updateDispatchGroupBtn" class="btn btn-ghost btn-sm">用当前多选更新分组</button>
+                    <button type="button" id="deleteDispatchGroupBtn" class="btn btn-ghost btn-sm">删除当前分组</button>
+                  </div>
                   <label>设备筛选（可选）</label>
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
                     <input type="text" name="device_filter_niche" placeholder="niche (fashion/3c/beauty/pet/general)">
@@ -2516,7 +2528,7 @@
           if (!el || !selectEl) return list;
           if (!list.length) {
             el.innerHTML = '<p class="meta">暂无在线设备，先启动本地 Agent 心跳。</p>';
-            selectEl.innerHTML = '<option value="">自动分配</option>';
+            selectEl.innerHTML = '';
             return list;
           }
           el.innerHTML = list.map(function(d) {
@@ -2524,13 +2536,46 @@
             var attrs = d.account_attrs;
             if (attrs && typeof attrs === 'object') {
               meta += ' · ' + (attrs.niche ? 'niche:' + attrs.niche : '') + (attrs.phase ? ' phase:' + attrs.phase : '') + (attrs.karma != null ? ' karma:' + attrs.karma : '');
+              if (Array.isArray(attrs.tags) && attrs.tags.length) meta += ' tags:' + attrs.tags.join('/');
             }
+            if (d.model || d.brand) meta += ' · ' + [d.brand, d.model].filter(Boolean).join(' ');
             return '<div class="list-item"><div><div class="title">' + escapeHtml(d.serial || '') + '</div><div class="meta">' + escapeHtml(meta) + '</div></div></div>';
           }).join('');
-          selectEl.innerHTML = '<option value="">自动分配</option>' + list.map(function(d) {
-            var label = (d.alias ? (d.alias + ' - ') : '') + d.serial;
+          selectEl.innerHTML = list.map(function(d) {
+            var label = (d.alias ? (d.alias + ' - ') : '') + d.serial + (d.model ? (' [' + d.model + ']') : '');
             return '<option value="' + d.id + '">' + escapeHtml(label) + '</option>';
           }).join('');
+          return list;
+        });
+    }
+
+    function loadControlAccounts() {
+      return fetch(API_BASE + '/group-control/reddit-accounts', { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          var selectEl = document.getElementById('controlTargetAccountSelect');
+          if (!selectEl) return list;
+          selectEl.innerHTML = list.map(function(a) {
+            var label = a.username + ' · ' + (a.status || 'active');
+            return '<option value="' + a.id + '">' + escapeHtml(label) + '</option>';
+          }).join('');
+          return list;
+        });
+    }
+
+    function loadDispatchGroups() {
+      return fetch(API_BASE + '/group-control/dispatch-groups', { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          var selectEl = document.getElementById('controlTargetGroupSelect');
+          if (!selectEl) return list;
+          selectEl.innerHTML = '<option value="">不使用分组</option>' + list.map(function(g) {
+            var label = g.name + ' (设备' + ((g.device_ids || []).length) + '/账号' + ((g.account_ids || []).length) + ')';
+            return '<option value="' + g.id + '">' + escapeHtml(label) + '</option>';
+          }).join('');
+          selectEl.dataset.groupMap = JSON.stringify(list || []);
           return list;
         });
     }
@@ -2544,10 +2589,15 @@
           if (!el) return;
           if (!list.length) { el.innerHTML = '<p class="meta">暂无任务</p>'; return; }
           el.innerHTML = list.map(function(t) {
+            var extra = [];
+            if (t.target_device_id) extra.push('设备#' + t.target_device_id);
+            if (t.target_account_id) extra.push('账号#' + t.target_account_id);
+            if (t.dispatch_group_id) extra.push('分组#' + t.dispatch_group_id);
             return '<div class="list-item" data-task-id="' + t.id + '">' +
               '<div><div class="title">#' + t.id + ' ' + escapeHtml(t.title || '') + '</div><div class="meta">' +
               '状态: ' + escapeHtml(t.status || '-') + ' · 平台: ' + escapeHtml(t.platform || '-') + ' · 创建: ' +
               escapeHtml(t.created_at ? new Date(t.created_at).toLocaleString() : '-') +
+              (extra.length ? (' · ' + escapeHtml(extra.join(' / '))) : '') +
               '</div></div>' +
               '<div class="acts">' +
               '<button type="button" class="btn btn-ghost btn-sm btn-task-detail">详情</button> ' +
@@ -2602,6 +2652,8 @@
 
     function loadGroupControl() {
       loadControlDevices();
+      loadControlAccounts();
+      loadDispatchGroups();
       loadControlTasks();
     }
 
@@ -2790,12 +2842,151 @@
           });
       });
     }
+    var createDispatchGroupBtn = document.getElementById('createDispatchGroupBtn');
+    if (createDispatchGroupBtn) {
+      createDispatchGroupBtn.addEventListener('click', function() {
+        var name = String((document.getElementById('newDispatchGroupName') || {}).value || '').trim();
+        var msgEl = document.getElementById('controlTaskMsg');
+        if (!name) {
+          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请先输入分组名称'; }
+          return;
+        }
+        var deviceSel = document.getElementById('controlTargetDeviceSelect');
+        var accountSel = document.getElementById('controlTargetAccountSelect');
+        var deviceIds = deviceSel ? Array.from(deviceSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
+        var accountIds = accountSel ? Array.from(accountSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
+        fetch(API_BASE + '/group-control/dispatch-groups', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ name: name, device_ids: deviceIds, account_ids: accountIds })
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            if (x.ok) {
+              msgEl.className = 'msg ok';
+              msgEl.textContent = '分组已创建：' + name;
+              document.getElementById('newDispatchGroupName').value = '';
+              loadDispatchGroups();
+            } else {
+              msgEl.className = 'msg err';
+              msgEl.textContent = (x.data && x.data.detail) || '创建分组失败';
+            }
+          })
+          .catch(function(err) {
+            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+          });
+      });
+    }
+    var updateDispatchGroupBtn = document.getElementById('updateDispatchGroupBtn');
+    if (updateDispatchGroupBtn) {
+      updateDispatchGroupBtn.addEventListener('click', function() {
+        var selectEl = document.getElementById('controlTargetGroupSelect');
+        var gid = parseInt(String(selectEl && selectEl.value || '').trim(), 10);
+        var msgEl = document.getElementById('controlTaskMsg');
+        if (!gid) {
+          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请先选择分组'; }
+          return;
+        }
+        var deviceSel = document.getElementById('controlTargetDeviceSelect');
+        var accountSel = document.getElementById('controlTargetAccountSelect');
+        var deviceIds = deviceSel ? Array.from(deviceSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
+        var accountIds = accountSel ? Array.from(accountSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
+        var gMap = [];
+        try { gMap = JSON.parse(selectEl.dataset.groupMap || '[]'); } catch (e) {}
+        var current = (gMap || []).find(function(g){ return g.id === gid; }) || {};
+        fetch(API_BASE + '/group-control/dispatch-groups/' + gid, {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            name: current.name || ('group-' + gid),
+            device_ids: deviceIds,
+            account_ids: accountIds,
+            notes: current.notes || null
+          })
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            if (x.ok) {
+              msgEl.className = 'msg ok';
+              msgEl.textContent = '分组已更新';
+              loadDispatchGroups();
+            } else {
+              msgEl.className = 'msg err';
+              msgEl.textContent = (x.data && x.data.detail) || '更新分组失败';
+            }
+          })
+          .catch(function(err) {
+            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+          });
+      });
+    }
+    var deleteDispatchGroupBtn = document.getElementById('deleteDispatchGroupBtn');
+    if (deleteDispatchGroupBtn) {
+      deleteDispatchGroupBtn.addEventListener('click', function() {
+        var selectEl = document.getElementById('controlTargetGroupSelect');
+        var gid = parseInt(String(selectEl && selectEl.value || '').trim(), 10);
+        var msgEl = document.getElementById('controlTaskMsg');
+        if (!gid) {
+          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请先选择分组'; }
+          return;
+        }
+        if (!confirm('确认删除当前分组？')) return;
+        fetch(API_BASE + '/group-control/dispatch-groups/' + gid, {
+          method: 'DELETE',
+          headers: authHeaders()
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            if (x.ok) {
+              msgEl.className = 'msg ok';
+              msgEl.textContent = '分组已删除';
+              loadDispatchGroups();
+            } else {
+              msgEl.className = 'msg err';
+              msgEl.textContent = (x.data && x.data.detail) || '删除分组失败';
+            }
+          })
+          .catch(function(err) {
+            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+          });
+      });
+    }
+    var controlTargetGroupSelect = document.getElementById('controlTargetGroupSelect');
+    if (controlTargetGroupSelect) {
+      controlTargetGroupSelect.addEventListener('change', function() {
+        var gid = parseInt(String(controlTargetGroupSelect.value || '').trim(), 10);
+        if (!gid) return;
+        var gMap = [];
+        try { gMap = JSON.parse(controlTargetGroupSelect.dataset.groupMap || '[]'); } catch (e) {}
+        var current = (gMap || []).find(function(g){ return g.id === gid; }) || null;
+        if (!current) return;
+        var deviceSel = document.getElementById('controlTargetDeviceSelect');
+        var accountSel = document.getElementById('controlTargetAccountSelect');
+        if (deviceSel) {
+          Array.from(deviceSel.options || []).forEach(function(opt){
+            opt.selected = (current.device_ids || []).indexOf(parseInt(opt.value, 10)) >= 0;
+          });
+        }
+        if (accountSel) {
+          Array.from(accountSel.options || []).forEach(function(opt){
+            opt.selected = (current.account_ids || []).indexOf(parseInt(opt.value, 10)) >= 0;
+          });
+        }
+      });
+    }
     var controlTaskForm = document.getElementById('controlTaskForm');
     if (controlTaskForm) {
       controlTaskForm.addEventListener('submit', function(e) {
         e.preventDefault();
         var fd = new FormData(controlTaskForm);
-        var targetRaw = String(fd.get('target_device_id') || '').trim();
+        var groupRaw = String(fd.get('target_group_id') || '').trim();
+        var deviceSel = document.getElementById('controlTargetDeviceSelect');
+        var accountSel = document.getElementById('controlTargetAccountSelect');
+        var targetDeviceIds = deviceSel ? Array.from(deviceSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
+        var targetAccountIds = accountSel ? Array.from(accountSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
         var payload = {
           title: String(fd.get('title') || '').trim(),
           platform: 'reddit',
@@ -2805,7 +2996,9 @@
             action: String(fd.get('action') || 'browse').trim()
           }
         };
-        if (targetRaw) payload.target_device_id = parseInt(targetRaw, 10);
+        if (targetDeviceIds.length) payload.target_device_ids = targetDeviceIds;
+        if (targetAccountIds.length) payload.target_account_ids = targetAccountIds;
+        if (groupRaw) payload.target_group_id = parseInt(groupRaw, 10);
         var niche = String(fd.get('device_filter_niche') || '').trim();
         var minPhase = String(fd.get('device_filter_min_phase') || '').trim();
         var minKarma = String(fd.get('device_filter_min_karma') || '').trim();
@@ -2828,8 +3021,10 @@
             if (!msgEl) return;
             if (x.ok) {
               msgEl.className = 'msg ok';
-              msgEl.textContent = '任务已创建，ID=' + x.data.id;
+              var count = (x.data && x.data.created_count) || 1;
+              msgEl.textContent = '任务已创建，数量=' + count + '，首个ID=' + (x.data && x.data.id);
               controlTaskForm.reset();
+              loadDispatchGroups();
               loadControlTasks();
             } else {
               msgEl.className = 'msg err';
