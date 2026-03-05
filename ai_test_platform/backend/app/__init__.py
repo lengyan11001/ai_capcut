@@ -277,6 +277,42 @@ def _ensure_control_task_extra_columns():
         pass
 
 
+def _ensure_control_task_nurture_columns():
+    """为已有数据库补充 control_tasks 养号关联列。"""
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            if "sqlite" in (engine.url.drivername or ""):
+                rp = conn.execute(text("PRAGMA table_info(control_tasks)"))
+                rows = rp.fetchall()
+                columns = [row[1] for row in rows] if rows else []
+                if "nurture_schedule_item_id" not in columns:
+                    conn.execute(text("ALTER TABLE control_tasks ADD COLUMN nurture_schedule_item_id INTEGER"))
+    except Exception:
+        pass
+
+
+def _ensure_nurture_plan_columns():
+    """为已有数据库补充 nurture_plans 新列。"""
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            if "sqlite" in (engine.url.drivername or ""):
+                rp = conn.execute(text("PRAGMA table_info(nurture_plans)"))
+                rows = rp.fetchall()
+                columns = [row[1] for row in rows] if rows else []
+                if "plan_horizon_days" not in columns:
+                    conn.execute(text("ALTER TABLE nurture_plans ADD COLUMN plan_horizon_days INTEGER NOT NULL DEFAULT 30"))
+                if "requires_reconfirm" not in columns:
+                    conn.execute(text("ALTER TABLE nurture_plans ADD COLUMN requires_reconfirm INTEGER NOT NULL DEFAULT 0"))
+                if "last_review_at" not in columns:
+                    conn.execute(text("ALTER TABLE nurture_plans ADD COLUMN last_review_at DATETIME"))
+                if "next_review_at" not in columns:
+                    conn.execute(text("ALTER TABLE nurture_plans ADD COLUMN next_review_at DATETIME"))
+    except Exception:
+        pass
+
+
 def _backfill_default_capabilities():
     """为既有能力目录补齐默认能力标记。"""
     from .db import SessionLocal
@@ -311,6 +347,8 @@ def create_app() -> FastAPI:
     _ensure_mobile_device_account_attrs()
     _ensure_control_task_device_filter()
     _ensure_control_task_extra_columns()
+    _ensure_control_task_nurture_columns()
+    _ensure_nurture_plan_columns()
     _seed_model_pricing()
     _seed_capability_catalog()
     _backfill_default_capabilities()

@@ -305,6 +305,9 @@ class ControlTask(Base):
     lease_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     retries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     max_retries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    nurture_schedule_item_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("nurture_schedule_items.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -392,6 +395,94 @@ class TaskExecutionLog(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     screenshot_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class NurtureBinding(Base):
+    """养号绑定：账号-设备一一绑定，独立推进状态。"""
+    __tablename__ = "nurture_bindings"
+    __table_args__ = (UniqueConstraint("user_id", "device_id", "reddit_account_id", name="uq_nurture_binding_user_device_account"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("mobile_devices.id"), nullable=False, index=True)
+    reddit_account_id: Mapped[int] = mapped_column(ForeignKey("reddit_account_assets.id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)  # active|paused|disabled
+    phase: Mapped[str] = mapped_column(String(32), default="warmup", nullable=False)  # warmup|steady|engage|post_ready
+    account_health: Mapped[str] = mapped_column(String(32), default="healthy", nullable=False)  # healthy|warning|restricted|locked
+    automation_mode: Mapped[str] = mapped_column(String(32), default="normal", nullable=False)  # normal|conservative|read_only|paused
+    risk_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    target_karma: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    current_karma: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    eligible_for_posting: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_incident_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    last_incident_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    next_action_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    meta: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class NurturePlan(Base):
+    """养号计划：云端 OpenClaw 生成，审批后自动执行。"""
+    __tablename__ = "nurture_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    binding_id: Mapped[int] = mapped_column(ForeignKey("nurture_bindings.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    plan_version: Mapped[str] = mapped_column(String(32), default="v1", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)  # draft|approved|active|paused|completed|rejected
+    approval_mode: Mapped[str] = mapped_column(String(32), default="plan_once_then_auto", nullable=False)
+    plan_horizon_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    requires_reconfirm: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_review_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    next_review_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    approved_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    start_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    plan_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class NurtureScheduleItem(Base):
+    """计划条目：定时执行项，与 ControlTask 一一关联。"""
+    __tablename__ = "nurture_schedule_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    binding_id: Mapped[int] = mapped_column(ForeignKey("nurture_bindings.id"), nullable=False, index=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("nurture_plans.id"), nullable=False, index=True)
+    day_no: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    seq_no: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    stage: Mapped[str] = mapped_column(String(32), default="warmup", nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="scheduled", nullable=False)  # scheduled|dispatched|running|success|failed|skipped|cancelled
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    control_task_id: Mapped[Optional[int]] = mapped_column(ForeignKey("control_tasks.id"), nullable=True, index=True)
+    last_error_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    last_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    dispatched_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class NurtureStrategySnapshot(Base):
+    """每日策略复审快照：用于触发计划是否需要重新确认。"""
+    __tablename__ = "nurture_strategy_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    reviewed_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), default="openclaw_or_fallback", nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), default="low", nullable=False)  # low|medium|high
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    recommendations: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    requires_reconfirm: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 

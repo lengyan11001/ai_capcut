@@ -585,8 +585,6 @@
                   <select name="target_device_ids" id="controlTargetDeviceSelect" multiple size="6">
                   </select>
                   <div class="meta" style="margin-top:0.25rem;">可多选；不选则自动分配。</div>
-                  <label>Reddit账号（可多选）</label>
-                  <select name="target_account_ids" id="controlTargetAccountSelect" multiple size="6"></select>
                   <label>分组（可选）</label>
                   <select name="target_group_id" id="controlTargetGroupSelect">
                     <option value="">不使用分组</option>
@@ -612,6 +610,8 @@
                     <option value="search">search</option>
                     <option value="upvote">upvote</option>
                   </select>
+                  <label>其他参数（JSON，可选）</label>
+                  <textarea name="payload_extra_json" rows="4" placeholder='例如：{"duration_min":12,"max_actions":25,"upvote_ratio":0.05}'></textarea>
                   <button type="submit" class="btn btn-primary">创建任务</button>
                 </form>
                 <div id="controlTaskMsg" class="msg" style="margin-top:0.5rem;"></div>
@@ -637,6 +637,30 @@
               <div class="card-label">任务详情日志</div>
               <div id="controlTaskDetail" style="margin-top:0.75rem;color:var(--text-muted);">点击任务「详情」查看日志</div>
             </div>
+            <div class="card" style="margin-top:1rem;">
+              <div class="card-label">云端养号计划（设备+账号绑定）</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-top:0.5rem;">
+                <select id="nurtureBindDeviceSelect"></select>
+                <select id="nurtureBindAccountSelect"></select>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr auto auto;gap:0.5rem;margin-top:0.5rem;align-items:center;">
+                <input type="number" id="nurtureTargetKarmaInput" min="1" value="30" placeholder="目标 karma">
+                <button type="button" id="nurtureBindSaveBtn" class="btn btn-ghost btn-sm">保存绑定</button>
+                <button type="button" id="nurtureRefreshBtn" class="btn btn-ghost btn-sm">刷新</button>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr auto auto;gap:0.5rem;margin-top:0.5rem;align-items:center;">
+                <select id="nurtureBindingSelect"></select>
+                <button type="button" id="nurtureGeneratePlanBtn" class="btn btn-primary btn-sm">云端生成计划</button>
+                <button type="button" id="nurtureApprovePlanBtn" class="btn btn-ghost btn-sm">确认计划并执行</button>
+              </div>
+              <div id="nurtureMsg" class="msg" style="margin-top:0.5rem;"></div>
+              <div id="nurtureStrategySummary" class="meta" style="margin-top:0.4rem;"></div>
+              <div style="margin-top:0.6rem;" class="meta">计划确认后自动定时执行；下方可查看每个任务的计划时间、实际执行时间和结果。</div>
+              <div class="card-label" style="margin-top:0.75rem;">养号进度</div>
+              <div id="nurtureProgressList" style="margin-top:0.35rem;"></div>
+              <div class="card-label" style="margin-top:0.75rem;">执行明细</div>
+              <div id="nurtureScheduleList" style="margin-top:0.35rem;max-height:260px;overflow:auto;"></div>
+            </div>
           </div>
           <div id="content-admin-console" class="content-block">
             <div id="adminOpsSection" class="card">
@@ -652,7 +676,7 @@
                   <select id="adminAssignUserSelect"></select>
                   <label>设备分配</label>
                   <div style="display:flex;gap:0.5rem;align-items:center;">
-                    <input type="text" id="adminDeviceSearchInput" placeholder="搜索设备 serial/alias/model">
+                    <input type="text" id="adminDeviceSearchInput" placeholder="搜索设备 serial/label/alias/model">
                     <label style="display:flex;align-items:center;gap:0.25rem;white-space:nowrap;"><input type="checkbox" id="adminDeviceAssignedOnly"> 仅看已分配</label>
                   </div>
                   <div id="adminDeviceAssignCount" class="meta" style="margin-top:0.25rem;"></div>
@@ -2634,6 +2658,14 @@
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(x) {
           var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          list = list.slice().sort(function(a, b) {
+            var na = parseInt(a.device_no, 10);
+            var nb = parseInt(b.device_no, 10);
+            var va = Number.isFinite(na) ? na : 999999;
+            var vb = Number.isFinite(nb) ? nb : 999999;
+            if (va !== vb) return va - vb;
+            return String(a.device_label || a.alias || '').localeCompare(String(b.device_label || b.alias || ''));
+          });
           var el = document.getElementById('controlDevicesList');
           var selectEl = document.getElementById('controlTargetDeviceSelect');
           if (!el || !selectEl) return list;
@@ -2643,33 +2675,20 @@
             return list;
           }
           el.innerHTML = list.map(function(d) {
-            var meta = (d.alias || d.serial) + ' · ADB:' + (d.adb_status || '-') + ' · Appium:' + (d.appium_status || '-');
+            var deviceLabel = d.device_label || d.alias || d.serial;
+            var meta = deviceLabel + ' · ADB:' + (d.adb_status || '-') + ' · Appium:' + (d.appium_status || '-');
             var attrs = d.account_attrs;
             if (attrs && typeof attrs === 'object') {
               meta += ' · ' + (attrs.niche ? 'niche:' + attrs.niche : '') + (attrs.phase ? ' phase:' + attrs.phase : '') + (attrs.karma != null ? ' karma:' + attrs.karma : '');
               if (Array.isArray(attrs.tags) && attrs.tags.length) meta += ' tags:' + attrs.tags.join('/');
             }
             if (d.model || d.brand) meta += ' · ' + [d.brand, d.model].filter(Boolean).join(' ');
-            return '<div class="list-item"><div><div class="title">' + escapeHtml(d.serial || '') + '</div><div class="meta">' + escapeHtml(meta) + '</div></div></div>';
+            return '<div class="list-item"><div><div class="title">' + escapeHtml(deviceLabel || '') + '</div><div class="meta">' + escapeHtml(meta) + '</div></div></div>';
           }).join('');
           selectEl.innerHTML = list.map(function(d) {
-            var label = (d.alias ? (d.alias + ' - ') : '') + d.serial + (d.model ? (' [' + d.model + ']') : '');
+            var deviceLabel = d.device_label || d.alias || d.serial;
+            var label = deviceLabel + (d.model ? (' [' + d.model + ']') : '');
             return '<option value="' + d.id + '">' + escapeHtml(label) + '</option>';
-          }).join('');
-          return list;
-        });
-    }
-
-    function loadControlAccounts() {
-      return fetch(API_BASE + '/group-control/reddit-accounts', { headers: authHeaders() })
-        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-        .then(function(x) {
-          var list = x.ok && Array.isArray(x.data) ? x.data : [];
-          var selectEl = document.getElementById('controlTargetAccountSelect');
-          if (!selectEl) return list;
-          selectEl.innerHTML = list.map(function(a) {
-            var label = a.username + ' · ' + (a.status || 'active');
-            return '<option value="' + a.id + '">' + escapeHtml(label) + '</option>';
           }).join('');
           return list;
         });
@@ -2683,7 +2702,7 @@
           var selectEl = document.getElementById('controlTargetGroupSelect');
           if (!selectEl) return list;
           selectEl.innerHTML = '<option value="">不使用分组</option>' + list.map(function(g) {
-            var label = g.name + ' (设备' + ((g.device_ids || []).length) + '/账号' + ((g.account_ids || []).length) + ')';
+            var label = g.name + ' (设备' + ((g.device_ids || []).length) + ')';
             return '<option value="' + g.id + '">' + escapeHtml(label) + '</option>';
           }).join('');
           selectEl.dataset.groupMap = JSON.stringify(list || []);
@@ -2702,7 +2721,7 @@
           el.innerHTML = list.map(function(t) {
             var extra = [];
             if (t.target_device_id) extra.push('设备#' + t.target_device_id);
-            if (t.target_account_id) extra.push('账号#' + t.target_account_id);
+            if (t.assigned_device_label) extra.push('执行设备:' + t.assigned_device_label);
             if (t.dispatch_group_id) extra.push('分组#' + t.dispatch_group_id);
             return '<div class="list-item" data-task-id="' + t.id + '">' +
               '<div><div class="title">#' + t.id + ' ' + escapeHtml(t.title || '') + '</div><div class="meta">' +
@@ -2745,7 +2764,8 @@
           var task = x.data.task || {};
           var logs = Array.isArray(x.data.logs) ? x.data.logs : [];
           var head = '<div class="meta">#' + task.id + ' · ' + escapeHtml(task.status || '-') + '</div>' +
-            '<div style="margin-top:0.35rem;"><strong>' + escapeHtml(task.title || '') + '</strong></div>';
+            '<div style="margin-top:0.35rem;"><strong>' + escapeHtml(task.title || '') + '</strong></div>' +
+            (task.assigned_device_label ? ('<div class="meta" style="margin-top:0.3rem;">执行设备: ' + escapeHtml(task.assigned_device_label) + '</div>') : '');
           if (!logs.length) {
             el.innerHTML = head + '<p class="meta" style="margin-top:0.5rem;">暂无日志</p>';
             return;
@@ -2762,10 +2782,136 @@
     }
 
     function loadGroupControl() {
-      loadControlDevices();
-      loadControlAccounts();
-      loadDispatchGroups();
-      loadControlTasks();
+      loadControlDevices()
+        .then(function() {
+          return Promise.all([loadDispatchGroups(), loadControlTasks(), loadNurturePanel()]);
+        })
+        .catch(function() {});
+    }
+
+    var nurtureBindingsCache = [];
+    var nurturePlansCache = [];
+
+    function loadNurtureAccounts() {
+      return fetch(API_BASE + '/group-control/reddit-accounts', { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          return x.ok && Array.isArray(x.data) ? x.data : [];
+        });
+    }
+
+    function loadNurtureBindings() {
+      return fetch(API_BASE + '/group-control/nurture/bindings', { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          nurtureBindingsCache = list;
+          return list;
+        });
+    }
+
+    function loadNurturePlans(bindingId) {
+      var qs = bindingId ? ('?binding_id=' + encodeURIComponent(bindingId)) : '';
+      return fetch(API_BASE + '/group-control/nurture/plans' + qs, { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          nurturePlansCache = list;
+          return list;
+        });
+    }
+
+    function loadNurtureProgress() {
+      return fetch(API_BASE + '/group-control/nurture/progress', { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var el = document.getElementById('nurtureProgressList');
+          var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          if (!el) return list;
+          if (!list.length) { el.innerHTML = '<p class="meta">暂无绑定进度</p>'; return list; }
+          el.innerHTML = list.map(function(r) {
+            var title = (r.device_label || ('设备#' + (r.device_id || '-'))) + ' · ' + (r.reddit_username || ('账号#' + (r.reddit_account_id || '-')));
+            var meta = 'phase:' + (r.phase || '-') +
+              ' · health:' + (r.account_health || '-') +
+              ' · risk:' + (r.risk_score == null ? '-' : r.risk_score) +
+              ' · karma:' + (r.current_karma || 0) + '/' + (r.target_karma || 0) +
+              ' · plan:' + (r.plan_status || 'none') +
+              (r.plan_requires_reconfirm ? ' (待重确认)' : '') +
+              ' · next:' + (r.next_action_at ? new Date(r.next_action_at).toLocaleString() : '-');
+            return '<div class="list-item"><div><div class="title">' + escapeHtml(title) + '</div><div class="meta">' + escapeHtml(meta) + '</div></div></div>';
+          }).join('');
+          return list;
+        });
+    }
+
+    function loadNurtureSchedule(bindingId) {
+      var qs = '?limit=120';
+      if (bindingId) qs += '&binding_id=' + encodeURIComponent(bindingId);
+      return fetch(API_BASE + '/group-control/nurture/schedule' + qs, { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var el = document.getElementById('nurtureScheduleList');
+          var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          if (!el) return list;
+          if (!list.length) { el.innerHTML = '<p class="meta">暂无执行明细</p>'; return list; }
+          el.innerHTML = list.map(function(r) {
+            var when = r.scheduled_at ? new Date(r.scheduled_at).toLocaleString() : '-';
+            var started = r.task_started_at ? new Date(r.task_started_at).toLocaleString() : '-';
+            var finished = r.task_finished_at ? new Date(r.task_finished_at).toLocaleString() : '-';
+            var meta = '计划:' + when + ' · 状态:' + (r.status || '-') + ' · 任务:' + (r.task_status || '-') + ' · 开始:' + started + ' · 结束:' + finished;
+            var err = r.execution_error_code || r.last_error_code;
+            return '<div class="list-item" style="display:block;"><div><div class="title">' + escapeHtml((r.title || '-') + ' [D' + (r.day_no || '-') + '/S' + (r.seq_no || '-') + ']') + '</div><div class="meta">' + escapeHtml(meta) + '</div>' + (err ? ('<div class="meta" style="margin-top:0.2rem;color:#b91c1c;">错误: ' + escapeHtml(err) + '</div>') : '') + '</div></div>';
+          }).join('');
+          return list;
+        });
+    }
+
+    function loadNurtureStrategy() {
+      return fetch(API_BASE + '/group-control/nurture/strategy/latest', { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var el = document.getElementById('nurtureStrategySummary');
+          var snap = x.ok && x.data && x.data.snapshot ? x.data.snapshot : null;
+          if (!el) return snap;
+          if (!snap) { el.textContent = ''; return snap; }
+          var txt = '今日策略复审: ' + (snap.severity || '-') + ' · ' + (snap.summary || '');
+          if (snap.requires_reconfirm) txt += ' · 需要重新确认计划';
+          el.textContent = txt;
+          return snap;
+        });
+    }
+
+    function renderNurtureBindingSelect() {
+      var sel = document.getElementById('nurtureBindingSelect');
+      if (!sel) return null;
+      sel.innerHTML = (nurtureBindingsCache || []).map(function(b) {
+        var label = (b.device_label || ('设备#' + b.device_id)) + ' · ' + (b.reddit_username || ('账号#' + b.reddit_account_id));
+        return '<option value="' + b.id + '">' + escapeHtml(label) + '</option>';
+      }).join('');
+      return sel.value ? parseInt(sel.value, 10) : (nurtureBindingsCache[0] ? nurtureBindingsCache[0].id : null);
+    }
+
+    function loadNurturePanel() {
+      var deviceSel = document.getElementById('controlTargetDeviceSelect');
+      var bindDeviceSel = document.getElementById('nurtureBindDeviceSelect');
+      if (bindDeviceSel && deviceSel) bindDeviceSel.innerHTML = deviceSel.innerHTML;
+      return Promise.all([loadNurtureAccounts(), loadNurtureBindings()])
+        .then(function(arr) {
+          var accounts = arr[0] || [];
+          var accSel = document.getElementById('nurtureBindAccountSelect');
+          if (accSel) {
+            accSel.innerHTML = accounts.map(function(a) {
+              return '<option value="' + a.id + '">' + escapeHtml((a.username || ('账号#' + a.id)) + ' · ' + (a.status || '-')) + '</option>';
+            }).join('');
+          }
+          var bindingId = renderNurtureBindingSelect();
+          return Promise.all([
+            loadNurturePlans(bindingId || undefined),
+            loadNurtureProgress(),
+            loadNurtureSchedule(bindingId || undefined),
+            loadNurtureStrategy()
+          ]);
+        });
     }
 
     function isAdminUser() {
@@ -2852,7 +2998,7 @@
         var did = parseInt(d.id, 10);
         if (assignedOnly && adminAssignedDeviceIds.indexOf(did) < 0) return false;
         if (!kw) return true;
-        var text = ((d.serial || '') + ' ' + (d.alias || '') + ' ' + (d.model || '') + ' ' + (d.brand || '')).toLowerCase();
+        var text = ((d.alias || '') + ' ' + (d.device_label || '') + ' ' + (d.model || '') + ' ' + (d.brand || '')).toLowerCase();
         return text.indexOf(kw) >= 0;
       });
       if (countEl) countEl.textContent = '已分配 ' + adminAssignedDeviceIds.length + ' / 总设备 ' + (adminDevicePool || []).length + ' / 当前筛选 ' + rows.length;
@@ -2863,7 +3009,7 @@
       wrap.innerHTML = rows.map(function(d) {
         var did = parseInt(d.id, 10);
         var checked = adminAssignedDeviceIds.indexOf(did) >= 0 ? 'checked' : '';
-        var label = (d.alias ? d.alias + ' - ' : '') + (d.serial || '');
+        var label = (d.device_label || d.alias || d.serial || '');
         var meta = [d.brand, d.model, d.adb_status].filter(Boolean).join(' · ');
         return '<label style="display:flex;align-items:flex-start;gap:0.45rem;padding:0.3rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">' +
           '<input type="checkbox" class="admin-device-item" value="' + did + '" ' + checked + '>' +
@@ -3118,6 +3264,118 @@
     var refreshControlBtn = document.getElementById('refreshControlBtn');
     if (refreshControlBtn) {
       refreshControlBtn.addEventListener('click', function() { loadGroupControl(); });
+    }
+    var nurtureRefreshBtn = document.getElementById('nurtureRefreshBtn');
+    if (nurtureRefreshBtn) {
+      nurtureRefreshBtn.addEventListener('click', function() { loadNurturePanel(); });
+    }
+    var nurtureBindingSelect = document.getElementById('nurtureBindingSelect');
+    if (nurtureBindingSelect) {
+      nurtureBindingSelect.addEventListener('change', function() {
+        var bindingId = parseInt(String(nurtureBindingSelect.value || '').trim(), 10);
+        if (!isNaN(bindingId)) {
+          loadNurturePlans(bindingId);
+          loadNurtureSchedule(bindingId);
+        }
+      });
+    }
+    var nurtureBindSaveBtn = document.getElementById('nurtureBindSaveBtn');
+    if (nurtureBindSaveBtn) {
+      nurtureBindSaveBtn.addEventListener('click', function() {
+        var msgEl = document.getElementById('nurtureMsg');
+        var devId = parseInt(String((document.getElementById('nurtureBindDeviceSelect') || {}).value || '').trim(), 10);
+        var accId = parseInt(String((document.getElementById('nurtureBindAccountSelect') || {}).value || '').trim(), 10);
+        var karma = parseInt(String((document.getElementById('nurtureTargetKarmaInput') || {}).value || '30').trim(), 10);
+        if (!devId || !accId) {
+          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请先选择设备和账号'; }
+          return;
+        }
+        fetch(API_BASE + '/group-control/nurture/bindings', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ device_id: devId, reddit_account_id: accId, target_karma: isNaN(karma) ? 30 : karma })
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            if (x.ok) {
+              msgEl.className = 'msg ok';
+              msgEl.textContent = '绑定已保存';
+              loadNurturePanel();
+            } else {
+              msgEl.className = 'msg err';
+              msgEl.textContent = (x.data && x.data.detail) || '保存绑定失败';
+            }
+          })
+          .catch(function(err) {
+            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+          });
+      });
+    }
+    var nurtureGeneratePlanBtn = document.getElementById('nurtureGeneratePlanBtn');
+    if (nurtureGeneratePlanBtn) {
+      nurtureGeneratePlanBtn.addEventListener('click', function() {
+        var msgEl = document.getElementById('nurtureMsg');
+        var bindingId = parseInt(String((document.getElementById('nurtureBindingSelect') || {}).value || '').trim(), 10);
+        if (!bindingId) {
+          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请先选择绑定'; }
+          return;
+        }
+        fetch(API_BASE + '/group-control/nurture/plans/generate', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ binding_id: bindingId, objective: 'safe_growth', risk_preference: 'conservative' })
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            if (x.ok) {
+              msgEl.className = 'msg ok';
+              msgEl.textContent = '计划草案已生成，计划ID=' + (x.data && x.data.id) + '，任务数=' + ((x.data && x.data.created_schedule_count) || 0) + '，周期=' + ((x.data && x.data.plan_horizon_days) || '-') + '天';
+              loadNurturePlans(bindingId);
+              loadNurtureSchedule(bindingId);
+            } else {
+              msgEl.className = 'msg err';
+              msgEl.textContent = (x.data && x.data.detail) || '生成计划失败';
+            }
+          })
+          .catch(function(err) {
+            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+          });
+      });
+    }
+    var nurtureApprovePlanBtn = document.getElementById('nurtureApprovePlanBtn');
+    if (nurtureApprovePlanBtn) {
+      nurtureApprovePlanBtn.addEventListener('click', function() {
+        var msgEl = document.getElementById('nurtureMsg');
+        var bindingId = parseInt(String((document.getElementById('nurtureBindingSelect') || {}).value || '').trim(), 10);
+        var plans = (nurturePlansCache || []).filter(function(p) { return !bindingId || p.binding_id === bindingId; });
+        if (!plans.length) {
+          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '该绑定暂无计划，请先生成'; }
+          return;
+        }
+        var draft = plans.find(function(p) { return p.status === 'draft'; }) || plans[0];
+        fetch(API_BASE + '/group-control/nurture/plans/' + draft.id + '/approve', {
+          method: 'POST',
+          headers: authHeaders()
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            if (x.ok) {
+              msgEl.className = 'msg ok';
+              msgEl.textContent = '计划已确认并开始自动执行，立即派发=' + ((x.data && x.data.dispatched_now) || 0);
+              loadNurturePanel();
+              loadControlTasks();
+            } else {
+              msgEl.className = 'msg err';
+              msgEl.textContent = (x.data && x.data.detail) || '确认计划失败';
+            }
+          })
+          .catch(function(err) {
+            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+          });
+      });
     }
     var refreshAdminOpsBtn = document.getElementById('refreshAdminOpsBtn');
     if (refreshAdminOpsBtn) {
@@ -3411,13 +3669,11 @@
           return;
         }
         var deviceSel = document.getElementById('controlTargetDeviceSelect');
-        var accountSel = document.getElementById('controlTargetAccountSelect');
         var deviceIds = deviceSel ? Array.from(deviceSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
-        var accountIds = accountSel ? Array.from(accountSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
         fetch(API_BASE + '/group-control/dispatch-groups', {
           method: 'POST',
           headers: authHeaders(),
-          body: JSON.stringify({ name: name, device_ids: deviceIds, account_ids: accountIds })
+          body: JSON.stringify({ name: name, device_ids: deviceIds })
         })
           .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
           .then(function(x) {
@@ -3448,9 +3704,7 @@
           return;
         }
         var deviceSel = document.getElementById('controlTargetDeviceSelect');
-        var accountSel = document.getElementById('controlTargetAccountSelect');
         var deviceIds = deviceSel ? Array.from(deviceSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
-        var accountIds = accountSel ? Array.from(accountSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
         var gMap = [];
         try { gMap = JSON.parse(selectEl.dataset.groupMap || '[]'); } catch (e) {}
         var current = (gMap || []).find(function(g){ return g.id === gid; }) || {};
@@ -3460,7 +3714,6 @@
           body: JSON.stringify({
             name: current.name || ('group-' + gid),
             device_ids: deviceIds,
-            account_ids: accountIds,
             notes: current.notes || null
           })
         })
@@ -3523,15 +3776,9 @@
         var current = (gMap || []).find(function(g){ return g.id === gid; }) || null;
         if (!current) return;
         var deviceSel = document.getElementById('controlTargetDeviceSelect');
-        var accountSel = document.getElementById('controlTargetAccountSelect');
         if (deviceSel) {
           Array.from(deviceSel.options || []).forEach(function(opt){
             opt.selected = (current.device_ids || []).indexOf(parseInt(opt.value, 10)) >= 0;
-          });
-        }
-        if (accountSel) {
-          Array.from(accountSel.options || []).forEach(function(opt){
-            opt.selected = (current.account_ids || []).indexOf(parseInt(opt.value, 10)) >= 0;
           });
         }
       });
@@ -3543,9 +3790,7 @@
         var fd = new FormData(controlTaskForm);
         var groupRaw = String(fd.get('target_group_id') || '').trim();
         var deviceSel = document.getElementById('controlTargetDeviceSelect');
-        var accountSel = document.getElementById('controlTargetAccountSelect');
         var targetDeviceIds = deviceSel ? Array.from(deviceSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
-        var targetAccountIds = accountSel ? Array.from(accountSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
         var payload = {
           title: String(fd.get('title') || '').trim(),
           platform: 'reddit',
@@ -3555,8 +3800,24 @@
             action: String(fd.get('action') || 'browse').trim()
           }
         };
+        var extraRaw = String(fd.get('payload_extra_json') || '').trim();
+        if (extraRaw) {
+          try {
+            var extraObj = JSON.parse(extraRaw);
+            if (extraObj && typeof extraObj === 'object' && !Array.isArray(extraObj)) {
+              payload.payload = Object.assign(payload.payload, extraObj);
+            } else {
+              var msgEl1 = document.getElementById('controlTaskMsg');
+              if (msgEl1) { msgEl1.className = 'msg err'; msgEl1.textContent = '其他参数必须是 JSON 对象'; }
+              return;
+            }
+          } catch (err) {
+            var msgEl2 = document.getElementById('controlTaskMsg');
+            if (msgEl2) { msgEl2.className = 'msg err'; msgEl2.textContent = '其他参数 JSON 解析失败'; }
+            return;
+          }
+        }
         if (targetDeviceIds.length) payload.target_device_ids = targetDeviceIds;
-        if (targetAccountIds.length) payload.target_account_ids = targetAccountIds;
         if (groupRaw) payload.target_group_id = parseInt(groupRaw, 10);
         var niche = String(fd.get('device_filter_niche') || '').trim();
         var minPhase = String(fd.get('device_filter_min_phase') || '').trim();

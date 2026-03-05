@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 import logging
-from datetime import datetime, timedelta
+import re
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+import httpx
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
@@ -20,6 +23,10 @@ from ..models import (
     RedditAccountAsset,
     RedditStrategyConfig,
     RiskAnalysisReport,
+    NurtureBinding,
+    NurturePlan,
+    NurtureScheduleItem,
+    NurtureStrategySnapshot,
     TaskExecution,
     TaskExecutionLog,
     User,
@@ -31,6 +38,261 @@ from .auth import get_current_user
 
 router = APIRouter(prefix="/group-control", tags=["group-control"])
 logger = logging.getLogger(__name__)
+
+
+def _iso(x: Optional[datetime]) -> Optional[str]:
+    return x.isoformat() if x else None
+
+
+def _build_fallback_plan(days: int) -> dict[str, Any]:
+    schedule: list[dict[str, Any]] = []
+    # 每天两次低风险养号动作；前 30 天不进入主题发帖。
+    for day in range(1, max(days, 1) + 1):
+        stage = "warmup" if day <= 7 else ("steady" if day <= 20 else "engage")
+        for seq, hour in ((1, 10), (2, 20)):
+            action = "browse" if day <= 5 else ("search" if seq == 2 else "browse")
+            schedule.append(
+                {
+                    "day_no": day,
+                    "seq_no": seq,
+                    "hour": hour,
+                    "minute": 0,
+                    "stage": stage,
+                    "title": f"nurture-day{day:02d}-s{seq}",
+                    "payload": {
+                        "action": action,
+                        "duration_min": 8 if day <= 7 else 12,
+                        "max_actions": 18 if day <= 7 else 28,
+                        "upvote_ratio": 0.0 if day <= 5 else (0.03 if day <= 14 else 0.06),
+                        "comment_ratio": 0.0,
+                    },
+                }
+            )
+    return {
+        "plan_version": "v1",
+        "summary": f"auto-generated {days} days nurture plan",
+        "plan_horizon_days": days,
+        "next_review_in_days": 1,
+        "schedule": schedule,
+    }
+
+
+def _call_openclaw_for_plan(
+    user: User,
+    binding: NurtureBinding,
+    objective: str,
+    risk_preference: str,
+) -> Optional[dict[str, Any]]:
+    # 优先使用云端 OpenClaw 生成计划；失败时返回 None，由 fallback 接管。
+    from .chat import _resolve_openclaw_target
+    from ..db import SessionLocal
+
+    db2 = SessionLocal()
+    try:
+        base, token, agent_id = _resolve_openclaw_target(db2, user)
+    except Exception:
+        db2.close()
+        return None
+    finally:
+        try:
+            db2.close()
+        except Exception:
+            pass
+    if not base or not token:
+        return None
+    prompt = (
+        "你是 Reddit 养号计划器。输出严格 JSON，不要 markdown。"
+        "目标：生成仅养号（不发帖）计划，字段必须包含 plan_version, summary, plan_horizon_days, next_review_in_days, schedule。"
+        "schedule 每项字段必须包含 day_no, seq_no, hour, minute, stage, title, payload。"
+        "payload 仅允许 action/keyword/duration_min/max_actions/upvote_ratio/comment_ratio。"
+        "约束：plan_horizon_days 取 14-60 的整数，next_review_in_days 取 1-3。"
+        f"参数：objective={objective}, risk_preference={risk_preference}, current_phase={binding.phase}, "
+        f"current_karma={binding.current_karma}, target_karma={binding.target_karma}, "
+        f"account_health={binding.account_health}, mode={binding.automation_mode}。"
+    )
+    body = {
+        "model": "openclaw",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2,
+    }
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "x-openclaw-agent-id": agent_id,
+    }
+    try:
+        with httpx.Client(timeout=40.0) as client:
+            resp = client.post(f"{base.rstrip('/')}/v1/chat/completions", headers=headers, json=body)
+            if resp.status_code >= 300:
+                return None
+            data = resp.json() if resp.content else {}
+            choices = data.get("choices") or []
+            content = ""
+            if choices and isinstance(choices[0], dict):
+                msg = choices[0].get("message") or {}
+                content = str(msg.get("content") or "")
+            if not content.strip():
+                return None
+            raw = content.strip()
+            if raw.startswith("```"):
+                raw = re.sub(r"^```[a-zA-Z]*", "", raw).strip()
+                raw = raw[:-3].strip() if raw.endswith("```") else raw
+            plan = json.loads(raw)
+            if not isinstance(plan, dict):
+                return None
+            if not isinstance(plan.get("schedule"), list):
+                return None
+            return plan
+    except Exception:
+        return None
+
+
+def _daily_strategy_scan_if_due(db: Session) -> Optional[NurtureStrategySnapshot]:
+    today = datetime.utcnow().date()
+    existed = (
+        db.query(NurtureStrategySnapshot)
+        .filter(NurtureStrategySnapshot.reviewed_date == today)
+        .order_by(NurtureStrategySnapshot.id.desc())
+        .first()
+    )
+    if existed:
+        return existed
+
+    since = datetime.utcnow() - timedelta(hours=24)
+    total = (
+        db.query(func.count(NurtureScheduleItem.id))
+        .filter(NurtureScheduleItem.dispatched_at.is_not(None), NurtureScheduleItem.dispatched_at >= since)
+        .scalar()
+        or 0
+    )
+    failed = (
+        db.query(func.count(NurtureScheduleItem.id))
+        .filter(
+            NurtureScheduleItem.dispatched_at.is_not(None),
+            NurtureScheduleItem.dispatched_at >= since,
+            NurtureScheduleItem.status.in_(["failed", "cancelled"]),
+        )
+        .scalar()
+        or 0
+    )
+    fail_rate = (float(failed) / float(total)) if total else 0.0
+    severity = "low"
+    requires_reconfirm = False
+    recommendations: dict[str, Any] = {
+        "reduce_upvote_ratio_by": 0.0,
+        "increase_cooldown_minutes": 0,
+        "switch_mode": None,
+    }
+    if fail_rate >= 0.35:
+        severity = "high"
+        requires_reconfirm = True
+        recommendations = {
+            "reduce_upvote_ratio_by": 0.03,
+            "increase_cooldown_minutes": 30,
+            "switch_mode": "conservative",
+        }
+    elif fail_rate >= 0.2:
+        severity = "medium"
+        recommendations = {
+            "reduce_upvote_ratio_by": 0.02,
+            "increase_cooldown_minutes": 15,
+            "switch_mode": "conservative",
+        }
+    summary = (
+        f"daily strategy review total={total}, failed={failed}, fail_rate={fail_rate:.2f}, "
+        f"severity={severity}, requires_reconfirm={requires_reconfirm}"
+    )
+    snap = NurtureStrategySnapshot(
+        reviewed_date=today,
+        source="openclaw_or_fallback",
+        severity=severity,
+        summary=summary,
+        recommendations=recommendations,
+        requires_reconfirm=requires_reconfirm,
+    )
+    db.add(snap)
+    if requires_reconfirm:
+        rows = (
+            db.query(NurturePlan)
+            .filter(NurturePlan.status.in_(["approved", "active"]))
+            .all()
+        )
+        for p in rows:
+            p.requires_reconfirm = True
+            p.last_review_at = datetime.utcnow()
+            p.next_review_at = datetime.utcnow() + timedelta(days=1)
+            db.add(p)
+    db.commit()
+    db.refresh(snap)
+    return snap
+
+
+def _dispatch_due_nurture_items(db: Session) -> int:
+    _daily_strategy_scan_if_due(db)
+    now = datetime.utcnow()
+    due = (
+        db.query(NurtureScheduleItem)
+        .filter(
+            NurtureScheduleItem.status == "scheduled",
+            NurtureScheduleItem.scheduled_at <= now,
+        )
+        .order_by(NurtureScheduleItem.scheduled_at.asc(), NurtureScheduleItem.id.asc())
+        .all()
+    )
+    dispatched = 0
+    for item in due:
+        plan = db.query(NurturePlan).filter(NurturePlan.id == item.plan_id).first()
+        binding = db.query(NurtureBinding).filter(NurtureBinding.id == item.binding_id).first()
+        if not plan or plan.status not in {"approved", "active"} or not binding:
+            item.status = "skipped"
+            item.last_error_code = "plan_inactive_or_binding_missing"
+            item.last_error_message = "plan inactive or binding missing"
+            item.finished_at = now
+            db.add(item)
+            continue
+        if bool(getattr(plan, "requires_reconfirm", False)):
+            continue
+        if binding.status != "active":
+            item.status = "skipped"
+            item.last_error_code = "binding_inactive"
+            item.last_error_message = f"binding status={binding.status}"
+            item.finished_at = now
+            db.add(item)
+            continue
+        if item.stage == "post_ready" and not binding.eligible_for_posting:
+            # 尚未达标，不放行发帖阶段，顺延 24h 再检查
+            item.scheduled_at = item.scheduled_at + timedelta(hours=24)
+            db.add(item)
+            continue
+        task_payload = dict(item.payload or {})
+        task_payload["reddit_account_id"] = binding.reddit_account_id
+        row = ControlTask(
+            user_id=item.user_id,
+            title=item.title,
+            platform="reddit",
+            task_type="reddit_flow",
+            payload=task_payload,
+            target_device_id=binding.device_id,
+            target_account_id=binding.reddit_account_id,
+            priority=45,
+            max_retries=1,
+            status="pending",
+            nurture_schedule_item_id=item.id,
+        )
+        db.add(row)
+        db.flush()
+        item.control_task_id = row.id
+        item.dispatched_at = now
+        item.status = "dispatched"
+        db.add(item)
+        if plan.status == "approved":
+            plan.status = "active"
+            plan.start_at = plan.start_at or now
+            db.add(plan)
+        dispatched += 1
+    if due:
+        db.commit()
+    return dispatched
 
 
 class DeviceStateIn(BaseModel):
@@ -134,6 +396,37 @@ def _device_matches_filter(attrs: Optional[dict], flt: Optional[dict]) -> bool:
         if not dev_tags.intersection(set(str(t) for t in tags)):
             return False
     return True
+
+
+def _device_label_from_row(device: Optional[MobileDevice]) -> Optional[str]:
+    if not device:
+        return None
+    meta = device.meta if isinstance(device.meta, dict) else {}
+    label = str(meta.get("device_label") or meta.get("display_name") or "").strip()
+    if label:
+        return label
+    alias = (device.alias or "").strip()
+    if alias:
+        return alias
+    serial = (device.serial or "").strip()
+    return serial or None
+
+
+def _device_no_from_row(device: Optional[MobileDevice]) -> Optional[int]:
+    if not device:
+        return None
+    meta = device.meta if isinstance(device.meta, dict) else {}
+    raw = str(meta.get("device_no") or "").strip()
+    if not raw:
+        label = _device_label_from_row(device) or ""
+        m = re.search(r"(\d+)$", label)
+        raw = m.group(1) if m else ""
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except Exception:
+        return None
 
 
 def _upsert_devices_for_agent(db: Session, agent: ControlAgent, devices: list[DeviceStateIn]) -> None:
@@ -249,11 +542,21 @@ def list_devices(
                 .order_by(MobileDevice.updated_at.desc())
                 .all()
             )
+    rows = sorted(
+        rows,
+        key=lambda r: (
+            _device_no_from_row(r) is None,
+            _device_no_from_row(r) if _device_no_from_row(r) is not None else 10**9,
+            -int((r.updated_at or datetime.min).timestamp()),
+        ),
+    )
     return [
         {
             "id": r.id,
-            "serial": r.serial,
+            "serial": None,
             "alias": r.alias,
+            "device_label": _device_label_from_row(r),
+            "device_no": _device_no_from_row(r),
             "platform": r.platform,
             "agent_id": r.agent_id,
             "adb_status": r.adb_status,
@@ -471,6 +774,473 @@ class AssignAccountsIn(BaseModel):
     account_ids: list[int] = Field(default_factory=list)
 
 
+def _allowed_device_ids_for_user(db: Session, current_user: User) -> set[int]:
+    if _is_admin(current_user):
+        rows = db.query(MobileDevice.id).all()
+        return {r[0] for r in rows}
+    return {
+        x.device_id
+        for x in db.query(UserDeviceAssignment).filter(UserDeviceAssignment.user_id == current_user.id).all()
+    }
+
+
+def _allowed_account_ids_for_user(db: Session, current_user: User) -> set[int]:
+    if _is_admin(current_user):
+        rows = db.query(RedditAccountAsset.id).all()
+        return {r[0] for r in rows}
+    own_ids = {x.id for x in db.query(RedditAccountAsset).filter(RedditAccountAsset.user_id == current_user.id).all()}
+    assigned_system_ids = {
+        x.reddit_account_id
+        for x in db.query(UserRedditAccountAssignment)
+        .filter(UserRedditAccountAssignment.user_id == current_user.id)
+        .all()
+    }
+    return own_ids | assigned_system_ids
+
+
+class NurtureBindingUpsertIn(BaseModel):
+    device_id: int
+    reddit_account_id: int
+    target_karma: int = Field(default=30, ge=1, le=100000)
+    phase: Optional[str] = None
+    automation_mode: Optional[str] = None
+
+
+class NurturePlanGenerateIn(BaseModel):
+    binding_id: int
+    objective: str = Field(default="safe_growth", max_length=64)  # safe_growth|balanced|fast_growth
+    risk_preference: str = Field(default="conservative", max_length=32)  # conservative|balanced|aggressive
+    start_date: Optional[str] = None  # YYYY-MM-DD, UTC
+    name: Optional[str] = Field(default=None, max_length=128)
+
+
+@router.get("/nurture/bindings", summary="养号绑定列表（用户态）")
+def list_nurture_bindings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    q = db.query(NurtureBinding).filter(NurtureBinding.user_id == current_user.id)
+    rows = q.order_by(NurtureBinding.updated_at.desc()).all()
+    device_ids = sorted({r.device_id for r in rows})
+    account_ids = sorted({r.reddit_account_id for r in rows})
+    device_map: dict[int, MobileDevice] = {}
+    account_map: dict[int, RedditAccountAsset] = {}
+    if device_ids:
+        for d in db.query(MobileDevice).filter(MobileDevice.id.in_(device_ids)).all():
+            device_map[d.id] = d
+    if account_ids:
+        for a in db.query(RedditAccountAsset).filter(RedditAccountAsset.id.in_(account_ids)).all():
+            account_map[a.id] = a
+    return [
+        {
+            "id": r.id,
+            "device_id": r.device_id,
+            "device_label": _device_label_from_row(device_map.get(r.device_id)),
+            "reddit_account_id": r.reddit_account_id,
+            "reddit_username": (account_map.get(r.reddit_account_id).username if account_map.get(r.reddit_account_id) else None),
+            "status": r.status,
+            "phase": r.phase,
+            "account_health": r.account_health,
+            "automation_mode": r.automation_mode,
+            "risk_score": r.risk_score,
+            "target_karma": r.target_karma,
+            "current_karma": r.current_karma,
+            "eligible_for_posting": bool(r.eligible_for_posting),
+            "last_incident_code": r.last_incident_code,
+            "last_incident_at": _iso(r.last_incident_at),
+            "next_action_at": _iso(r.next_action_at),
+            "updated_at": _iso(r.updated_at),
+        }
+        for r in rows
+    ]
+
+
+@router.post("/nurture/bindings", summary="创建或更新养号绑定（用户态）")
+def upsert_nurture_binding(
+    payload: NurtureBindingUpsertIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    allowed_devices = _allowed_device_ids_for_user(db, current_user)
+    allowed_accounts = _allowed_account_ids_for_user(db, current_user)
+    if payload.device_id not in allowed_devices:
+        raise HTTPException(status_code=403, detail="device not allowed")
+    if payload.reddit_account_id not in allowed_accounts:
+        raise HTTPException(status_code=403, detail="reddit account not allowed")
+    row = (
+        db.query(NurtureBinding)
+        .filter(
+            NurtureBinding.user_id == current_user.id,
+            NurtureBinding.device_id == payload.device_id,
+            NurtureBinding.reddit_account_id == payload.reddit_account_id,
+        )
+        .first()
+    )
+    if not row:
+        row = NurtureBinding(
+            user_id=current_user.id,
+            device_id=payload.device_id,
+            reddit_account_id=payload.reddit_account_id,
+            target_karma=payload.target_karma,
+            phase=(payload.phase or "warmup").strip() or "warmup",
+            automation_mode=(payload.automation_mode or "normal").strip() or "normal",
+            status="active",
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return {"id": row.id, "detail": "created"}
+    row.target_karma = payload.target_karma
+    if payload.phase is not None:
+        row.phase = (payload.phase or "").strip() or row.phase
+    if payload.automation_mode is not None:
+        row.automation_mode = (payload.automation_mode or "").strip() or row.automation_mode
+    row.status = "active"
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "detail": "updated"}
+
+
+@router.post("/nurture/plans/generate", summary="生成养号计划草案（用户态，云端 OpenClaw）")
+def generate_nurture_plan(
+    payload: NurturePlanGenerateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    binding = (
+        db.query(NurtureBinding)
+        .filter(NurtureBinding.id == payload.binding_id, NurtureBinding.user_id == current_user.id)
+        .first()
+    )
+    if not binding:
+        raise HTTPException(status_code=404, detail="binding not found")
+    plan_json = _call_openclaw_for_plan(
+        current_user,
+        binding,
+        objective=(payload.objective or "safe_growth").strip() or "safe_growth",
+        risk_preference=(payload.risk_preference or "conservative").strip() or "conservative",
+    )
+    if not isinstance(plan_json, dict):
+        plan_json = _build_fallback_plan(30)
+    days = int(plan_json.get("plan_horizon_days") or 30)
+    if days < 1:
+        days = 30
+    if days > 180:
+        days = 180
+    schedule = plan_json.get("schedule") if isinstance(plan_json, dict) else None
+    if not isinstance(schedule, list) or not schedule:
+        raise HTTPException(status_code=400, detail="invalid plan schedule")
+    plan_name = (payload.name or f"nurture-plan-binding-{binding.id}").strip() or f"nurture-plan-binding-{binding.id}"
+    row = NurturePlan(
+        user_id=current_user.id,
+        binding_id=binding.id,
+        name=plan_name,
+        status="draft",
+        plan_version=str(plan_json.get("plan_version") or "v1"),
+        approval_mode="plan_once_then_auto",
+        plan_horizon_days=days,
+        requires_reconfirm=False,
+        summary=str(plan_json.get("summary") or ""),
+        last_review_at=datetime.utcnow(),
+        next_review_at=datetime.utcnow() + timedelta(days=max(1, min(3, int(plan_json.get("next_review_in_days") or 1)))),
+        plan_json=plan_json,
+    )
+    db.add(row)
+    db.flush()
+    # 先清理该计划残留条目（理论首次无残留）
+    db.query(NurtureScheduleItem).filter(NurtureScheduleItem.plan_id == row.id).delete()
+    start_dt = None
+    if payload.start_date:
+        try:
+            start_dt = datetime.strptime(payload.start_date.strip(), "%Y-%m-%d")
+        except Exception:
+            raise HTTPException(status_code=400, detail="start_date format must be YYYY-MM-DD")
+    if not start_dt:
+        now = datetime.utcnow()
+        start_dt = datetime(now.year, now.month, now.day)
+    created = 0
+    for item in schedule:
+        if not isinstance(item, dict):
+            continue
+        day_no = int(item.get("day_no") or 1)
+        seq_no = int(item.get("seq_no") or 1)
+        hour = int(item.get("hour") or 10)
+        minute = int(item.get("minute") or 0)
+        when = start_dt + timedelta(days=max(day_no - 1, 0), hours=hour, minutes=minute)
+        db.add(
+            NurtureScheduleItem(
+                user_id=current_user.id,
+                binding_id=binding.id,
+                plan_id=row.id,
+                day_no=day_no,
+                seq_no=seq_no,
+                stage=str(item.get("stage") or binding.phase or "warmup"),
+                title=str(item.get("title") or f"nurture-day{day_no:02d}-s{seq_no}"),
+                scheduled_at=when,
+                status="scheduled",
+                payload=item.get("payload") if isinstance(item.get("payload"), dict) else {},
+            )
+        )
+        created += 1
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": row.id,
+        "binding_id": row.binding_id,
+        "status": row.status,
+        "approval_mode": row.approval_mode,
+        "plan_horizon_days": row.plan_horizon_days,
+        "summary": row.summary,
+        "created_schedule_count": created,
+    }
+
+
+@router.get("/nurture/plans", summary="养号计划列表（用户态）")
+def list_nurture_plans(
+    binding_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    q = db.query(NurturePlan).filter(NurturePlan.user_id == current_user.id)
+    if binding_id:
+        q = q.filter(NurturePlan.binding_id == binding_id)
+    rows = q.order_by(NurturePlan.updated_at.desc()).limit(200).all()
+    return [
+        {
+            "id": r.id,
+            "binding_id": r.binding_id,
+            "name": r.name,
+            "status": r.status,
+            "plan_version": r.plan_version,
+            "approval_mode": r.approval_mode,
+            "plan_horizon_days": getattr(r, "plan_horizon_days", 30),
+            "requires_reconfirm": bool(getattr(r, "requires_reconfirm", False)),
+            "summary": r.summary,
+            "approved_by": r.approved_by,
+            "approved_at": _iso(r.approved_at),
+            "start_at": _iso(r.start_at),
+            "last_review_at": _iso(getattr(r, "last_review_at", None)),
+            "next_review_at": _iso(getattr(r, "next_review_at", None)),
+            "created_at": _iso(r.created_at),
+            "updated_at": _iso(r.updated_at),
+        }
+        for r in rows
+    ]
+
+
+@router.post("/nurture/plans/{plan_id}/approve", summary="确认计划并开始自动执行（用户态）")
+def approve_nurture_plan(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = db.query(NurturePlan).filter(NurturePlan.id == plan_id, NurturePlan.user_id == current_user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="plan not found")
+    row.status = "approved"
+    row.requires_reconfirm = False
+    row.approved_by = current_user.id
+    row.approved_at = datetime.utcnow()
+    row.last_review_at = datetime.utcnow()
+    row.next_review_at = datetime.utcnow() + timedelta(days=1)
+    db.add(row)
+    db.commit()
+    dispatched = _dispatch_due_nurture_items(db)
+    return {"detail": "approved", "plan_id": row.id, "dispatched_now": dispatched}
+
+
+@router.post("/nurture/plans/{plan_id}/pause", summary="暂停计划（用户态）")
+def pause_nurture_plan(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = db.query(NurturePlan).filter(NurturePlan.id == plan_id, NurturePlan.user_id == current_user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="plan not found")
+    row.status = "paused"
+    db.add(row)
+    db.commit()
+    return {"detail": "paused", "plan_id": row.id}
+
+
+@router.post("/nurture/scheduler/tick", summary="触发一次到点任务派发（用户态）")
+def tick_nurture_scheduler(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ = current_user
+    dispatched = _dispatch_due_nurture_items(db)
+    return {"detail": "ok", "dispatched": dispatched}
+
+
+@router.get("/nurture/strategy/latest", summary="每日策略复审结果（用户态）")
+def get_latest_nurture_strategy(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ = current_user
+    snap = _daily_strategy_scan_if_due(db)
+    if not snap:
+        return {"snapshot": None}
+    return {
+        "snapshot": {
+            "id": snap.id,
+            "reviewed_date": snap.reviewed_date.isoformat() if isinstance(snap.reviewed_date, date) else str(snap.reviewed_date),
+            "source": snap.source,
+            "severity": snap.severity,
+            "summary": snap.summary,
+            "recommendations": snap.recommendations,
+            "requires_reconfirm": bool(snap.requires_reconfirm),
+            "created_at": _iso(snap.created_at),
+        }
+    }
+
+
+@router.get("/nurture/schedule", summary="计划执行明细（用户态）")
+def list_nurture_schedule(
+    binding_id: Optional[int] = None,
+    status_filter: Optional[str] = None,
+    limit: int = 200,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _dispatch_due_nurture_items(db)
+    q = db.query(NurtureScheduleItem).filter(NurtureScheduleItem.user_id == current_user.id)
+    if binding_id:
+        q = q.filter(NurtureScheduleItem.binding_id == binding_id)
+    if status_filter:
+        q = q.filter(NurtureScheduleItem.status == status_filter.strip())
+    rows = (
+        q.order_by(NurtureScheduleItem.scheduled_at.desc(), NurtureScheduleItem.id.desc())
+        .offset(max(offset, 0))
+        .limit(min(max(limit, 1), 500))
+        .all()
+    )
+    task_ids = sorted({x.control_task_id for x in rows if x.control_task_id})
+    task_map: dict[int, ControlTask] = {}
+    if task_ids:
+        for t in db.query(ControlTask).filter(ControlTask.id.in_(task_ids)).all():
+            task_map[t.id] = t
+    execution_map: dict[int, TaskExecution] = {}
+    if task_ids:
+        exes = (
+            db.query(TaskExecution)
+            .filter(TaskExecution.task_id.in_(task_ids))
+            .order_by(TaskExecution.id.desc())
+            .all()
+        )
+        for e in exes:
+            if e.task_id not in execution_map:
+                execution_map[e.task_id] = e
+    return [
+        {
+            "id": r.id,
+            "plan_id": r.plan_id,
+            "binding_id": r.binding_id,
+            "day_no": r.day_no,
+            "seq_no": r.seq_no,
+            "stage": r.stage,
+            "title": r.title,
+            "scheduled_at": _iso(r.scheduled_at),
+            "status": r.status,
+            "payload": r.payload,
+            "control_task_id": r.control_task_id,
+            "task_status": task_map[r.control_task_id].status if r.control_task_id and task_map.get(r.control_task_id) else None,
+            "task_started_at": _iso(task_map[r.control_task_id].started_at) if r.control_task_id and task_map.get(r.control_task_id) else None,
+            "task_finished_at": _iso(task_map[r.control_task_id].finished_at) if r.control_task_id and task_map.get(r.control_task_id) else None,
+            "execution_status": execution_map[r.control_task_id].status if r.control_task_id and execution_map.get(r.control_task_id) else None,
+            "execution_error_code": execution_map[r.control_task_id].error_code if r.control_task_id and execution_map.get(r.control_task_id) else None,
+            "last_error_code": r.last_error_code,
+            "last_error_message": r.last_error_message,
+            "dispatched_at": _iso(r.dispatched_at),
+            "started_at": _iso(r.started_at),
+            "finished_at": _iso(r.finished_at),
+        }
+        for r in rows
+    ]
+
+
+@router.get("/nurture/progress", summary="养号进度看板（用户态）")
+def nurture_progress(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    bindings = (
+        db.query(NurtureBinding)
+        .filter(NurtureBinding.user_id == current_user.id)
+        .order_by(NurtureBinding.updated_at.desc())
+        .all()
+    )
+    if not bindings:
+        return []
+    device_ids = sorted({b.device_id for b in bindings})
+    account_ids = sorted({b.reddit_account_id for b in bindings})
+    binding_ids = sorted({b.id for b in bindings})
+    d_map: dict[int, MobileDevice] = {}
+    a_map: dict[int, RedditAccountAsset] = {}
+    for d in db.query(MobileDevice).filter(MobileDevice.id.in_(device_ids)).all():
+        d_map[d.id] = d
+    for a in db.query(RedditAccountAsset).filter(RedditAccountAsset.id.in_(account_ids)).all():
+        a_map[a.id] = a
+    latest_plan_map: dict[int, NurturePlan] = {}
+    plans = (
+        db.query(NurturePlan)
+        .filter(NurturePlan.binding_id.in_(binding_ids))
+        .order_by(NurturePlan.id.desc())
+        .all()
+    )
+    for p in plans:
+        if p.binding_id not in latest_plan_map:
+            latest_plan_map[p.binding_id] = p
+    plan_ids = [p.id for p in latest_plan_map.values()]
+    agg: dict[int, dict[str, int]] = {pid: {"total": 0, "success": 0, "failed": 0, "running": 0, "scheduled": 0} for pid in plan_ids}
+    if plan_ids:
+        for s in db.query(NurtureScheduleItem).filter(NurtureScheduleItem.plan_id.in_(plan_ids)).all():
+            x = agg.setdefault(s.plan_id, {"total": 0, "success": 0, "failed": 0, "running": 0, "scheduled": 0})
+            x["total"] += 1
+            if s.status == "success":
+                x["success"] += 1
+            elif s.status == "failed":
+                x["failed"] += 1
+            elif s.status in {"running", "dispatched"}:
+                x["running"] += 1
+            else:
+                x["scheduled"] += 1
+    out: list[dict[str, Any]] = []
+    for b in bindings:
+        p = latest_plan_map.get(b.id)
+        stat = agg.get(p.id, {"total": 0, "success": 0, "failed": 0, "running": 0, "scheduled": 0}) if p else {"total": 0, "success": 0, "failed": 0, "running": 0, "scheduled": 0}
+        out.append(
+            {
+                "binding_id": b.id,
+                "device_id": b.device_id,
+                "device_label": _device_label_from_row(d_map.get(b.device_id)),
+                "reddit_account_id": b.reddit_account_id,
+                "reddit_username": (a_map.get(b.reddit_account_id).username if a_map.get(b.reddit_account_id) else None),
+                "phase": b.phase,
+                "status": b.status,
+                "account_health": b.account_health,
+                "automation_mode": b.automation_mode,
+                "risk_score": b.risk_score,
+                "current_karma": b.current_karma,
+                "target_karma": b.target_karma,
+                "eligible_for_posting": bool(b.eligible_for_posting),
+                "plan_id": p.id if p else None,
+                "plan_status": p.status if p else None,
+                "plan_horizon_days": (getattr(p, "plan_horizon_days", None) if p else None),
+                "plan_requires_reconfirm": (bool(getattr(p, "requires_reconfirm", False)) if p else False),
+                "plan_updated_at": _iso(p.updated_at) if p else None,
+                "metrics": stat,
+                "next_action_at": _iso(b.next_action_at),
+                "updated_at": _iso(b.updated_at),
+            }
+        )
+    return out
+
+
 @router.get("/admin/users", summary="管理员查看用户列表")
 def list_users_for_admin(
     db: Session = Depends(get_db),
@@ -667,6 +1437,11 @@ def list_tasks(
         .limit(min(max(limit, 1), 500))
         .all()
     )
+    assigned_ids = sorted({r.assigned_device_id for r in rows if r.assigned_device_id})
+    device_map: dict[int, MobileDevice] = {}
+    if assigned_ids:
+        for d in db.query(MobileDevice).filter(MobileDevice.id.in_(assigned_ids)).all():
+            device_map[d.id] = d
     return [
         {
             "id": r.id,
@@ -677,9 +1452,11 @@ def list_tasks(
             "target_device_id": r.target_device_id,
             "target_account_id": getattr(r, "target_account_id", None),
             "dispatch_group_id": getattr(r, "dispatch_group_id", None),
+            "nurture_schedule_item_id": getattr(r, "nurture_schedule_item_id", None),
             "device_filter": getattr(r, "device_filter", None),
             "assigned_agent_id": r.assigned_agent_id,
             "assigned_device_id": r.assigned_device_id,
+            "assigned_device_label": _device_label_from_row(device_map.get(r.assigned_device_id or -1)),
             "priority": r.priority,
             "retries": r.retries,
             "max_retries": r.max_retries,
@@ -708,6 +1485,9 @@ def get_task(
         .limit(200)
         .all()
     )
+    assigned_device = None
+    if row.assigned_device_id:
+        assigned_device = db.query(MobileDevice).filter(MobileDevice.id == row.assigned_device_id).first()
     return {
         "task": {
             "id": row.id,
@@ -719,9 +1499,11 @@ def get_task(
             "target_device_id": row.target_device_id,
             "target_account_id": getattr(row, "target_account_id", None),
             "dispatch_group_id": getattr(row, "dispatch_group_id", None),
+            "nurture_schedule_item_id": getattr(row, "nurture_schedule_item_id", None),
             "device_filter": getattr(row, "device_filter", None),
             "assigned_agent_id": row.assigned_agent_id,
             "assigned_device_id": row.assigned_device_id,
+            "assigned_device_label": _device_label_from_row(assigned_device),
             "retries": row.retries,
             "max_retries": row.max_retries,
             "created_at": row.created_at.isoformat() if row.created_at else "",
@@ -771,6 +1553,7 @@ def poll_next_task(
 ):
     try:
         _ensure_agent_secret(x_agent_secret)
+        _dispatch_due_nurture_items(db)
         agent = db.query(ControlAgent).filter(ControlAgent.agent_key == agent_key).first()
         if not agent:
             raise HTTPException(status_code=404, detail="agent not found")
@@ -840,9 +1623,11 @@ def poll_next_task(
         db.refresh(execution)
         db.refresh(row)
         assigned_serial = None
+        assigned_label = None
         if row.assigned_device_id:
             d = db.query(MobileDevice).filter(MobileDevice.id == row.assigned_device_id).first()
             assigned_serial = d.serial if d else None
+            assigned_label = _device_label_from_row(d)
 
         return {
             "task": {
@@ -853,7 +1638,9 @@ def poll_next_task(
                 "payload": row.payload,
                 "assigned_device_id": row.assigned_device_id,
                 "assigned_device_serial": assigned_serial,
+                "assigned_device_label": assigned_label,
                 "target_account_id": getattr(row, "target_account_id", None),
+                "nurture_schedule_item_id": getattr(row, "nurture_schedule_item_id", None),
                 "execution_id": execution.id,
                 "lease_until": row.lease_until.isoformat() if row.lease_until else None,
             }
@@ -942,6 +1729,60 @@ def report_task(
 
     db.add(execution)
     db.add(row)
+
+    # 同步养号计划执行状态与绑定进度
+    if getattr(row, "nurture_schedule_item_id", None):
+        item = db.query(NurtureScheduleItem).filter(NurtureScheduleItem.id == row.nurture_schedule_item_id).first()
+        if item:
+            now = datetime.utcnow()
+            if payload.status == "running":
+                item.status = "running"
+                item.started_at = item.started_at or now
+            elif payload.status in ("success", "failed", "cancelled"):
+                item.status = payload.status
+                item.finished_at = now
+                item.last_error_code = (payload.error_code or "")[:64] or None
+                item.last_error_message = (payload.error_message or "")[:5000] or None
+            db.add(item)
+
+            binding = db.query(NurtureBinding).filter(NurtureBinding.id == item.binding_id).first()
+            if binding and payload.status in ("success", "failed"):
+                metrics = payload.metrics if isinstance(payload.metrics, dict) else {}
+                karma_delta = int(metrics.get("karma_delta") or (1 if payload.status == "success" else 0))
+                if payload.status == "success":
+                    binding.current_karma = max(0, int(binding.current_karma or 0) + max(0, karma_delta))
+                    binding.risk_score = max(0, int(binding.risk_score or 0) - 2)
+                    if binding.current_karma >= int(binding.target_karma or 0):
+                        binding.phase = "post_ready"
+                        binding.eligible_for_posting = True
+                    elif binding.current_karma >= 20:
+                        binding.phase = "engage"
+                    elif binding.current_karma >= 8:
+                        binding.phase = "steady"
+                    else:
+                        binding.phase = "warmup"
+                    if binding.account_health in {"warning", "restricted"} and binding.risk_score < 40:
+                        binding.account_health = "healthy"
+                    binding.next_action_at = now + timedelta(hours=4)
+                else:
+                    binding.risk_score = min(100, int(binding.risk_score or 0) + 12)
+                    binding.last_incident_code = (payload.error_code or "task_failed")[:64]
+                    binding.last_incident_at = now
+                    if binding.risk_score >= 90:
+                        binding.account_health = "locked"
+                        binding.automation_mode = "paused"
+                        binding.status = "paused"
+                        binding.next_action_at = now + timedelta(hours=72)
+                    elif binding.risk_score >= 70:
+                        binding.account_health = "restricted"
+                        binding.automation_mode = "read_only"
+                        binding.next_action_at = now + timedelta(hours=24)
+                    else:
+                        binding.account_health = "warning"
+                        binding.automation_mode = "conservative"
+                        binding.next_action_at = now + timedelta(hours=12)
+                db.add(binding)
+
     db.commit()
     return {"detail": "ok", "task_status": row.status, "execution_id": execution.id}
 
