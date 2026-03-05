@@ -177,8 +177,6 @@ async def _fetch_backend_available_capabilities(token: Optional[str]) -> Optiona
             cid = str(x.get("capability_id") or "").strip()
             if not cid:
                 continue
-            if CAPABILITY_ALLOWLIST and cid not in CAPABILITY_ALLOWLIST:
-                continue
             out[cid] = {
                 "description": str(x.get("description") or cid),
                 "upstream": str(x.get("upstream") or "sutui"),
