@@ -160,6 +160,9 @@ def _enabled_capability_ids() -> List[str]:
 async def _fetch_backend_available_capabilities(token: Optional[str]) -> Optional[Dict[str, Dict[str, Any]]]:
     """从后端读取当前用户可用能力；失败时返回 None（由调用方回退本地目录）。"""
     if not token:
+        env_token = (os.environ.get("AI_TEST_PLATFORM_TOKEN") or "").strip()
+        token = env_token or None
+    if not token:
         return None
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
@@ -263,6 +266,10 @@ def _get_token_from_request(request: Request) -> Optional[str]:
         auth = request.headers.get("Authorization") or ""
         if auth.lower().startswith("bearer "):
             token = auth[7:].strip() or None
+    if not token:
+        # 回退到服务环境变量，避免上游未透传 token 时能力列表退化到本地默认目录。
+        env_token = (os.environ.get("AI_TEST_PLATFORM_TOKEN") or "").strip()
+        token = env_token or None
     return token or None
 
 
