@@ -644,17 +644,21 @@
                   <div class="card-label">Skill 能力分配</div>
                   <label>用户</label>
                   <select id="adminSkillUserSelect"></select>
-                  <label>新增/更新能力（例如速推视频）</label>
-                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;">
-                    <input type="text" id="adminCapIdInput" placeholder="capability_id，例如 video.generate">
-                    <input type="text" id="adminCapToolInput" placeholder="upstream_tool，例如 video_generate">
-                    <input type="text" id="adminCapDescInput" placeholder="描述，例如 速推视频生产">
-                    <input type="text" id="adminCapUpstreamInput" placeholder="upstream，默认 sutui">
-                  </div>
-                  <button type="button" id="adminCreateCapabilityBtn" class="btn btn-ghost btn-sm" style="margin-top:0.5rem;">新增能力到目录</button>
+                  <div class="meta" style="margin-top:0.35rem;">系统会自动扫描当前能力目录，直接勾选即可分配给用户（无需先知道 capability_id）。</div>
+                  <button type="button" id="adminReloadCapabilitiesBtn" class="btn btn-ghost btn-sm" style="margin-top:0.5rem;">重新扫描能力目录</button>
                   <label>搜索能力</label>
                   <input type="text" id="adminSkillSearchInput" placeholder="输入 capability_id/描述，例如：sutui、stock、image">
                   <div id="adminSkillAssignList" style="margin-top:0.5rem;max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:0.5rem;"></div>
+                  <details style="margin-top:0.6rem;">
+                    <summary style="cursor:pointer;color:var(--text-muted);">手动新增能力（可选）</summary>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-top:0.5rem;">
+                      <input type="text" id="adminCapIdInput" placeholder="capability_id，例如 video.generate">
+                      <input type="text" id="adminCapToolInput" placeholder="upstream_tool，例如 video_generate">
+                      <input type="text" id="adminCapDescInput" placeholder="描述，例如 速推视频生产">
+                      <input type="text" id="adminCapUpstreamInput" placeholder="upstream，默认 sutui">
+                    </div>
+                    <button type="button" id="adminCreateCapabilityBtn" class="btn btn-ghost btn-sm" style="margin-top:0.5rem;">新增能力到目录</button>
+                  </details>
                   <button type="button" id="adminSaveSkillAssignBtn" class="btn btn-primary btn-sm" style="margin-top:0.5rem;">保存能力分配</button>
                   <div id="adminSkillMsg" class="msg" style="margin-top:0.5rem;"></div>
                 </div>
@@ -2892,10 +2896,11 @@
         var cid = String(c.capability_id || '');
         var checked = adminAssignedCapabilityIds.indexOf(cid) >= 0 ? 'checked' : '';
         var status = c.enabled ? 'enabled' : 'disabled';
+        var title = c.description || cid;
         return '<label style="display:flex;align-items:flex-start;gap:0.45rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">' +
           '<input type="checkbox" class="admin-skill-cap-item" value="' + escapeAttr(cid) + '" ' + checked + '>' +
-          '<span style="display:block;"><div style="font-size:0.9rem;">' + escapeHtml(cid) + '</div>' +
-          '<div class="meta" style="font-size:0.78rem;">' + escapeHtml((c.description || '-') + ' · ' + (c.upstream || '-') + ' · ' + status) + '</div></span></label>';
+          '<span style="display:block;"><div style="font-size:0.9rem;">' + escapeHtml(title) + '</div>' +
+          '<div class="meta" style="font-size:0.78rem;">' + escapeHtml((c.upstream || '-') + ' · ' + status + ' · ' + cid) + '</div></span></label>';
       }).join('');
     }
 
@@ -3079,6 +3084,10 @@
     var refreshAdminOpsBtn = document.getElementById('refreshAdminOpsBtn');
     if (refreshAdminOpsBtn) {
       refreshAdminOpsBtn.addEventListener('click', function() { loadAdminOpsData(); });
+    }
+    var adminReloadCapabilitiesBtn = document.getElementById('adminReloadCapabilitiesBtn');
+    if (adminReloadCapabilitiesBtn) {
+      adminReloadCapabilitiesBtn.addEventListener('click', function() { loadAdminCapabilities(); });
     }
     var adminAssignUserSelect = document.getElementById('adminAssignUserSelect');
     if (adminAssignUserSelect) {
