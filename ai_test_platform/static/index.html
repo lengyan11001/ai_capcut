@@ -641,7 +641,7 @@
               <div class="card-label">云端养号计划（设备+账号绑定）</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-top:0.5rem;">
                 <select id="nurtureBindDeviceSelect"></select>
-                <select id="nurtureBindAccountSelect"></select>
+                <input type="text" value="账号由Agent自动上报" disabled>
               </div>
               <div style="display:grid;grid-template-columns:1fr auto auto;gap:0.5rem;margin-top:0.5rem;align-items:center;">
                 <input type="number" id="nurtureTargetKarmaInput" min="1" value="30" placeholder="目标 karma">
@@ -2792,14 +2792,6 @@
     var nurtureBindingsCache = [];
     var nurturePlansCache = [];
 
-    function loadNurtureAccounts() {
-      return fetch(API_BASE + '/group-control/reddit-accounts', { headers: authHeaders() })
-        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-        .then(function(x) {
-          return x.ok && Array.isArray(x.data) ? x.data : [];
-        });
-    }
-
     function loadNurtureBindings() {
       return fetch(API_BASE + '/group-control/nurture/bindings', { headers: authHeaders() })
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
@@ -2895,23 +2887,15 @@
       var deviceSel = document.getElementById('controlTargetDeviceSelect');
       var bindDeviceSel = document.getElementById('nurtureBindDeviceSelect');
       if (bindDeviceSel && deviceSel) bindDeviceSel.innerHTML = deviceSel.innerHTML;
-      return Promise.all([loadNurtureAccounts(), loadNurtureBindings()])
-        .then(function(arr) {
-          var accounts = arr[0] || [];
-          var accSel = document.getElementById('nurtureBindAccountSelect');
-          if (accSel) {
-            accSel.innerHTML = accounts.map(function(a) {
-              return '<option value="' + a.id + '">' + escapeHtml((a.username || ('账号#' + a.id)) + ' · ' + (a.status || '-')) + '</option>';
-            }).join('');
-          }
-          var bindingId = renderNurtureBindingSelect();
-          return Promise.all([
-            loadNurturePlans(bindingId || undefined),
-            loadNurtureProgress(),
-            loadNurtureSchedule(bindingId || undefined),
-            loadNurtureStrategy()
-          ]);
-        });
+      return loadNurtureBindings().then(function() {
+        var bindingId = renderNurtureBindingSelect();
+        return Promise.all([
+          loadNurturePlans(bindingId || undefined),
+          loadNurtureProgress(),
+          loadNurtureSchedule(bindingId || undefined),
+          loadNurtureStrategy()
+        ]);
+      });
     }
 
     function isAdminUser() {
@@ -3284,16 +3268,15 @@
       nurtureBindSaveBtn.addEventListener('click', function() {
         var msgEl = document.getElementById('nurtureMsg');
         var devId = parseInt(String((document.getElementById('nurtureBindDeviceSelect') || {}).value || '').trim(), 10);
-        var accId = parseInt(String((document.getElementById('nurtureBindAccountSelect') || {}).value || '').trim(), 10);
         var karma = parseInt(String((document.getElementById('nurtureTargetKarmaInput') || {}).value || '30').trim(), 10);
-        if (!devId || !accId) {
-          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请先选择设备和账号'; }
+        if (!devId) {
+          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请先选择设备'; }
           return;
         }
         fetch(API_BASE + '/group-control/nurture/bindings', {
           method: 'POST',
           headers: authHeaders(),
-          body: JSON.stringify({ device_id: devId, reddit_account_id: accId, target_karma: isNaN(karma) ? 30 : karma })
+          body: JSON.stringify({ device_id: devId, target_karma: isNaN(karma) ? 30 : karma })
         })
           .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
           .then(function(x) {

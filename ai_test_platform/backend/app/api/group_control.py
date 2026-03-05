@@ -521,6 +521,78 @@ def heartbeat_agent(
     return {"detail": "ok", "last_seen_at": row.last_seen_at.isoformat()}
 
 
+class AgentDeviceAccountStateIn(BaseModel):
+    serial: str
+    username: Optional[str] = None
+    status: Optional[str] = None  # active|warning|restricted|locked
+    karma: Optional[int] = None
+    risk_score: Optional[int] = None
+    meta: Optional[dict[str, Any]] = None
+
+
+@router.post("/agents/{agent_key}/device-account-state", summary="上报设备账号状态（Agent）")
+def report_device_account_state(
+    agent_key: str,
+    payload: AgentDeviceAccountStateIn,
+    db: Session = Depends(get_db),
+    x_agent_secret: Optional[str] = Header(None, alias="X-Agent-Secret"),
+):
+    _ensure_agent_secret(x_agent_secret)
+    agent = db.query(ControlAgent).filter(ControlAgent.agent_key == agent_key).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="agent not found")
+    serial = (payload.serial or "").strip()
+    if not serial:
+        raise HTTPException(status_code=400, detail="serial required")
+    dev = db.query(MobileDevice).filter(MobileDevice.serial == serial).first()
+    if not dev:
+        raise HTTPException(status_code=404, detail="device not found")
+    meta = dev.meta if isinstance(dev.meta, dict) else {}
+    account_state = {
+        "username": (payload.username or "").strip() or None,
+        "status": (payload.status or "").strip() or None,
+        "karma": payload.karma,
+        "risk_score": payload.risk_score,
+        "reported_at": datetime.utcnow().isoformat(),
+    }
+    if payload.meta and isinstance(payload.meta, dict):
+        account_state["meta"] = payload.meta
+    meta["account_state"] = account_state
+    dev.meta = meta
+    attrs = dev.account_attrs if isinstance(dev.account_attrs, dict) else {}
+    if payload.username:
+        attrs["reddit_username"] = payload.username.strip()
+    if payload.karma is not None:
+        attrs["karma"] = int(payload.karma)
+    if payload.status:
+        attrs["account_health"] = payload.status.strip()
+    if payload.risk_score is not None:
+        attrs["risk_score"] = int(payload.risk_score)
+    dev.account_attrs = attrs
+    db.add(dev)
+
+    # 已存在绑定则直接同步绑定状态，供云端策略实时使用。
+    binding = (
+        db.query(NurtureBinding)
+        .filter(NurtureBinding.device_id == dev.id)
+        .order_by(NurtureBinding.id.desc())
+        .first()
+    )
+    if binding:
+        if payload.karma is not None:
+            binding.current_karma = max(0, int(payload.karma))
+            if binding.current_karma >= int(binding.target_karma or 0):
+                binding.eligible_for_posting = True
+        if payload.status:
+            binding.account_health = payload.status.strip()
+        if payload.risk_score is not None:
+            binding.risk_score = max(0, min(100, int(payload.risk_score)))
+        db.add(binding)
+
+    db.commit()
+    return {"detail": "ok", "device_id": dev.id, "binding_id": binding.id if binding else None}
+
+
 @router.get("/devices", summary="设备列表（用户态）")
 def list_devices(
     db: Session = Depends(get_db),
@@ -798,9 +870,43 @@ def _allowed_account_ids_for_user(db: Session, current_user: User) -> set[int]:
     return own_ids | assigned_system_ids
 
 
+def _resolve_device_account_id(db: Session, current_user: User, device_id: int, explicit_account_id: Optional[int]) -> int:
+    if explicit_account_id is not None:
+        return int(explicit_account_id)
+    dev = db.query(MobileDevice).filter(MobileDevice.id == device_id).first()
+    meta = dev.meta if dev and isinstance(dev.meta, dict) else {}
+    attrs = dev.account_attrs if dev and isinstance(dev.account_attrs, dict) else {}
+    account_state = meta.get("account_state") if isinstance(meta.get("account_state"), dict) else {}
+    username = str(
+        account_state.get("username")
+        or attrs.get("reddit_username")
+        or attrs.get("username")
+        or ""
+    ).strip()
+    if not username:
+        label = _device_label_from_row(dev) or f"device-{device_id}"
+        username = f"{label}-auto"
+    row = (
+        db.query(RedditAccountAsset)
+        .filter(RedditAccountAsset.user_id == current_user.id, RedditAccountAsset.username == username)
+        .first()
+    )
+    if not row:
+        row = RedditAccountAsset(
+            user_id=current_user.id,
+            username=username,
+            source="system" if _is_admin(current_user) else "user",
+            status="active",
+            account_attrs={"auto_discovered": True, "device_id": device_id},
+        )
+        db.add(row)
+        db.flush()
+    return int(row.id)
+
+
 class NurtureBindingUpsertIn(BaseModel):
     device_id: int
-    reddit_account_id: int
+    reddit_account_id: Optional[int] = None
     target_karma: int = Field(default=30, ge=1, le=100000)
     phase: Optional[str] = None
     automation_mode: Optional[str] = None
@@ -862,25 +968,26 @@ def upsert_nurture_binding(
     current_user: User = Depends(get_current_user),
 ):
     allowed_devices = _allowed_device_ids_for_user(db, current_user)
-    allowed_accounts = _allowed_account_ids_for_user(db, current_user)
     if payload.device_id not in allowed_devices:
         raise HTTPException(status_code=403, detail="device not allowed")
-    if payload.reddit_account_id not in allowed_accounts:
+    resolved_account_id = _resolve_device_account_id(db, current_user, payload.device_id, payload.reddit_account_id)
+    allowed_accounts = _allowed_account_ids_for_user(db, current_user)
+    if resolved_account_id not in allowed_accounts and not _is_admin(current_user):
         raise HTTPException(status_code=403, detail="reddit account not allowed")
     row = (
         db.query(NurtureBinding)
         .filter(
             NurtureBinding.user_id == current_user.id,
             NurtureBinding.device_id == payload.device_id,
-            NurtureBinding.reddit_account_id == payload.reddit_account_id,
         )
+        .order_by(NurtureBinding.id.desc())
         .first()
     )
     if not row:
         row = NurtureBinding(
             user_id=current_user.id,
             device_id=payload.device_id,
-            reddit_account_id=payload.reddit_account_id,
+            reddit_account_id=resolved_account_id,
             target_karma=payload.target_karma,
             phase=(payload.phase or "warmup").strip() or "warmup",
             automation_mode=(payload.automation_mode or "normal").strip() or "normal",
@@ -890,6 +997,7 @@ def upsert_nurture_binding(
         db.commit()
         db.refresh(row)
         return {"id": row.id, "detail": "created"}
+    row.reddit_account_id = resolved_account_id
     row.target_karma = payload.target_karma
     if payload.phase is not None:
         row.phase = (payload.phase or "").strip() or row.phase
