@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import logging
+import json
+import os
 import re
 import time
 from collections import deque
@@ -27,7 +29,7 @@ from ..core.credit_flow import add_credit_flow
 from ..core import model_pricing
 from ..db import get_db
 from .auth import get_current_user, oauth2_scheme
-from ..models import ChatTurnLog, CreditFlow, OpenClawInstance, User, UserOpenClawBinding
+from ..models import CapabilityCallLog, CapabilityConfig, ChatTurnLog, CreditFlow, OpenClawInstance, User, UserOpenClawBinding
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -45,6 +47,8 @@ _REDACT_PATTERNS = [
     (re.compile(r"((?:余额|积分|points?|credits?)\s*[:：]\s*)([0-9]+(?:\.[0-9]+)?)", re.I), r"\1[HIDDEN]"),
 ]
 _REDACT_TERMS = ("速推", "fyshark", "ts-api.fyshark.com", "sutui_account", "account_id")
+_IMAGE_INTENT_RE = re.compile(r"(生成|画|做).{0,8}(图|图片|海报|头像|插画)|文生图|出图|做一张图", re.I)
+_IMAGE_UNAVAILABLE_RE = re.compile(r"(无法|不能|暂时).*?(生成|出).*?(图|图片)|没有可用.*?(图像|图片).*?能力", re.I)
 
 
 def _check_chat_rate_limit(user_id: int) -> bool:
@@ -72,6 +76,16 @@ def _sanitize_reply(text: str) -> str:
     for term in _REDACT_TERMS:
         out = out.replace(term, "平台能力")
     return out
+
+
+def _is_image_intent(text: str) -> bool:
+    t = (text or "").strip()
+    return bool(t and _IMAGE_INTENT_RE.search(t))
+
+
+def _looks_like_image_unavailable_reply(text: str) -> bool:
+    t = (text or "").strip()
+    return bool(t and _IMAGE_UNAVAILABLE_RE.search(t))
 
 
 def _today_chat_count(db: Session, user_id: int) -> int:
@@ -120,6 +134,201 @@ def _add_chat_turn_log(
         meta=meta or {},
     )
     db.add(row)
+
+
+def _load_capability_upstream_urls() -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    raw = (settings.capability_upstream_urls_json or "").strip()
+    if raw:
+        try:
+            obj = json.loads(raw)
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if isinstance(k, str) and isinstance(v, str) and v.strip():
+                        out[k.strip()] = v.strip()
+        except Exception:
+            pass
+    if "sutui" not in out and (settings.capability_sutui_mcp_url or "").strip():
+        out["sutui"] = (settings.capability_sutui_mcp_url or "").strip()
+    # 向后兼容：直接从环境变量读取
+    if not out:
+        env_raw = os.environ.get("CAPABILITY_UPSTREAM_URLS_JSON", "").strip()
+        if env_raw:
+            try:
+                obj = json.loads(env_raw)
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if isinstance(k, str) and isinstance(v, str) and v.strip():
+                            out[k.strip()] = v.strip()
+            except Exception:
+                pass
+    if "sutui" not in out and os.environ.get("CAPABILITY_SUTUI_MCP_URL", "").strip():
+        out["sutui"] = os.environ.get("CAPABILITY_SUTUI_MCP_URL", "").strip()
+    return out
+
+
+async def _call_upstream_mcp_tool(server_url: str, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """调用上游 MCP HTTP 工具（initialize + tools/call）。"""
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        init_body = {
+            "jsonrpc": "2.0",
+            "id": "init-chat-fallback",
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "ai-test-platform-chat-fallback", "version": "0.1.0"},
+            },
+        }
+        init_resp = await client.post(server_url, json=init_body)
+        session_id = (
+            init_resp.headers.get("Mcp-Session-Id")
+            or init_resp.headers.get("mcp-session-id")
+            or ""
+        )
+        call_body = {
+            "jsonrpc": "2.0",
+            "id": "call-chat-fallback",
+            "method": "tools/call",
+            "params": {"name": tool_name, "arguments": arguments},
+        }
+        headers = {"Mcp-Session-Id": session_id} if session_id else {}
+        r = await client.post(server_url, json=call_body, headers=headers)
+        try:
+            return r.json()
+        except Exception:
+            return {"error": {"message": f"Upstream MCP 返回非 JSON: status={r.status_code}"}}
+
+
+def _extract_text_json(response: Dict[str, Any]) -> Dict[str, Any]:
+    """从 MCP result.content[0].text 中解析 JSON。"""
+    if not isinstance(response, dict):
+        return {}
+    result = response.get("result")
+    if not isinstance(result, dict):
+        return {}
+    content = result.get("content")
+    if not isinstance(content, list) or not content:
+        return {}
+    first = content[0]
+    if not isinstance(first, dict):
+        return {}
+    text = first.get("text")
+    if not isinstance(text, str):
+        return {}
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _extract_actual_credits(value: Any) -> Optional[int]:
+    if isinstance(value, dict):
+        for key in ("credits_charged", "cost_credits", "charged_credits", "actual_credits"):
+            v = value.get(key)
+            if isinstance(v, (int, float)) and v > 0:
+                return int(v)
+        for _, v in value.items():
+            found = _extract_actual_credits(v)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = _extract_actual_credits(item)
+            if found is not None:
+                return found
+    return None
+
+
+def _extract_should_charge(value: Any) -> bool:
+    if isinstance(value, dict):
+        for key in ("should_charge", "charged", "cost_incurred", "has_cost"):
+            if key in value:
+                v = value.get(key)
+                if isinstance(v, bool):
+                    return v
+                if isinstance(v, (int, float)):
+                    return v > 0
+                if isinstance(v, str):
+                    return v.strip().lower() in ("1", "true", "yes", "charged")
+        cost = _extract_actual_credits(value)
+        if cost is not None and cost > 0:
+            return True
+    return False
+
+
+async def _try_image_generation_fallback(
+    db: Session,
+    current_user: User,
+    payload: ChatRequest,
+) -> Optional[str]:
+    """
+    当会话层未触发工具时，后端直接兜底调用 image.generate。
+    返回成功文案或 None（表示兜底失败/不适用）。
+    """
+    cap = (
+        db.query(CapabilityConfig)
+        .filter(CapabilityConfig.capability_id == "image.generate", CapabilityConfig.enabled.is_(True))
+        .first()
+    )
+    if not cap:
+        return None
+    upstream_urls = _load_capability_upstream_urls()
+    upstream_url = upstream_urls.get((cap.upstream or "sutui").strip(), "").strip()
+    if not upstream_url:
+        return None
+    default_model = os.environ.get("CAPABILITY_IMAGE_DEFAULT_MODEL", "jimeng-4.0").strip() or "jimeng-4.0"
+    tool_args = {"prompt": payload.message, "model": default_model}
+    t0 = time.perf_counter()
+    upstream_resp = await _call_upstream_mcp_tool(upstream_url, cap.upstream_tool, tool_args)
+    latency_ms = int((time.perf_counter() - t0) * 1000)
+    parsed = _extract_text_json(upstream_resp)
+    success = bool(parsed.get("success"))
+    err = str(parsed.get("error") or "")[:1000] or None
+    should_charge = _extract_should_charge(upstream_resp)
+    actual_credits = _extract_actual_credits(upstream_resp) or 0
+    charged = 0
+    if success and should_charge and actual_credits > 0:
+        if current_user.credits >= actual_credits:
+            charged = actual_credits
+            add_credit_flow(db, current_user, "deduct", charged, f"能力调用：{cap.capability_id}", "capability_call", None)
+    log = CapabilityCallLog(
+        user_id=current_user.id,
+        capability_id=cap.capability_id,
+        upstream=cap.upstream,
+        upstream_tool=cap.upstream_tool,
+        success=success,
+        credits_charged=charged,
+        latency_ms=latency_ms,
+        request_payload=tool_args,
+        response_payload=upstream_resp if isinstance(upstream_resp, dict) else {"raw": str(upstream_resp)},
+        error_message=err,
+        source="chat_fallback",
+        chat_session_id=(payload.session_id or "")[:128] or None,
+        chat_context_id="image.generate",
+    )
+    db.add(log)
+    if not success:
+        db.commit()
+        return None
+    urls = parsed.get("urls") if isinstance(parsed.get("urls"), list) else []
+    first_url = urls[0] if urls else ""
+    if not first_url:
+        db.commit()
+        return None
+    reply = f"已为你生成图片（默认模型：{default_model}）。\n{first_url}"
+    _add_chat_turn_log(
+        db=db,
+        user_id=current_user.id,
+        user_message=payload.message,
+        assistant_reply=reply,
+        session_id=payload.session_id,
+        context_id=payload.context_id or "image.generate",
+        meta={"fallback": "image.generate", "charged_credits": charged},
+    )
+    db.commit()
+    return reply
 
 
 def _is_learn_allowlist_user(user: User) -> bool:
@@ -306,6 +515,14 @@ async def chat_endpoint(
             if total_tokens > 0:
                 period_start = date.today().replace(day=1)
                 model_pricing.add_usage_period(db, user.id, model_id, period_start, total_tokens)
+            # 图片场景兜底：若会话层回复“图片能力不可用”，自动改走统一能力 image.generate
+            if _is_image_intent(payload.message) and _looks_like_image_unavailable_reply(reply):
+                fallback_reply = await _try_image_generation_fallback(db, user, payload)
+                if fallback_reply:
+                    return JSONResponse(
+                        content=ChatResponse(reply=fallback_reply).model_dump(),
+                        headers={"X-OpenClaw-Duration-Ms": str(duration_ms), "X-Chat-Fallback": "image.generate"},
+                    )
             _add_chat_turn_log(
                 db=db,
                 user_id=current_user.id,
