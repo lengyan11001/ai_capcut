@@ -395,6 +395,15 @@ def _get_token_from_request(request: Request) -> Optional[str]:
         auth = request.headers.get("Authorization") or ""
         if auth.lower().startswith("bearer "):
             token = auth[7:].strip() or None
+    if not token:
+        # 后端 chat -> OpenClaw 显式透传的用户 token（优先恢复真实用户身份）
+        user_auth = request.headers.get("x-user-authorization") or ""
+        if user_auth.lower().startswith("bearer "):
+            token = user_auth[7:].strip() or None
+    if not token:
+        # 兼容纯 token 透传头
+        user_token = (request.headers.get("x-user-token") or "").strip()
+        token = user_token or None
     return token or None
 
 

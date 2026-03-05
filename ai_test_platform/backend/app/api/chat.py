@@ -26,7 +26,7 @@ from ..core.config import settings
 from ..core.credit_flow import add_credit_flow
 from ..core import model_pricing
 from ..db import get_db
-from .auth import get_current_user
+from .auth import get_current_user, oauth2_scheme
 from ..models import ChatTurnLog, CreditFlow, OpenClawInstance, User, UserOpenClawBinding
 
 logger = logging.getLogger(__name__)
@@ -195,6 +195,7 @@ def _openclaw_available(db: Session, user: Optional[User] = None) -> bool:
 @router.post("/chat", response_model=ChatResponse, summary="智能对话（OpenClaw）")
 async def chat_endpoint(
     payload: ChatRequest,
+    raw_token: str = Depends(oauth2_scheme),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -252,6 +253,9 @@ async def chat_endpoint(
         "Content-Type": "application/json",
         "Authorization": f"Bearer {token}",
         "x-openclaw-agent-id": agent_id,
+        # 透传真实用户身份，供 Gateway/MCP 按用户授权能力列表。
+        "x-user-authorization": f"Bearer {raw_token}",
+        "x-user-id": str(current_user.id),
     }
     try:
         t0 = time.perf_counter()
