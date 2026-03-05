@@ -511,6 +511,7 @@
         <nav class="nav-left">
           <div class="nav-left-item active" data-view="chat">智能对话</div>
           <div class="nav-left-item" data-view="group-control">群控</div>
+          <div class="nav-left-item" id="navAdminConsole" data-view="admin-console" style="display:none;">管理员</div>
           <div class="nav-left-item" data-view="skill">能力库</div>
           <div class="nav-left-sub" id="navSkillSub" style="display: none;">
             <div class="nav-left-item" data-view="skill-testAI">testAI</div>
@@ -606,9 +607,11 @@
               <div class="card-label">任务详情日志</div>
               <div id="controlTaskDetail" style="margin-top:0.75rem;color:var(--text-muted);">点击任务「详情」查看日志</div>
             </div>
-            <div id="adminOpsSection" class="card" style="margin-top:1rem; display:none;">
+          </div>
+          <div id="content-admin-console" class="content-block">
+            <div id="adminOpsSection" class="card">
               <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-                <div class="card-label">管理员运维控制台</div>
+                <h3 style="margin:0;">管理员运维控制台</h3>
                 <button type="button" id="refreshAdminOpsBtn" class="btn btn-ghost btn-sm">刷新管理员数据</button>
               </div>
               <p class="meta" style="margin-top:0.5rem;">可视化执行设备/账号分配、Skill 能力分配、用户积分充值。</p>
@@ -618,9 +621,9 @@
                   <label>用户</label>
                   <select id="adminAssignUserSelect"></select>
                   <label>设备多选</label>
-                  <select id="adminDeviceAssignSelect" multiple size="6"></select>
+                  <select id="adminDeviceAssignSelect" multiple size="8"></select>
                   <label>系统账号多选</label>
-                  <select id="adminAccountAssignSelect" multiple size="6"></select>
+                  <select id="adminAccountAssignSelect" multiple size="8"></select>
                   <div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
                     <button type="button" id="adminSaveDeviceAssignBtn" class="btn btn-primary btn-sm">保存设备分配</button>
                     <button type="button" id="adminSaveAccountAssignBtn" class="btn btn-ghost btn-sm">保存账号分配</button>
@@ -631,8 +634,9 @@
                   <div class="card-label">Skill 能力分配</div>
                   <label>用户</label>
                   <select id="adminSkillUserSelect"></select>
-                  <label>能力多选（allow）</label>
-                  <select id="adminSkillAssignSelect" multiple size="8"></select>
+                  <label>搜索能力</label>
+                  <input type="text" id="adminSkillSearchInput" placeholder="输入 capability_id/描述，例如：sutui、stock、image">
+                  <div id="adminSkillAssignList" style="margin-top:0.5rem;max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:0.5rem;"></div>
                   <button type="button" id="adminSaveSkillAssignBtn" class="btn btn-primary btn-sm" style="margin-top:0.5rem;">保存能力分配</button>
                   <div id="adminSkillMsg" class="msg" style="margin-top:0.5rem;"></div>
                 </div>
@@ -1229,6 +1233,8 @@
     var currentCapabilityEntry = null;
     var currentCapabilityCallLogs = [];
     var currentCapabilityChatLogs = [];
+    var adminCapabilityRegistry = [];
+    var adminAssignedCapabilityIds = [];
 
     var currentView = 'chat';
     var skillPanelLoaded = { templates: false, libraries: false, accounts: false };
@@ -1505,7 +1511,7 @@
         }
         if (currentView === 'chat' && view !== 'chat' && typeof saveCurrentSessionToStore === 'function') saveCurrentSessionToStore();
         document.querySelectorAll('.nav-left-item').forEach(function(b) { b.classList.remove('active'); });
-        if (view === 'chat' || view === 'group-control') {
+        if (view === 'chat' || view === 'group-control' || view === 'admin-console') {
           document.getElementById('navSkillSub').style.display = 'none';
           el.classList.add('active');
         } else {
@@ -1528,6 +1534,9 @@
         }
         if (view === 'group-control') {
           loadGroupControl();
+        }
+        if (view === 'admin-console') {
+          loadAdminOpsData();
         }
       });
     });
@@ -2714,13 +2723,20 @@
     }
 
     function toggleAdminOpsSection() {
-      var el = document.getElementById('adminOpsSection');
-      if (!el) return;
+      var navEl = document.getElementById('navAdminConsole');
+      var contentEl = document.getElementById('content-admin-console');
+      if (!navEl || !contentEl) return;
       if (isAdminUser()) {
-        el.style.display = 'block';
+        navEl.style.display = '';
         loadAdminOpsData();
       } else {
-        el.style.display = 'none';
+        navEl.style.display = 'none';
+        if (currentView === 'admin-console') {
+          currentView = 'group-control';
+          document.querySelectorAll('.content-block').forEach(function(p) { p.classList.remove('visible'); });
+          var gc = document.getElementById('content-group-control');
+          if (gc) gc.classList.add('visible');
+        }
       }
     }
 
@@ -2784,14 +2800,34 @@
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(x) {
           var list = x.ok && Array.isArray(x.data) ? x.data : [];
-          var el = document.getElementById('adminSkillAssignSelect');
-          if (el) {
-            el.innerHTML = list.filter(function(c) { return !!c.enabled; }).map(function(c) {
-              return '<option value="' + c.capability_id + '">' + escapeHtml((c.capability_id || '') + ' · ' + (c.description || '')) + '</option>';
-            }).join('');
-          }
+          adminCapabilityRegistry = list.slice();
+          renderAdminSkillCapabilityList('');
           return list;
         });
+    }
+
+    function renderAdminSkillCapabilityList(filterText) {
+      var wrap = document.getElementById('adminSkillAssignList');
+      if (!wrap) return;
+      var kw = String(filterText || '').trim().toLowerCase();
+      var rows = (adminCapabilityRegistry || []).filter(function(c) {
+        if (!kw) return true;
+        var text = ((c.capability_id || '') + ' ' + (c.description || '') + ' ' + (c.upstream || '')).toLowerCase();
+        return text.indexOf(kw) >= 0;
+      });
+      if (!rows.length) {
+        wrap.innerHTML = '<div class="meta">未匹配到能力</div>';
+        return;
+      }
+      wrap.innerHTML = rows.map(function(c) {
+        var cid = String(c.capability_id || '');
+        var checked = adminAssignedCapabilityIds.indexOf(cid) >= 0 ? 'checked' : '';
+        var status = c.enabled ? 'enabled' : 'disabled';
+        return '<label style="display:flex;align-items:flex-start;gap:0.45rem;padding:0.35rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">' +
+          '<input type="checkbox" class="admin-skill-cap-item" value="' + escapeAttr(cid) + '" ' + checked + '>' +
+          '<span style="display:block;"><div style="font-size:0.9rem;">' + escapeHtml(cid) + '</div>' +
+          '<div class="meta" style="font-size:0.78rem;">' + escapeHtml((c.description || '-') + ' · ' + (c.upstream || '-') + ' · ' + status) + '</div></span></label>';
+      }).join('');
     }
 
     function syncAdminUserSelectors() {
@@ -2832,11 +2868,11 @@
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(x) {
           if (!x.ok) return;
-          var allowIds = (Array.isArray(x.data) ? x.data : [])
+          adminAssignedCapabilityIds = (Array.isArray(x.data) ? x.data : [])
             .filter(function(p) { return String(p.effect || '') === 'allow' && !!p.enabled; })
             .map(function(p) { return String(p.capability_id || ''); });
-          var sel = document.getElementById('adminSkillAssignSelect');
-          if (sel) Array.from(sel.options || []).forEach(function(o) { o.selected = allowIds.indexOf(String(o.value || '')) >= 0; });
+          var keyword = String((document.getElementById('adminSkillSearchInput') || {}).value || '').trim();
+          renderAdminSkillCapabilityList(keyword);
         });
     }
 
@@ -2998,6 +3034,12 @@
         if (!isNaN(v)) loadAdminSkillForUser(v);
       });
     }
+    var adminSkillSearchInput = document.getElementById('adminSkillSearchInput');
+    if (adminSkillSearchInput) {
+      adminSkillSearchInput.addEventListener('input', function() {
+        renderAdminSkillCapabilityList(adminSkillSearchInput.value || '');
+      });
+    }
     var adminSaveDeviceAssignBtn = document.getElementById('adminSaveDeviceAssignBtn');
     if (adminSaveDeviceAssignBtn) {
       adminSaveDeviceAssignBtn.addEventListener('click', function() {
@@ -3044,10 +3086,7 @@
     if (adminSaveSkillAssignBtn) {
       adminSaveSkillAssignBtn.addEventListener('click', function() {
         var userId = parseInt(String((document.getElementById('adminSkillUserSelect') || {}).value || '').trim(), 10);
-        var skillIds = selectedIntValues(document.getElementById('adminSkillAssignSelect')).map(String);
-        // selectedIntValues 不适用于字符串 capability_id，改为直接读取
-        var sel = document.getElementById('adminSkillAssignSelect');
-        if (sel) skillIds = Array.from(sel.selectedOptions || []).map(function(o) { return String(o.value || '').trim(); }).filter(Boolean);
+        var skillIds = Array.from(document.querySelectorAll('.admin-skill-cap-item:checked')).map(function(o) { return String(o.value || '').trim(); }).filter(Boolean);
         var msgEl = document.getElementById('adminSkillMsg');
         if (!userId) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请选择用户'; } return; }
         fetch(API_BASE + '/capabilities/admin/assign-user', {
@@ -3060,6 +3099,10 @@
             if (!msgEl) return;
             msgEl.className = x.ok ? 'msg ok' : 'msg err';
             msgEl.textContent = x.ok ? ('能力分配已保存，数量=' + ((x.data && x.data.assigned_count) || 0)) : ((x.data && x.data.detail) || '保存失败');
+            if (x.ok) {
+              adminAssignedCapabilityIds = skillIds.slice();
+              renderAdminSkillCapabilityList(String((document.getElementById('adminSkillSearchInput') || {}).value || '').trim());
+            }
           })
           .catch(function(err) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); } });
       });
