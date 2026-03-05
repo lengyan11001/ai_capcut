@@ -121,6 +121,19 @@ docker compose ps        # 查看状态
 
 详见 [docs/MCP_AND_COST.md](docs/MCP_AND_COST.md)：积分单价、套餐建议、固定成本与盈亏平衡估算。
 
+## 群控系统（Reddit POC）
+
+已支持一期群控最小闭环：
+
+- 云端控制面：设备心跳、任务创建/取消、Agent 拉取任务、执行结果与日志回传
+- 本地执行面：`local_agent` 主动连云端，不暴露 ADB 公网端口
+- 自动化驱动：先接入 Reddit POC（Appium + UiAutomator2）
+
+文档见：
+
+- [docs/GROUP_CONTROL.md](docs/GROUP_CONTROL.md)
+- [local_agent/README.md](local_agent/README.md)
+
 ## 能力目录（白名单路由）
 
 平台 MCP 服务支持通过能力目录文件管理可用能力，避免在系统提示词中堆叠大量工具说明。

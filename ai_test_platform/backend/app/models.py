@@ -245,3 +245,120 @@ class ChatTurnLog(Base):
     meta: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
+
+class ControlAgent(Base):
+    """群控执行节点（本地 Agent 实例）。"""
+    __tablename__ = "control_agents"
+    __table_args__ = (UniqueConstraint("agent_key", name="uq_control_agents_agent_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    agent_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    host: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    labels: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="online", nullable=False)  # online|offline|disabled
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class MobileDevice(Base):
+    """群控设备（手机）注册表。"""
+    __tablename__ = "mobile_devices"
+    __table_args__ = (UniqueConstraint("serial", name="uq_mobile_devices_serial"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    serial: Mapped[str] = mapped_column(String(128), nullable=False, index=True)  # 例：192.168.1.93:5555
+    alias: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    platform: Mapped[str] = mapped_column(String(32), default="android", nullable=False)
+    agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("control_agents.id"), nullable=True, index=True)
+    adb_status: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)  # device|offline|unauthorized|unknown
+    appium_status: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    meta: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    account_attrs: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # niche, phase, karma, tags 等，供任务按属性筛选设备
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ControlTask(Base):
+    """群控任务。"""
+    __tablename__ = "control_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String(32), default="reddit", nullable=False)  # reddit|tiktok|...
+    task_type: Mapped[str] = mapped_column(String(64), default="reddit_flow", nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_device_id: Mapped[Optional[int]] = mapped_column(ForeignKey("mobile_devices.id"), nullable=True, index=True)
+    device_filter: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # niche, min_phase, min_karma, tags 等，按账号属性筛选设备
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), default="pending", nullable=False
+    )  # pending|running|success|failed|cancelled|timeout
+    assigned_agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("control_agents.id"), nullable=True, index=True)
+    assigned_device_id: Mapped[Optional[int]] = mapped_column(ForeignKey("mobile_devices.id"), nullable=True, index=True)
+    lease_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    retries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_retries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class TaskExecution(Base):
+    """任务执行记录（一次任务可有多次执行尝试）。"""
+    __tablename__ = "task_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("control_tasks.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("control_agents.id"), nullable=True, index=True)
+    device_id: Mapped[Optional[int]] = mapped_column(ForeignKey("mobile_devices.id"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="running", nullable=False)  # running|success|failed|cancelled
+    step: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    error_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    metrics: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+
+class TaskExecutionLog(Base):
+    """执行过程日志（步骤、截图地址、结构化上下文）。"""
+    __tablename__ = "task_execution_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    execution_id: Mapped[int] = mapped_column(ForeignKey("task_executions.id"), nullable=False, index=True)
+    level: Mapped[str] = mapped_column(String(16), default="info", nullable=False)  # debug|info|warn|error
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    screenshot_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class RedditStrategyConfig(Base):
+    """Reddit 养号/发帖策略（AI 生成或人工配置）。"""
+    __tablename__ = "reddit_strategy_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), default="general", nullable=False)  # fashion|3c|beauty|pet|general
+    config: Mapped[dict] = mapped_column(JSON, nullable=False)  # nurture_phases, post_templates, target_subs 等
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class RiskAnalysisReport(Base):
+    """风控分析报告（AI 生成）。"""
+    __tablename__ = "risk_analysis_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String(32), default="reddit", nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    findings: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+

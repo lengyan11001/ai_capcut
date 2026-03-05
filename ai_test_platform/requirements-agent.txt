@@ -1,0 +1,2 @@
+httpx==0.27.2
+Appium-Python-Client==4.2.1

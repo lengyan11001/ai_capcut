@@ -510,6 +510,7 @@
       <div class="dashboard-layout">
         <nav class="nav-left">
           <div class="nav-left-item active" data-view="chat">智能对话</div>
+          <div class="nav-left-item" data-view="group-control">群控</div>
           <div class="nav-left-item" data-view="skill">能力库</div>
           <div class="nav-left-sub" id="navSkillSub" style="display: none;">
             <div class="nav-left-item" data-view="skill-testAI">testAI</div>
@@ -533,6 +534,65 @@
                 <button type="button" class="btn btn-primary btn-new-session" id="chatNewSessionBtn">新会话</button>
                 <div class="chat-session-list" id="chatSessionList"></div>
               </div>
+            </div>
+          </div>
+          <div id="content-group-control" class="content-block">
+            <div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+                <h3 style="margin:0;">群控管理面板（一期）</h3>
+                <button type="button" id="refreshControlBtn" class="btn btn-ghost btn-sm">刷新</button>
+              </div>
+              <p style="font-size:0.85rem;color:var(--text-muted);margin-top:0.5rem;">查看设备在线状态，创建并追踪 Reddit 任务执行情况。</p>
+            </div>
+            <div class="cards" style="margin-top:1rem;">
+              <div class="card">
+                <div class="card-label">创建任务</div>
+                <form id="controlTaskForm" style="margin-top:0.75rem;">
+                  <label>任务标题</label>
+                  <input type="text" name="title" required placeholder="例如：Reddit 关键词浏览任务">
+                  <label>设备</label>
+                  <select name="target_device_id" id="controlTargetDeviceSelect">
+                    <option value="">自动分配</option>
+                  </select>
+                  <label>设备筛选（可选）</label>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                    <input type="text" name="device_filter_niche" placeholder="niche (fashion/3c/beauty/pet/general)">
+                    <input type="text" name="device_filter_min_phase" placeholder="min_phase (post_ready/phase_2/nurture_phase_1)">
+                    <input type="number" name="device_filter_min_karma" placeholder="min_karma">
+                    <input type="text" name="device_filter_tags" placeholder="tags 逗号分隔">
+                  </div>
+                  <label>关键词（可选）</label>
+                  <input type="text" name="keyword" placeholder="例如：ai automation">
+                  <label>动作</label>
+                  <select name="action">
+                    <option value="browse">browse</option>
+                    <option value="search">search</option>
+                    <option value="upvote">upvote</option>
+                  </select>
+                  <button type="submit" class="btn btn-primary">创建任务</button>
+                </form>
+                <div id="controlTaskMsg" class="msg" style="margin-top:0.5rem;"></div>
+              </div>
+              <div class="card">
+                <div class="card-label">设备状态</div>
+                <div id="controlDevicesList" style="margin-top:0.75rem;"></div>
+              </div>
+            </div>
+            <div class="card" style="margin-top:1rem;">
+              <div class="card-label">AI 能力</div>
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
+                <button type="button" id="btnAnalyzeRisk" class="btn btn-ghost btn-sm">风控分析</button>
+                <button type="button" id="btnGenerateStrategy" class="btn btn-ghost btn-sm">策略生成</button>
+              </div>
+              <div id="controlAiMsg" class="msg" style="margin-top:0.5rem;"></div>
+            </div>
+            <div class="card" style="margin-top:1rem;">
+              <div class="card-label">任务列表</div>
+              <div id="controlTasksList" style="margin-top:0.75rem;"></div>
+            </div>
+            <div class="card" style="margin-top:1rem;">
+              <div class="card-label">任务详情日志</div>
+              <div id="controlTaskDetail" style="margin-top:0.75rem;color:var(--text-muted);">点击任务「详情」查看日志</div>
             </div>
           </div>
           <div id="content-skill-testAI" class="content-block">
@@ -1387,7 +1447,7 @@
         }
         if (currentView === 'chat' && view !== 'chat' && typeof saveCurrentSessionToStore === 'function') saveCurrentSessionToStore();
         document.querySelectorAll('.nav-left-item').forEach(function(b) { b.classList.remove('active'); });
-        if (view === 'chat') {
+        if (view === 'chat' || view === 'group-control') {
           document.getElementById('navSkillSub').style.display = 'none';
           el.classList.add('active');
         } else {
@@ -1407,6 +1467,9 @@
         }
         if (view === 'skill-capability') {
           openCapabilityView(capabilityId);
+        }
+        if (view === 'group-control') {
+          loadGroupControl();
         }
       });
     });
@@ -2443,6 +2506,105 @@
       patchCasesAndRender(next);
     });
 
+    function loadControlDevices() {
+      return fetch(API_BASE + '/group-control/devices', { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          var el = document.getElementById('controlDevicesList');
+          var selectEl = document.getElementById('controlTargetDeviceSelect');
+          if (!el || !selectEl) return list;
+          if (!list.length) {
+            el.innerHTML = '<p class="meta">暂无在线设备，先启动本地 Agent 心跳。</p>';
+            selectEl.innerHTML = '<option value="">自动分配</option>';
+            return list;
+          }
+          el.innerHTML = list.map(function(d) {
+            var meta = (d.alias || d.serial) + ' · ADB:' + (d.adb_status || '-') + ' · Appium:' + (d.appium_status || '-');
+            var attrs = d.account_attrs;
+            if (attrs && typeof attrs === 'object') {
+              meta += ' · ' + (attrs.niche ? 'niche:' + attrs.niche : '') + (attrs.phase ? ' phase:' + attrs.phase : '') + (attrs.karma != null ? ' karma:' + attrs.karma : '');
+            }
+            return '<div class="list-item"><div><div class="title">' + escapeHtml(d.serial || '') + '</div><div class="meta">' + escapeHtml(meta) + '</div></div></div>';
+          }).join('');
+          selectEl.innerHTML = '<option value="">自动分配</option>' + list.map(function(d) {
+            var label = (d.alias ? (d.alias + ' - ') : '') + d.serial;
+            return '<option value="' + d.id + '">' + escapeHtml(label) + '</option>';
+          }).join('');
+          return list;
+        });
+    }
+
+    function loadControlTasks() {
+      return fetch(API_BASE + '/group-control/tasks?limit=100', { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          var el = document.getElementById('controlTasksList');
+          if (!el) return;
+          if (!list.length) { el.innerHTML = '<p class="meta">暂无任务</p>'; return; }
+          el.innerHTML = list.map(function(t) {
+            return '<div class="list-item" data-task-id="' + t.id + '">' +
+              '<div><div class="title">#' + t.id + ' ' + escapeHtml(t.title || '') + '</div><div class="meta">' +
+              '状态: ' + escapeHtml(t.status || '-') + ' · 平台: ' + escapeHtml(t.platform || '-') + ' · 创建: ' +
+              escapeHtml(t.created_at ? new Date(t.created_at).toLocaleString() : '-') +
+              '</div></div>' +
+              '<div class="acts">' +
+              '<button type="button" class="btn btn-ghost btn-sm btn-task-detail">详情</button> ' +
+              ((t.status === 'pending' || t.status === 'running') ? '<button type="button" class="btn btn-ghost btn-sm btn-task-cancel">取消</button>' : '') +
+              '</div></div>';
+          }).join('');
+          el.querySelectorAll('.btn-task-detail').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+              var id = parseInt(btn.closest('.list-item').dataset.taskId, 10);
+              loadControlTaskDetail(id);
+            });
+          });
+          el.querySelectorAll('.btn-task-cancel').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+              var id = parseInt(btn.closest('.list-item').dataset.taskId, 10);
+              fetch(API_BASE + '/group-control/tasks/' + id + '/cancel', { method: 'POST', headers: authHeaders() })
+                .then(function() { loadControlTasks(); })
+                .catch(function() {});
+            });
+          });
+        });
+    }
+
+    function loadControlTaskDetail(taskId) {
+      return fetch(API_BASE + '/group-control/tasks/' + taskId, { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var el = document.getElementById('controlTaskDetail');
+          if (!el) return;
+          if (!x.ok) {
+            el.innerHTML = '<p class="msg err">' + escapeHtml((x.data && x.data.detail) || '加载失败') + '</p>';
+            return;
+          }
+          var task = x.data.task || {};
+          var logs = Array.isArray(x.data.logs) ? x.data.logs : [];
+          var head = '<div class="meta">#' + task.id + ' · ' + escapeHtml(task.status || '-') + '</div>' +
+            '<div style="margin-top:0.35rem;"><strong>' + escapeHtml(task.title || '') + '</strong></div>';
+          if (!logs.length) {
+            el.innerHTML = head + '<p class="meta" style="margin-top:0.5rem;">暂无日志</p>';
+            return;
+          }
+          el.innerHTML = head + logs.map(function(log) {
+            var t = log.created_at ? new Date(log.created_at).toLocaleString() : '-';
+            return '<div class="list-item" style="display:block;margin-top:0.5rem;">' +
+              '<div class="meta">[' + escapeHtml(log.level || 'info') + '] ' + escapeHtml(t) + '</div>' +
+              '<div style="margin-top:0.25rem;">' + escapeHtml(log.message || '') + '</div>' +
+              (log.payload ? '<pre style="margin-top:0.35rem;white-space:pre-wrap;">' + escapeHtml(JSON.stringify(log.payload, null, 2)) + '</pre>' : '') +
+              '</div>';
+          }).join('');
+        });
+    }
+
+    function loadGroupControl() {
+      loadControlDevices();
+      loadControlTasks();
+    }
+
     function loadAccounts() {
       fetch(API_BASE + '/accounts', { headers: authHeaders() })
         .then(function(r) {
@@ -2571,6 +2733,117 @@
           .catch(function() { alert('网络错误'); });
       }
     });
+
+    var refreshControlBtn = document.getElementById('refreshControlBtn');
+    if (refreshControlBtn) {
+      refreshControlBtn.addEventListener('click', function() { loadGroupControl(); });
+    }
+    var btnAnalyzeRisk = document.getElementById('btnAnalyzeRisk');
+    if (btnAnalyzeRisk) {
+      btnAnalyzeRisk.addEventListener('click', function() {
+        var msgEl = document.getElementById('controlAiMsg');
+        if (msgEl) { msgEl.className = 'msg'; msgEl.textContent = '分析中…'; }
+        fetch(API_BASE + '/group-control/analyze', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ platform: 'reddit', days: 7 })
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            if (x.ok) {
+              msgEl.className = 'msg ok';
+              msgEl.textContent = '分析完成，报告ID=' + (x.data && x.data.id) + '。摘要：' + (x.data && x.data.summary ? x.data.summary.substring(0, 120) + '…' : '');
+            } else {
+              msgEl.className = 'msg err';
+              msgEl.textContent = (x.data && x.data.detail) || '分析失败';
+            }
+          })
+          .catch(function(err) {
+            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+          });
+      });
+    }
+    var btnGenerateStrategy = document.getElementById('btnGenerateStrategy');
+    if (btnGenerateStrategy) {
+      btnGenerateStrategy.addEventListener('click', function() {
+        var msgEl = document.getElementById('controlAiMsg');
+        if (msgEl) { msgEl.className = 'msg'; msgEl.textContent = '生成中…'; }
+        fetch(API_BASE + '/group-control/strategies/generate', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ category: 'general', niche: 'general' })
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            if (x.ok) {
+              msgEl.className = 'msg ok';
+              msgEl.textContent = '策略已生成，ID=' + (x.data && x.data.id) + '，名称：' + (x.data && x.data.name || '');
+            } else {
+              msgEl.className = 'msg err';
+              msgEl.textContent = (x.data && x.data.detail) || '生成失败';
+            }
+          })
+          .catch(function(err) {
+            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+          });
+      });
+    }
+    var controlTaskForm = document.getElementById('controlTaskForm');
+    if (controlTaskForm) {
+      controlTaskForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        var fd = new FormData(controlTaskForm);
+        var targetRaw = String(fd.get('target_device_id') || '').trim();
+        var payload = {
+          title: String(fd.get('title') || '').trim(),
+          platform: 'reddit',
+          task_type: 'reddit_flow',
+          payload: {
+            keyword: String(fd.get('keyword') || '').trim(),
+            action: String(fd.get('action') || 'browse').trim()
+          }
+        };
+        if (targetRaw) payload.target_device_id = parseInt(targetRaw, 10);
+        var niche = String(fd.get('device_filter_niche') || '').trim();
+        var minPhase = String(fd.get('device_filter_min_phase') || '').trim();
+        var minKarma = String(fd.get('device_filter_min_karma') || '').trim();
+        var tagsRaw = String(fd.get('device_filter_tags') || '').trim();
+        if (niche || minPhase || minKarma || tagsRaw) {
+          payload.device_filter = {};
+          if (niche) payload.device_filter.niche = niche;
+          if (minPhase) payload.device_filter.min_phase = minPhase;
+          if (minKarma) payload.device_filter.min_karma = parseInt(minKarma, 10);
+          if (tagsRaw) payload.device_filter.tags = tagsRaw.split(',').map(function(t){ return t.trim(); }).filter(Boolean);
+        }
+        fetch(API_BASE + '/group-control/tasks', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify(payload)
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            var msgEl = document.getElementById('controlTaskMsg');
+            if (!msgEl) return;
+            if (x.ok) {
+              msgEl.className = 'msg ok';
+              msgEl.textContent = '任务已创建，ID=' + x.data.id;
+              controlTaskForm.reset();
+              loadControlTasks();
+            } else {
+              msgEl.className = 'msg err';
+              msgEl.textContent = (x.data && x.data.detail) || '创建失败';
+            }
+          })
+          .catch(function(err) {
+            var msgEl = document.getElementById('controlTaskMsg');
+            if (!msgEl) return;
+            msgEl.className = 'msg err';
+            msgEl.textContent = '网络错误: ' + (err.message || '');
+          });
+      });
+    }
 
     function escapeHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
     function escapeAttr(s) { return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }

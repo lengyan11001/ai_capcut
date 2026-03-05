@@ -8,6 +8,9 @@ services:
       - DEBUG=${DEBUG:-false}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}
       - DATABASE_URL=sqlite:////app/data/ai_test_platform.db
+      - CONTROL_AGENT_SECRET=${CONTROL_AGENT_SECRET:-}
+      - CONTROL_TASK_LEASE_SECONDS=${CONTROL_TASK_LEASE_SECONDS:-120}
+      - CONTROL_AGENT_OFFLINE_SECONDS=${CONTROL_AGENT_OFFLINE_SECONDS:-90}
     volumes:
       - app_data:/app/data
 

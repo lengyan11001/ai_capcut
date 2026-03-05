@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     capability_allowlist: str | None = None
     capability_catalog_path: str | None = None
     capability_upstream_urls_json: str | None = None
+    # 群控控制面配置
+    control_agent_secret: str | None = None  # 本地 Agent 注册/拉任务鉴权密钥
+    control_task_lease_seconds: int = 120
+    control_agent_offline_seconds: int = 90
 
     class Config:
         env_file = ".env"

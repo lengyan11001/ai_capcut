@@ -14,6 +14,7 @@ from .api.templates import router as templates_router
 from .api.case_libraries import router as case_libraries_router
 from .api.accounts import router as accounts_router
 from .api.capabilities import router as capabilities_router
+from .api.group_control import router as group_control_router
 from .core.config import settings
 from .db import Base, engine
 from . import models  # noqa: F401
@@ -214,6 +215,36 @@ def _ensure_capability_config_columns():
         pass
 
 
+def _ensure_mobile_device_account_attrs():
+    """为已有数据库补充 mobile_devices.account_attrs 列。"""
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            if "sqlite" in (engine.url.drivername or ""):
+                rp = conn.execute(text("PRAGMA table_info(mobile_devices)"))
+                rows = rp.fetchall()
+                columns = [row[1] for row in rows] if rows else []
+                if "account_attrs" not in columns:
+                    conn.execute(text("ALTER TABLE mobile_devices ADD COLUMN account_attrs JSON"))
+    except Exception:
+        pass
+
+
+def _ensure_control_task_device_filter():
+    """为已有数据库补充 control_tasks.device_filter 列。"""
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            if "sqlite" in (engine.url.drivername or ""):
+                rp = conn.execute(text("PRAGMA table_info(control_tasks)"))
+                rows = rp.fetchall()
+                columns = [row[1] for row in rows] if rows else []
+                if "device_filter" not in columns:
+                    conn.execute(text("ALTER TABLE control_tasks ADD COLUMN device_filter JSON"))
+    except Exception:
+        pass
+
+
 def _backfill_default_capabilities():
     """为既有能力目录补齐默认能力标记。"""
     from .db import SessionLocal
@@ -244,6 +275,8 @@ def create_app() -> FastAPI:
     _ensure_case_generate_record_credits_reserved()
     _ensure_capability_call_log_columns()
     _ensure_capability_config_columns()
+    _ensure_mobile_device_account_attrs()
+    _ensure_control_task_device_filter()
     _seed_model_pricing()
     _seed_capability_catalog()
     _backfill_default_capabilities()
@@ -281,6 +314,7 @@ def create_app() -> FastAPI:
     app.include_router(case_libraries_router, prefix="")
     app.include_router(accounts_router, prefix="")
     app.include_router(capabilities_router, prefix="")
+    app.include_router(group_control_router, prefix="")
     app.include_router(chat_router, prefix="")
     app.include_router(api_test_router, prefix="")
 
