@@ -904,10 +904,24 @@ def _resolve_device_account_id(db: Session, current_user: User, device_id: int, 
     return int(row.id)
 
 
+def _server_target_karma(db: Session, device_id: int, account_id: int) -> int:
+    dev = db.query(MobileDevice).filter(MobileDevice.id == device_id).first()
+    acc = db.query(RedditAccountAsset).filter(RedditAccountAsset.id == account_id).first()
+    attrs = dev.account_attrs if dev and isinstance(dev.account_attrs, dict) else {}
+    a_attrs = acc.account_attrs if acc and isinstance(acc.account_attrs, dict) else {}
+    current_karma = int(a_attrs.get("karma") or attrs.get("karma") or 0)
+    health = str(a_attrs.get("account_health") or attrs.get("account_health") or "healthy").strip().lower()
+    if health in {"restricted", "warning"}:
+        return 20
+    if current_karma >= 20:
+        return 40
+    return 30
+
+
 class NurtureBindingUpsertIn(BaseModel):
     device_id: int
     reddit_account_id: Optional[int] = None
-    target_karma: int = Field(default=30, ge=1, le=100000)
+    target_karma: Optional[int] = Field(default=None, ge=1, le=100000)
     phase: Optional[str] = None
     automation_mode: Optional[str] = None
 
@@ -918,6 +932,15 @@ class NurturePlanGenerateIn(BaseModel):
     risk_preference: str = Field(default="conservative", max_length=32)  # conservative|balanced|aggressive
     start_date: Optional[str] = None  # YYYY-MM-DD, UTC
     name: Optional[str] = Field(default=None, max_length=128)
+
+
+class NurturePlanGenerateByDeviceIn(BaseModel):
+    device_id: int
+    objective: str = Field(default="safe_growth", max_length=64)
+    risk_preference: str = Field(default="conservative", max_length=32)
+    start_date: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=128)
+    auto_approve: bool = True
 
 
 @router.get("/nurture/bindings", summary="养号绑定列表（用户态）")
@@ -971,6 +994,7 @@ def upsert_nurture_binding(
     if payload.device_id not in allowed_devices:
         raise HTTPException(status_code=403, detail="device not allowed")
     resolved_account_id = _resolve_device_account_id(db, current_user, payload.device_id, payload.reddit_account_id)
+    resolved_target_karma = int(payload.target_karma) if payload.target_karma is not None else _server_target_karma(db, payload.device_id, resolved_account_id)
     allowed_accounts = _allowed_account_ids_for_user(db, current_user)
     if resolved_account_id not in allowed_accounts and not _is_admin(current_user):
         raise HTTPException(status_code=403, detail="reddit account not allowed")
@@ -988,7 +1012,7 @@ def upsert_nurture_binding(
             user_id=current_user.id,
             device_id=payload.device_id,
             reddit_account_id=resolved_account_id,
-            target_karma=payload.target_karma,
+            target_karma=resolved_target_karma,
             phase=(payload.phase or "warmup").strip() or "warmup",
             automation_mode=(payload.automation_mode or "normal").strip() or "normal",
             status="active",
@@ -998,7 +1022,7 @@ def upsert_nurture_binding(
         db.refresh(row)
         return {"id": row.id, "detail": "created"}
     row.reddit_account_id = resolved_account_id
-    row.target_karma = payload.target_karma
+    row.target_karma = resolved_target_karma
     if payload.phase is not None:
         row.phase = (payload.phase or "").strip() or row.phase
     if payload.automation_mode is not None:
@@ -1016,9 +1040,29 @@ def generate_nurture_plan(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    return _generate_nurture_plan_for_binding(
+        db=db,
+        current_user=current_user,
+        binding_id=payload.binding_id,
+        objective=(payload.objective or "safe_growth").strip() or "safe_growth",
+        risk_preference=(payload.risk_preference or "conservative").strip() or "conservative",
+        start_date=payload.start_date,
+        name=payload.name,
+    )
+
+
+def _generate_nurture_plan_for_binding(
+    db: Session,
+    current_user: User,
+    binding_id: int,
+    objective: str,
+    risk_preference: str,
+    start_date: Optional[str],
+    name: Optional[str],
+) -> dict[str, Any]:
     binding = (
         db.query(NurtureBinding)
-        .filter(NurtureBinding.id == payload.binding_id, NurtureBinding.user_id == current_user.id)
+        .filter(NurtureBinding.id == binding_id, NurtureBinding.user_id == current_user.id)
         .first()
     )
     if not binding:
@@ -1026,8 +1070,8 @@ def generate_nurture_plan(
     plan_json = _call_openclaw_for_plan(
         current_user,
         binding,
-        objective=(payload.objective or "safe_growth").strip() or "safe_growth",
-        risk_preference=(payload.risk_preference or "conservative").strip() or "conservative",
+        objective=objective,
+        risk_preference=risk_preference,
     )
     if not isinstance(plan_json, dict):
         plan_json = _build_fallback_plan(30)
@@ -1039,7 +1083,7 @@ def generate_nurture_plan(
     schedule = plan_json.get("schedule") if isinstance(plan_json, dict) else None
     if not isinstance(schedule, list) or not schedule:
         raise HTTPException(status_code=400, detail="invalid plan schedule")
-    plan_name = (payload.name or f"nurture-plan-binding-{binding.id}").strip() or f"nurture-plan-binding-{binding.id}"
+    plan_name = (name or f"nurture-plan-binding-{binding.id}").strip() or f"nurture-plan-binding-{binding.id}"
     row = NurturePlan(
         user_id=current_user.id,
         binding_id=binding.id,
@@ -1059,9 +1103,9 @@ def generate_nurture_plan(
     # 先清理该计划残留条目（理论首次无残留）
     db.query(NurtureScheduleItem).filter(NurtureScheduleItem.plan_id == row.id).delete()
     start_dt = None
-    if payload.start_date:
+    if start_date:
         try:
-            start_dt = datetime.strptime(payload.start_date.strip(), "%Y-%m-%d")
+            start_dt = datetime.strptime(start_date.strip(), "%Y-%m-%d")
         except Exception:
             raise HTTPException(status_code=400, detail="start_date format must be YYYY-MM-DD")
     if not start_dt:
@@ -1102,6 +1146,44 @@ def generate_nurture_plan(
         "summary": row.summary,
         "created_schedule_count": created,
     }
+
+
+@router.post("/nurture/plans/generate-by-device", summary="按设备直接创建养号计划（用户态）")
+def generate_nurture_plan_by_device(
+    payload: NurturePlanGenerateByDeviceIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    bind_ret = upsert_nurture_binding(
+        NurtureBindingUpsertIn(
+            device_id=payload.device_id,
+            reddit_account_id=None,
+            target_karma=None,
+            phase=None,
+            automation_mode=None,
+        ),
+        db=db,
+        current_user=current_user,
+    )
+    binding_id = int(bind_ret.get("id") or 0)
+    if not binding_id:
+        raise HTTPException(status_code=500, detail="failed to ensure binding")
+    result = _generate_nurture_plan_for_binding(
+        db=db,
+        current_user=current_user,
+        binding_id=binding_id,
+        objective=(payload.objective or "safe_growth").strip() or "safe_growth",
+        risk_preference=(payload.risk_preference or "conservative").strip() or "conservative",
+        start_date=payload.start_date,
+        name=payload.name,
+    )
+    if payload.auto_approve and result.get("id"):
+        _ = approve_nurture_plan(plan_id=int(result["id"]), db=db, current_user=current_user)
+        result["status"] = "approved"
+        result["auto_approved"] = True
+    else:
+        result["auto_approved"] = False
+    return result
 
 
 @router.get("/nurture/plans", summary="养号计划列表（用户态）")

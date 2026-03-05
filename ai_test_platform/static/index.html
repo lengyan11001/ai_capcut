@@ -578,7 +578,10 @@
             <div class="group-control-grid">
               <div class="card">
                 <div class="card-label">创建任务</div>
-                <form id="controlTaskForm" class="group-control-form" style="margin-top:0.75rem;">
+                <div style="margin-top:0.75rem;">
+                  <button type="button" id="openControlTaskModalBtn" class="btn btn-primary btn-sm">手动新增任务</button>
+                </div>
+                <form id="controlTaskForm" class="group-control-form" style="margin-top:0.75rem;display:none;">
                   <label>任务标题</label>
                   <input type="text" name="title" required placeholder="例如：Reddit 关键词浏览任务">
                   <label>设备</label>
@@ -619,6 +622,7 @@
               <div class="card">
                 <div class="card-label">设备状态</div>
                 <div id="controlDevicesList" style="margin-top:0.75rem;"></div>
+                <div id="controlDevicesPager" style="margin-top:0.5rem;display:flex;gap:0.4rem;align-items:center;justify-content:flex-end;"></div>
               </div>
             </div>
             <div class="card" style="margin-top:1rem;">
@@ -638,20 +642,10 @@
               <div id="controlTaskDetail" style="margin-top:0.75rem;color:var(--text-muted);">点击任务「详情」查看日志</div>
             </div>
             <div class="card" style="margin-top:1rem;">
-              <div class="card-label">云端养号计划（设备+账号绑定）</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-top:0.5rem;">
-                <select id="nurtureBindDeviceSelect"></select>
-                <input type="text" value="账号由Agent自动上报" disabled>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr auto auto;gap:0.5rem;margin-top:0.5rem;align-items:center;">
-                <input type="number" id="nurtureTargetKarmaInput" min="1" value="30" placeholder="目标 karma">
-                <button type="button" id="nurtureBindSaveBtn" class="btn btn-ghost btn-sm">保存绑定</button>
+              <div class="card-label">云端养号计划（按设备自动）</div>
+              <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;justify-content:space-between;flex-wrap:wrap;">
+                <div class="meta">在设备列表点击“创建养号计划”，服务器会自动解析账号并制定周期与目标。</div>
                 <button type="button" id="nurtureRefreshBtn" class="btn btn-ghost btn-sm">刷新</button>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr auto auto;gap:0.5rem;margin-top:0.5rem;align-items:center;">
-                <select id="nurtureBindingSelect"></select>
-                <button type="button" id="nurtureGeneratePlanBtn" class="btn btn-primary btn-sm">云端生成计划</button>
-                <button type="button" id="nurtureApprovePlanBtn" class="btn btn-ghost btn-sm">确认计划并执行</button>
               </div>
               <div id="nurtureMsg" class="msg" style="margin-top:0.5rem;"></div>
               <div id="nurtureStrategySummary" class="meta" style="margin-top:0.4rem;"></div>
@@ -907,6 +901,44 @@
           <button type="button" id="confirmGenerateCases" class="btn btn-primary">生成</button>
           <button type="button" id="cancelGenerateCases" class="btn btn-ghost">取消</button>
         </div>
+      </div>
+    </div>
+    <div id="modalControlTask" class="modal-mask">
+      <div class="modal" style="max-width: 620px;">
+        <h4>手动新增任务</h4>
+        <form id="controlTaskModalForm" class="group-control-form" style="margin-top:0.5rem;">
+          <label>任务标题</label>
+          <input type="text" name="title" required placeholder="例如：Reddit 关键词浏览任务">
+          <label>设备</label>
+          <select name="target_device_ids" id="controlTargetDeviceSelectModal" multiple size="6"></select>
+          <div class="meta" style="margin-top:0.25rem;">可多选；不选则自动分配。</div>
+          <label>分组（可选）</label>
+          <select name="target_group_id" id="controlTargetGroupSelectModal">
+            <option value="">不使用分组</option>
+          </select>
+          <label>设备筛选（可选）</label>
+          <div class="device-filter-grid">
+            <input type="text" name="device_filter_niche" placeholder="niche (fashion/3c/beauty/pet/general)">
+            <input type="text" name="device_filter_min_phase" placeholder="min_phase (post_ready/phase_2/nurture_phase_1)">
+            <input type="number" name="device_filter_min_karma" placeholder="min_karma">
+            <input type="text" name="device_filter_tags" placeholder="tags 逗号分隔">
+          </div>
+          <label>关键词（可选）</label>
+          <input type="text" name="keyword" placeholder="例如：ai automation">
+          <label>动作</label>
+          <select name="action">
+            <option value="browse">browse</option>
+            <option value="search">search</option>
+            <option value="upvote">upvote</option>
+          </select>
+          <label>其他参数（JSON，可选）</label>
+          <textarea name="payload_extra_json" rows="4" placeholder='例如：{"duration_min":12,"max_actions":25,"upvote_ratio":0.05}'></textarea>
+          <div class="btns">
+            <button type="submit" class="btn btn-primary">创建任务</button>
+            <button type="button" class="btn btn-ghost" id="closeControlTaskModalBtn">关闭</button>
+          </div>
+        </form>
+        <div id="controlTaskModalMsg" class="msg" style="margin-top:0.5rem;"></div>
       </div>
     </div>
     <div id="modalSelectAccount" class="modal-mask">
@@ -2653,6 +2685,78 @@
       patchCasesAndRender(next);
     });
 
+    var controlDeviceListCache = [];
+    var controlDevicePage = 1;
+    var controlDevicePageSize = 12;
+
+    function renderControlDevicesPage() {
+      var list = controlDeviceListCache || [];
+      var el = document.getElementById('controlDevicesList');
+      var pagerEl = document.getElementById('controlDevicesPager');
+      if (!el) return;
+      if (!list.length) {
+        el.innerHTML = '<p class="meta">暂无在线设备，先启动本地 Agent 心跳。</p>';
+        if (pagerEl) pagerEl.innerHTML = '';
+        return;
+      }
+      var total = list.length;
+      var pageCount = Math.max(1, Math.ceil(total / controlDevicePageSize));
+      if (controlDevicePage > pageCount) controlDevicePage = pageCount;
+      if (controlDevicePage < 1) controlDevicePage = 1;
+      var start = (controlDevicePage - 1) * controlDevicePageSize;
+      var rows = list.slice(start, start + controlDevicePageSize);
+      el.innerHTML = rows.map(function(d) {
+        var deviceLabel = d.device_label || d.alias || d.serial;
+        var meta = deviceLabel + ' · ADB:' + (d.adb_status || '-') + ' · Appium:' + (d.appium_status || '-');
+        var attrs = d.account_attrs;
+        if (attrs && typeof attrs === 'object') {
+          meta += ' · ' + (attrs.niche ? 'niche:' + attrs.niche : '') + (attrs.phase ? ' phase:' + attrs.phase : '') + (attrs.karma != null ? ' karma:' + attrs.karma : '');
+          if (Array.isArray(attrs.tags) && attrs.tags.length) meta += ' tags:' + attrs.tags.join('/');
+        }
+        if (d.model || d.brand) meta += ' · ' + [d.brand, d.model].filter(Boolean).join(' ');
+        return '<div class="list-item"><div><div class="title">' + escapeHtml(deviceLabel || '') + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts"><button type="button" class="btn btn-ghost btn-sm btn-device-nurture-plan" data-device-id="' + d.id + '">创建养号计划</button></div></div>';
+      }).join('');
+      if (pagerEl) {
+        pagerEl.innerHTML = '<button type="button" class="btn btn-ghost btn-sm" id="controlDevicesPrevBtn">上一页</button>' +
+          '<span class="meta">第 ' + controlDevicePage + ' / ' + pageCount + ' 页（共' + total + '台）</span>' +
+          '<button type="button" class="btn btn-ghost btn-sm" id="controlDevicesNextBtn">下一页</button>';
+        var prev = document.getElementById('controlDevicesPrevBtn');
+        var next = document.getElementById('controlDevicesNextBtn');
+        if (prev) prev.disabled = controlDevicePage <= 1;
+        if (next) next.disabled = controlDevicePage >= pageCount;
+        if (prev) prev.addEventListener('click', function() { controlDevicePage -= 1; renderControlDevicesPage(); });
+        if (next) next.addEventListener('click', function() { controlDevicePage += 1; renderControlDevicesPage(); });
+      }
+      el.querySelectorAll('.btn-device-nurture-plan').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var deviceId = parseInt(String(btn.getAttribute('data-device-id') || '').trim(), 10);
+          if (!deviceId) return;
+          var msgEl = document.getElementById('nurtureMsg');
+          fetch(API_BASE + '/group-control/nurture/plans/generate-by-device', {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify({ device_id: deviceId, auto_approve: true })
+          })
+            .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+            .then(function(x) {
+              if (!msgEl) return;
+              if (x.ok) {
+                msgEl.className = 'msg ok';
+                msgEl.textContent = '设备#' + deviceId + ' 计划已创建并执行，计划ID=' + (x.data && x.data.id);
+                loadNurturePanel();
+                loadControlTasks();
+              } else {
+                msgEl.className = 'msg err';
+                msgEl.textContent = (x.data && x.data.detail) || '创建养号计划失败';
+              }
+            })
+            .catch(function(err) {
+              if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+            });
+        });
+      });
+    }
+
     function loadControlDevices() {
       return fetch(API_BASE + '/group-control/devices', { headers: authHeaders() })
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
@@ -2666,30 +2770,20 @@
             if (va !== vb) return va - vb;
             return String(a.device_label || a.alias || '').localeCompare(String(b.device_label || b.alias || ''));
           });
-          var el = document.getElementById('controlDevicesList');
+          controlDeviceListCache = list.slice();
           var selectEl = document.getElementById('controlTargetDeviceSelect');
-          if (!el || !selectEl) return list;
-          if (!list.length) {
-            el.innerHTML = '<p class="meta">暂无在线设备，先启动本地 Agent 心跳。</p>';
-            selectEl.innerHTML = '';
-            return list;
-          }
-          el.innerHTML = list.map(function(d) {
-            var deviceLabel = d.device_label || d.alias || d.serial;
-            var meta = deviceLabel + ' · ADB:' + (d.adb_status || '-') + ' · Appium:' + (d.appium_status || '-');
-            var attrs = d.account_attrs;
-            if (attrs && typeof attrs === 'object') {
-              meta += ' · ' + (attrs.niche ? 'niche:' + attrs.niche : '') + (attrs.phase ? ' phase:' + attrs.phase : '') + (attrs.karma != null ? ' karma:' + attrs.karma : '');
-              if (Array.isArray(attrs.tags) && attrs.tags.length) meta += ' tags:' + attrs.tags.join('/');
-            }
-            if (d.model || d.brand) meta += ' · ' + [d.brand, d.model].filter(Boolean).join(' ');
-            return '<div class="list-item"><div><div class="title">' + escapeHtml(deviceLabel || '') + '</div><div class="meta">' + escapeHtml(meta) + '</div></div></div>';
-          }).join('');
-          selectEl.innerHTML = list.map(function(d) {
+          var selectModalEl = document.getElementById('controlTargetDeviceSelectModal');
+          if (selectEl) selectEl.innerHTML = list.map(function(d) {
             var deviceLabel = d.device_label || d.alias || d.serial;
             var label = deviceLabel + (d.model ? (' [' + d.model + ']') : '');
             return '<option value="' + d.id + '">' + escapeHtml(label) + '</option>';
           }).join('');
+          if (selectModalEl) selectModalEl.innerHTML = list.map(function(d) {
+            var deviceLabel = d.device_label || d.alias || d.serial;
+            var label = deviceLabel + (d.model ? (' [' + d.model + ']') : '');
+            return '<option value="' + d.id + '">' + escapeHtml(label) + '</option>';
+          }).join('');
+          renderControlDevicesPage();
           return list;
         });
     }
@@ -2700,12 +2794,19 @@
         .then(function(x) {
           var list = x.ok && Array.isArray(x.data) ? x.data : [];
           var selectEl = document.getElementById('controlTargetGroupSelect');
-          if (!selectEl) return list;
-          selectEl.innerHTML = '<option value="">不使用分组</option>' + list.map(function(g) {
+          var modalSelectEl = document.getElementById('controlTargetGroupSelectModal');
+          var html = '<option value="">不使用分组</option>' + list.map(function(g) {
             var label = g.name + ' (设备' + ((g.device_ids || []).length) + ')';
             return '<option value="' + g.id + '">' + escapeHtml(label) + '</option>';
           }).join('');
-          selectEl.dataset.groupMap = JSON.stringify(list || []);
+          if (selectEl) {
+            selectEl.innerHTML = html;
+            selectEl.dataset.groupMap = JSON.stringify(list || []);
+          }
+          if (modalSelectEl) {
+            modalSelectEl.innerHTML = html;
+            modalSelectEl.dataset.groupMap = JSON.stringify(list || []);
+          }
           return list;
         });
     }
@@ -2873,26 +2974,12 @@
         });
     }
 
-    function renderNurtureBindingSelect() {
-      var sel = document.getElementById('nurtureBindingSelect');
-      if (!sel) return null;
-      sel.innerHTML = (nurtureBindingsCache || []).map(function(b) {
-        var label = (b.device_label || ('设备#' + b.device_id)) + ' · ' + (b.reddit_username || ('账号#' + b.reddit_account_id));
-        return '<option value="' + b.id + '">' + escapeHtml(label) + '</option>';
-      }).join('');
-      return sel.value ? parseInt(sel.value, 10) : (nurtureBindingsCache[0] ? nurtureBindingsCache[0].id : null);
-    }
-
     function loadNurturePanel() {
-      var deviceSel = document.getElementById('controlTargetDeviceSelect');
-      var bindDeviceSel = document.getElementById('nurtureBindDeviceSelect');
-      if (bindDeviceSel && deviceSel) bindDeviceSel.innerHTML = deviceSel.innerHTML;
       return loadNurtureBindings().then(function() {
-        var bindingId = renderNurtureBindingSelect();
         return Promise.all([
-          loadNurturePlans(bindingId || undefined),
+          loadNurturePlans(),
           loadNurtureProgress(),
-          loadNurtureSchedule(bindingId || undefined),
+          loadNurtureSchedule(),
           loadNurtureStrategy()
         ]);
       });
@@ -3249,116 +3336,29 @@
     if (refreshControlBtn) {
       refreshControlBtn.addEventListener('click', function() { loadGroupControl(); });
     }
+    var openControlTaskModalBtn = document.getElementById('openControlTaskModalBtn');
+    if (openControlTaskModalBtn) {
+      openControlTaskModalBtn.addEventListener('click', function() {
+        var modal = document.getElementById('modalControlTask');
+        if (modal) modal.classList.add('visible');
+      });
+    }
+    var closeControlTaskModalBtn = document.getElementById('closeControlTaskModalBtn');
+    if (closeControlTaskModalBtn) {
+      closeControlTaskModalBtn.addEventListener('click', function() {
+        var modal = document.getElementById('modalControlTask');
+        if (modal) modal.classList.remove('visible');
+      });
+    }
+    var modalControlTask = document.getElementById('modalControlTask');
+    if (modalControlTask) {
+      modalControlTask.addEventListener('click', function(e) {
+        if (e.target === modalControlTask) modalControlTask.classList.remove('visible');
+      });
+    }
     var nurtureRefreshBtn = document.getElementById('nurtureRefreshBtn');
     if (nurtureRefreshBtn) {
       nurtureRefreshBtn.addEventListener('click', function() { loadNurturePanel(); });
-    }
-    var nurtureBindingSelect = document.getElementById('nurtureBindingSelect');
-    if (nurtureBindingSelect) {
-      nurtureBindingSelect.addEventListener('change', function() {
-        var bindingId = parseInt(String(nurtureBindingSelect.value || '').trim(), 10);
-        if (!isNaN(bindingId)) {
-          loadNurturePlans(bindingId);
-          loadNurtureSchedule(bindingId);
-        }
-      });
-    }
-    var nurtureBindSaveBtn = document.getElementById('nurtureBindSaveBtn');
-    if (nurtureBindSaveBtn) {
-      nurtureBindSaveBtn.addEventListener('click', function() {
-        var msgEl = document.getElementById('nurtureMsg');
-        var devId = parseInt(String((document.getElementById('nurtureBindDeviceSelect') || {}).value || '').trim(), 10);
-        var karma = parseInt(String((document.getElementById('nurtureTargetKarmaInput') || {}).value || '30').trim(), 10);
-        if (!devId) {
-          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请先选择设备'; }
-          return;
-        }
-        fetch(API_BASE + '/group-control/nurture/bindings', {
-          method: 'POST',
-          headers: authHeaders(),
-          body: JSON.stringify({ device_id: devId, target_karma: isNaN(karma) ? 30 : karma })
-        })
-          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-          .then(function(x) {
-            if (!msgEl) return;
-            if (x.ok) {
-              msgEl.className = 'msg ok';
-              msgEl.textContent = '绑定已保存';
-              loadNurturePanel();
-            } else {
-              msgEl.className = 'msg err';
-              msgEl.textContent = (x.data && x.data.detail) || '保存绑定失败';
-            }
-          })
-          .catch(function(err) {
-            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
-          });
-      });
-    }
-    var nurtureGeneratePlanBtn = document.getElementById('nurtureGeneratePlanBtn');
-    if (nurtureGeneratePlanBtn) {
-      nurtureGeneratePlanBtn.addEventListener('click', function() {
-        var msgEl = document.getElementById('nurtureMsg');
-        var bindingId = parseInt(String((document.getElementById('nurtureBindingSelect') || {}).value || '').trim(), 10);
-        if (!bindingId) {
-          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请先选择绑定'; }
-          return;
-        }
-        fetch(API_BASE + '/group-control/nurture/plans/generate', {
-          method: 'POST',
-          headers: authHeaders(),
-          body: JSON.stringify({ binding_id: bindingId, objective: 'safe_growth', risk_preference: 'conservative' })
-        })
-          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-          .then(function(x) {
-            if (!msgEl) return;
-            if (x.ok) {
-              msgEl.className = 'msg ok';
-              msgEl.textContent = '计划草案已生成，计划ID=' + (x.data && x.data.id) + '，任务数=' + ((x.data && x.data.created_schedule_count) || 0) + '，周期=' + ((x.data && x.data.plan_horizon_days) || '-') + '天';
-              loadNurturePlans(bindingId);
-              loadNurtureSchedule(bindingId);
-            } else {
-              msgEl.className = 'msg err';
-              msgEl.textContent = (x.data && x.data.detail) || '生成计划失败';
-            }
-          })
-          .catch(function(err) {
-            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
-          });
-      });
-    }
-    var nurtureApprovePlanBtn = document.getElementById('nurtureApprovePlanBtn');
-    if (nurtureApprovePlanBtn) {
-      nurtureApprovePlanBtn.addEventListener('click', function() {
-        var msgEl = document.getElementById('nurtureMsg');
-        var bindingId = parseInt(String((document.getElementById('nurtureBindingSelect') || {}).value || '').trim(), 10);
-        var plans = (nurturePlansCache || []).filter(function(p) { return !bindingId || p.binding_id === bindingId; });
-        if (!plans.length) {
-          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '该绑定暂无计划，请先生成'; }
-          return;
-        }
-        var draft = plans.find(function(p) { return p.status === 'draft'; }) || plans[0];
-        fetch(API_BASE + '/group-control/nurture/plans/' + draft.id + '/approve', {
-          method: 'POST',
-          headers: authHeaders()
-        })
-          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-          .then(function(x) {
-            if (!msgEl) return;
-            if (x.ok) {
-              msgEl.className = 'msg ok';
-              msgEl.textContent = '计划已确认并开始自动执行，立即派发=' + ((x.data && x.data.dispatched_now) || 0);
-              loadNurturePanel();
-              loadControlTasks();
-            } else {
-              msgEl.className = 'msg err';
-              msgEl.textContent = (x.data && x.data.detail) || '确认计划失败';
-            }
-          })
-          .catch(function(err) {
-            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
-          });
-      });
     }
     var refreshAdminOpsBtn = document.getElementById('refreshAdminOpsBtn');
     if (refreshAdminOpsBtn) {
@@ -3766,13 +3766,31 @@
         }
       });
     }
-    var controlTaskForm = document.getElementById('controlTaskForm');
-    if (controlTaskForm) {
-      controlTaskForm.addEventListener('submit', function(e) {
+    var controlTargetGroupSelectModal = document.getElementById('controlTargetGroupSelectModal');
+    if (controlTargetGroupSelectModal) {
+      controlTargetGroupSelectModal.addEventListener('change', function() {
+        var gid = parseInt(String(controlTargetGroupSelectModal.value || '').trim(), 10);
+        if (!gid) return;
+        var gMap = [];
+        try { gMap = JSON.parse(controlTargetGroupSelectModal.dataset.groupMap || '[]'); } catch (e) {}
+        var current = (gMap || []).find(function(g){ return g.id === gid; }) || null;
+        if (!current) return;
+        var deviceSel = document.getElementById('controlTargetDeviceSelectModal');
+        if (deviceSel) {
+          Array.from(deviceSel.options || []).forEach(function(opt){
+            opt.selected = (current.device_ids || []).indexOf(parseInt(opt.value, 10)) >= 0;
+          });
+        }
+      });
+    }
+    function submitControlTask(formEl, msgElId, closeModalAfterSuccess) {
+      if (!formEl) return;
+      formEl.addEventListener('submit', function(e) {
         e.preventDefault();
-        var fd = new FormData(controlTaskForm);
+        var fd = new FormData(formEl);
         var groupRaw = String(fd.get('target_group_id') || '').trim();
-        var deviceSel = document.getElementById('controlTargetDeviceSelect');
+        var isModal = formEl.id === 'controlTaskModalForm';
+        var deviceSel = document.getElementById(isModal ? 'controlTargetDeviceSelectModal' : 'controlTargetDeviceSelect');
         var targetDeviceIds = deviceSel ? Array.from(deviceSel.selectedOptions || []).map(function(o){ return parseInt(o.value, 10); }).filter(function(x){ return !isNaN(x); }) : [];
         var payload = {
           title: String(fd.get('title') || '').trim(),
@@ -3820,28 +3838,36 @@
         })
           .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
           .then(function(x) {
-            var msgEl = document.getElementById('controlTaskMsg');
+            var msgEl = document.getElementById(msgElId);
             if (!msgEl) return;
             if (x.ok) {
               msgEl.className = 'msg ok';
               var count = (x.data && x.data.created_count) || 1;
               msgEl.textContent = '任务已创建，数量=' + count + '，首个ID=' + (x.data && x.data.id);
-              controlTaskForm.reset();
+              formEl.reset();
               loadDispatchGroups();
               loadControlTasks();
+              if (closeModalAfterSuccess) {
+                var modal = document.getElementById('modalControlTask');
+                if (modal) modal.classList.remove('visible');
+              }
             } else {
               msgEl.className = 'msg err';
               msgEl.textContent = (x.data && x.data.detail) || '创建失败';
             }
           })
           .catch(function(err) {
-            var msgEl = document.getElementById('controlTaskMsg');
+            var msgEl = document.getElementById(msgElId);
             if (!msgEl) return;
             msgEl.className = 'msg err';
             msgEl.textContent = '网络错误: ' + (err.message || '');
           });
       });
     }
+    var controlTaskForm = document.getElementById('controlTaskForm');
+    submitControlTask(controlTaskForm, 'controlTaskMsg', false);
+    var controlTaskModalForm = document.getElementById('controlTaskModalForm');
+    submitControlTask(controlTaskModalForm, 'controlTaskModalMsg', true);
 
     function escapeHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
     function escapeAttr(s) { return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
