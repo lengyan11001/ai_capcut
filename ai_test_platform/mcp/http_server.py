@@ -34,6 +34,7 @@ from starlette.routing import Route
 
 BASE_URL = os.environ.get("AI_TEST_PLATFORM_BASE_URL", "http://localhost:8000").rstrip("/")
 AI_TEST_PLATFORM_ADMIN_TOKEN = os.environ.get("AI_TEST_PLATFORM_ADMIN_TOKEN", "").strip()
+AI_TEST_PLATFORM_X_ADMIN_TOKEN = os.environ.get("AI_TEST_PLATFORM_X_ADMIN_TOKEN", "").strip()
 CAPABILITY_SUTUI_MCP_URL = os.environ.get("CAPABILITY_SUTUI_MCP_URL", "").strip()
 _allowlist_raw = os.environ.get("CAPABILITY_ALLOWLIST", "").strip()
 CAPABILITY_ALLOWLIST = {x.strip() for x in _allowlist_raw.split(",") if x.strip()}
@@ -224,22 +225,39 @@ async def _fetch_backend_capabilities_by_user_id(user_id: int) -> Optional[Dict[
     依赖 AI_TEST_PLATFORM_ADMIN_TOKEN（可回退 AI_TEST_PLATFORM_TOKEN）。
     """
     admin_token = AI_TEST_PLATFORM_ADMIN_TOKEN or (os.environ.get("AI_TEST_PLATFORM_TOKEN") or "").strip()
-    if not admin_token:
-        return None
+    x_admin_token = AI_TEST_PLATFORM_X_ADMIN_TOKEN or ""
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            r_registry = await client.get(
-                f"{BASE_URL}/capabilities/admin/registry",
-                headers=_backend_headers(admin_token),
-            )
-            r_policies = await client.get(
-                f"{BASE_URL}/capabilities/admin/policies?user_id={int(user_id)}",
-                headers=_backend_headers(admin_token),
-            )
-        if r_registry.status_code != 200 or r_policies.status_code != 200:
+        registry = None
+        policies = None
+
+        # 优先使用固定管理密钥（X-Admin-Token），避免 Bearer JWT 过期导致能力列表为空。
+        if x_admin_token:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                h = {"Content-Type": "application/json", "X-Admin-Token": x_admin_token}
+                r_registry = await client.get(f"{BASE_URL}/capabilities/registry", headers=h)
+                r_policies = await client.get(f"{BASE_URL}/capabilities/policies", headers=h)
+            if r_registry.status_code == 200 and r_policies.status_code == 200:
+                registry = r_registry.json()
+                policies = r_policies.json()
+
+        # 次选 Bearer 管理员 token（兼容旧配置）。
+        if (registry is None or policies is None) and admin_token:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                r_registry = await client.get(
+                    f"{BASE_URL}/capabilities/admin/registry",
+                    headers=_backend_headers(admin_token),
+                )
+                r_policies = await client.get(
+                    f"{BASE_URL}/capabilities/admin/policies?user_id={int(user_id)}",
+                    headers=_backend_headers(admin_token),
+                )
+            if r_registry.status_code == 200 and r_policies.status_code == 200:
+                registry = r_registry.json()
+                policies = r_policies.json()
+
+        if registry is None or policies is None:
             return None
-        registry = r_registry.json()
-        policies = r_policies.json()
+
         if not isinstance(registry, list) or not isinstance(policies, list):
             return None
 
