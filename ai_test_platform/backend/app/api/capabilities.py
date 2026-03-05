@@ -15,6 +15,11 @@ from .auth import _require_admin_token, get_current_user
 router = APIRouter(prefix="/capabilities", tags=["capabilities"])
 
 
+def _is_admin_user(user: User) -> bool:
+    role = (getattr(user, "role", "") or "").strip().lower()
+    return role == "admin" or getattr(user, "id", None) == 1
+
+
 class CapabilityConfigIn(BaseModel):
     capability_id: str
     description: str
@@ -49,6 +54,12 @@ class CapabilityPolicyUpdate(BaseModel):
     subject_value: Optional[str] = None
     effect: Optional[str] = None
     enabled: Optional[bool] = None
+
+
+class AssignUserCapabilitiesIn(BaseModel):
+    user_id: int
+    capability_ids: List[str] = Field(default_factory=list)
+    effect: str = Field(default="allow", description="allow|deny")
 
 
 class CapabilityCallRecordIn(BaseModel):
@@ -422,3 +433,84 @@ def list_capability_call_logs(
         }
         for r in rows
     ]
+
+
+@router.get("/admin/registry", summary="能力目录（管理员Bearer）")
+def admin_registry_bearer(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="admin only")
+    rows = db.query(CapabilityConfig).order_by(CapabilityConfig.capability_id.asc()).all()
+    return [_serialize_capability(x) for x in rows]
+
+
+@router.get("/admin/policies", summary="能力策略列表（管理员Bearer）")
+def admin_list_policies_bearer(
+    capability_id: Optional[str] = None,
+    user_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="admin only")
+    q = db.query(CapabilityPolicy)
+    if capability_id:
+        q = q.filter(CapabilityPolicy.capability_id == capability_id)
+    if user_id is not None:
+        q = q.filter(CapabilityPolicy.subject_type == "user_id", CapabilityPolicy.subject_value == str(user_id))
+    rows = q.order_by(CapabilityPolicy.id.asc()).all()
+    return [
+        {
+            "id": r.id,
+            "capability_id": r.capability_id,
+            "subject_type": r.subject_type,
+            "subject_value": r.subject_value,
+            "effect": r.effect,
+            "enabled": r.enabled,
+            "created_at": r.created_at.isoformat() if r.created_at else "",
+            "updated_at": r.updated_at.isoformat() if r.updated_at else "",
+        }
+        for r in rows
+    ]
+
+
+@router.post("/admin/assign-user", summary="管理员分配用户能力（Bearer，全量替换）")
+def admin_assign_user_capabilities(
+    payload: AssignUserCapabilitiesIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="admin only")
+    effect = (payload.effect or "allow").strip().lower()
+    if effect not in ("allow", "deny"):
+        raise HTTPException(status_code=400, detail="effect 仅支持 allow/deny")
+
+    # 删除该用户之前所有 user_id 规则后重建，保持可视化配置简单
+    db.query(CapabilityPolicy).filter(
+        CapabilityPolicy.subject_type == "user_id",
+        CapabilityPolicy.subject_value == str(payload.user_id),
+    ).delete()
+
+    cap_ids = [str(x).strip() for x in payload.capability_ids if str(x).strip()]
+    cap_set = set(cap_ids)
+    if cap_set:
+        exists_caps = db.query(CapabilityConfig.capability_id).filter(CapabilityConfig.capability_id.in_(cap_set)).all()
+        exists_set = {x[0] for x in exists_caps}
+        missing = sorted(cap_set - exists_set)
+        if missing:
+            raise HTTPException(status_code=400, detail=f"能力不存在: {', '.join(missing)}")
+    for cap_id in cap_ids:
+        db.add(
+            CapabilityPolicy(
+                capability_id=cap_id,
+                subject_type="user_id",
+                subject_value=str(payload.user_id),
+                effect=effect,
+                enabled=True,
+            )
+        )
+    db.commit()
+    return {"detail": "ok", "assigned_count": len(cap_ids)}

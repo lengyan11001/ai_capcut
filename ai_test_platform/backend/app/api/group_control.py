@@ -480,6 +480,25 @@ def list_users_for_admin(
     return [{"id": u.id, "email": u.email, "role": getattr(u, "role", "user")} for u in rows]
 
 
+@router.get("/admin/user-assignments/{user_id}", summary="管理员查看用户资源分配")
+def get_user_assignments_for_admin(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="admin only")
+    device_ids = [
+        x.device_id
+        for x in db.query(UserDeviceAssignment).filter(UserDeviceAssignment.user_id == user_id).all()
+    ]
+    account_ids = [
+        x.reddit_account_id
+        for x in db.query(UserRedditAccountAssignment).filter(UserRedditAccountAssignment.user_id == user_id).all()
+    ]
+    return {"user_id": user_id, "device_ids": device_ids, "account_ids": account_ids}
+
+
 @router.post("/admin/assign-devices", summary="管理员分配设备")
 def assign_devices_to_user(
     payload: AssignDevicesIn,

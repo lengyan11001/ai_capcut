@@ -41,6 +41,7 @@ class UserOut(BaseModel):
     id: int
     email: EmailStr
     credits: int
+    role: str
     is_email_verified: bool
 
 
@@ -86,6 +87,11 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     if not verify_password(password, user.hashed_password):
         return None
     return user
+
+
+def _is_admin_user(user: User) -> bool:
+    role = (getattr(user, "role", "") or "").strip().lower()
+    return role == "admin" or getattr(user, "id", None) == 1
 
 
 async def get_current_user(
@@ -143,6 +149,7 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
         id=user.id,
         email=user.email,
         credits=user.credits,
+        role=getattr(user, "role", "user") or "user",
         is_email_verified=user.is_email_verified,
     )
 
@@ -173,8 +180,54 @@ def get_me(current_user: User = Depends(get_current_user)):
         id=current_user.id,
         email=current_user.email,
         credits=current_user.credits,
+        role=getattr(current_user, "role", "user") or "user",
         is_email_verified=current_user.is_email_verified,
     )
+
+
+class AdminRechargeIn(BaseModel):
+    user_id: int
+    amount: int = Field(..., gt=0)
+    description: Optional[str] = None
+
+
+@router.get("/admin/users", summary="管理员用户列表（Bearer）")
+def admin_list_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin only")
+    rows = db.query(User).order_by(User.id.asc()).all()
+    return [
+        {
+            "id": u.id,
+            "email": u.email,
+            "credits": u.credits,
+            "role": getattr(u, "role", "user") or "user",
+            "is_email_verified": bool(getattr(u, "is_email_verified", False)),
+            "created_at": u.created_at.isoformat() if u.created_at else "",
+        }
+        for u in rows
+    ]
+
+
+@router.post("/admin/recharge", summary="管理员充值积分（Bearer）")
+def admin_recharge(
+    payload: AdminRechargeIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin only")
+    user = db.query(User).filter(User.id == payload.user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+    desc = (payload.description or "").strip() or f"管理员充值（admin={current_user.email}）"
+    add_credit_flow(db, user, "recharge", payload.amount, desc, "recharge", None)
+    db.commit()
+    db.refresh(user)
+    return {"detail": "充值成功", "credits": user.credits}
 
 
 @router.get("/credit-flows", summary="积分资金流水（扣费、退款、充值）")

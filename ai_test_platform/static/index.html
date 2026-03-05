@@ -606,6 +606,49 @@
               <div class="card-label">任务详情日志</div>
               <div id="controlTaskDetail" style="margin-top:0.75rem;color:var(--text-muted);">点击任务「详情」查看日志</div>
             </div>
+            <div id="adminOpsSection" class="card" style="margin-top:1rem; display:none;">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+                <div class="card-label">管理员运维控制台</div>
+                <button type="button" id="refreshAdminOpsBtn" class="btn btn-ghost btn-sm">刷新管理员数据</button>
+              </div>
+              <p class="meta" style="margin-top:0.5rem;">可视化执行设备/账号分配、Skill 能力分配、用户积分充值。</p>
+              <div class="cards" style="margin-top:0.75rem;">
+                <div class="card">
+                  <div class="card-label">资源分配（设备/系统账号）</div>
+                  <label>用户</label>
+                  <select id="adminAssignUserSelect"></select>
+                  <label>设备多选</label>
+                  <select id="adminDeviceAssignSelect" multiple size="6"></select>
+                  <label>系统账号多选</label>
+                  <select id="adminAccountAssignSelect" multiple size="6"></select>
+                  <div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button type="button" id="adminSaveDeviceAssignBtn" class="btn btn-primary btn-sm">保存设备分配</button>
+                    <button type="button" id="adminSaveAccountAssignBtn" class="btn btn-ghost btn-sm">保存账号分配</button>
+                  </div>
+                  <div id="adminAssignMsg" class="msg" style="margin-top:0.5rem;"></div>
+                </div>
+                <div class="card">
+                  <div class="card-label">Skill 能力分配</div>
+                  <label>用户</label>
+                  <select id="adminSkillUserSelect"></select>
+                  <label>能力多选（allow）</label>
+                  <select id="adminSkillAssignSelect" multiple size="8"></select>
+                  <button type="button" id="adminSaveSkillAssignBtn" class="btn btn-primary btn-sm" style="margin-top:0.5rem;">保存能力分配</button>
+                  <div id="adminSkillMsg" class="msg" style="margin-top:0.5rem;"></div>
+                </div>
+                <div class="card">
+                  <div class="card-label">用户积分充值</div>
+                  <label>用户</label>
+                  <select id="adminCreditUserSelect"></select>
+                  <label>充值积分</label>
+                  <input type="number" id="adminRechargeAmount" min="1" placeholder="例如：100">
+                  <label>说明（可选）</label>
+                  <input type="text" id="adminRechargeDesc" placeholder="例如：运营补贴">
+                  <button type="button" id="adminRechargeBtn" class="btn btn-primary btn-sm" style="margin-top:0.5rem;">执行充值</button>
+                  <div id="adminRechargeMsg" class="msg" style="margin-top:0.5rem;"></div>
+                </div>
+              </div>
+            </div>
           </div>
           <div id="content-skill-testAI" class="content-block">
             <div class="dash-tabs" style="margin-bottom: 1rem;">
@@ -1028,6 +1071,7 @@
         })
         .then(function(d) {
           if (!d) return;
+          currentUserProfile = d;
           document.getElementById('userEmail').textContent = d.email;
           document.getElementById('userCredits').textContent = d.credits;
           document.getElementById('headerCredits').textContent = d.credits + ' 积分';
@@ -1112,6 +1156,7 @@
           loadGenerateRecords();
           bindCreditFlowsClick();
           initChatSessions();
+          toggleAdminOpsSection();
         });
     }
 
@@ -1177,6 +1222,7 @@
     var currentLibraryId = null;
     var currentLibraryCases = [];
     var currentEditingAccountId = null;
+    var currentUserProfile = null;
     var capabilityListCache = [];
     var capabilityViewEntries = [];
     var currentCapabilityId = '';
@@ -2657,6 +2703,143 @@
       loadControlTasks();
     }
 
+    function isAdminUser() {
+      var role = String((currentUserProfile && currentUserProfile.role) || '').toLowerCase();
+      return role === 'admin' || Number((currentUserProfile && currentUserProfile.id) || 0) === 1;
+    }
+
+    function selectedIntValues(selectEl) {
+      if (!selectEl) return [];
+      return Array.from(selectEl.selectedOptions || []).map(function(o) { return parseInt(o.value, 10); }).filter(function(x) { return !isNaN(x); });
+    }
+
+    function toggleAdminOpsSection() {
+      var el = document.getElementById('adminOpsSection');
+      if (!el) return;
+      if (isAdminUser()) {
+        el.style.display = 'block';
+        loadAdminOpsData();
+      } else {
+        el.style.display = 'none';
+      }
+    }
+
+    function loadAdminOpsData() {
+      if (!isAdminUser()) return;
+      Promise.all([loadAdminUsers(), loadAdminDevicesAndAccounts(), loadAdminCapabilities()])
+        .then(function() {
+          syncAdminUserSelectors();
+        })
+        .catch(function() {});
+    }
+
+    function loadAdminUsers() {
+      return fetch(API_BASE + '/auth/admin/users', { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          var opts = list.map(function(u) {
+            return '<option value="' + u.id + '">' + escapeHtml('#' + u.id + ' ' + (u.email || '-') + ' (' + (u.credits || 0) + '积分)') + '</option>';
+          }).join('');
+          ['adminAssignUserSelect', 'adminSkillUserSelect', 'adminCreditUserSelect'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.innerHTML = opts;
+          });
+          return list;
+        });
+    }
+
+    function loadAdminDevicesAndAccounts() {
+      var p1 = fetch(API_BASE + '/group-control/devices', { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          var el = document.getElementById('adminDeviceAssignSelect');
+          if (el) {
+            el.innerHTML = list.map(function(d) {
+              var label = (d.alias ? d.alias + ' - ' : '') + (d.serial || '') + (d.model ? (' [' + d.model + ']') : '');
+              return '<option value="' + d.id + '">' + escapeHtml(label) + '</option>';
+            }).join('');
+          }
+          return list;
+        });
+      var p2 = fetch(API_BASE + '/group-control/reddit-accounts', { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          var systemOnly = list.filter(function(a) { return String(a.source || '') === 'system'; });
+          var el = document.getElementById('adminAccountAssignSelect');
+          if (el) {
+            el.innerHTML = systemOnly.map(function(a) {
+              return '<option value="' + a.id + '">' + escapeHtml((a.username || '') + ' [' + (a.status || 'active') + ']') + '</option>';
+            }).join('');
+          }
+          return systemOnly;
+        });
+      return Promise.all([p1, p2]);
+    }
+
+    function loadAdminCapabilities() {
+      return fetch(API_BASE + '/capabilities/admin/registry', { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          var el = document.getElementById('adminSkillAssignSelect');
+          if (el) {
+            el.innerHTML = list.filter(function(c) { return !!c.enabled; }).map(function(c) {
+              return '<option value="' + c.capability_id + '">' + escapeHtml((c.capability_id || '') + ' · ' + (c.description || '')) + '</option>';
+            }).join('');
+          }
+          return list;
+        });
+    }
+
+    function syncAdminUserSelectors() {
+      var ids = ['adminAssignUserSelect', 'adminSkillUserSelect', 'adminCreditUserSelect'];
+      var firstVal = '';
+      ids.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el || !el.options.length) return;
+        if (!firstVal) firstVal = el.value || el.options[0].value;
+      });
+      if (!firstVal) return;
+      ids.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.value = firstVal;
+      });
+      loadAdminAssignmentsForUser(parseInt(firstVal, 10));
+      loadAdminSkillForUser(parseInt(firstVal, 10));
+    }
+
+    function loadAdminAssignmentsForUser(userId) {
+      if (!userId) return;
+      fetch(API_BASE + '/group-control/admin/user-assignments/' + userId, { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          if (!x.ok) return;
+          var dsel = document.getElementById('adminDeviceAssignSelect');
+          var asel = document.getElementById('adminAccountAssignSelect');
+          var dids = (x.data && x.data.device_ids) || [];
+          var aids = (x.data && x.data.account_ids) || [];
+          if (dsel) Array.from(dsel.options || []).forEach(function(o) { o.selected = dids.indexOf(parseInt(o.value, 10)) >= 0; });
+          if (asel) Array.from(asel.options || []).forEach(function(o) { o.selected = aids.indexOf(parseInt(o.value, 10)) >= 0; });
+        });
+    }
+
+    function loadAdminSkillForUser(userId) {
+      if (!userId) return;
+      fetch(API_BASE + '/capabilities/admin/policies?user_id=' + userId, { headers: authHeaders() })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          if (!x.ok) return;
+          var allowIds = (Array.isArray(x.data) ? x.data : [])
+            .filter(function(p) { return String(p.effect || '') === 'allow' && !!p.enabled; })
+            .map(function(p) { return String(p.capability_id || ''); });
+          var sel = document.getElementById('adminSkillAssignSelect');
+          if (sel) Array.from(sel.options || []).forEach(function(o) { o.selected = allowIds.indexOf(String(o.value || '')) >= 0; });
+        });
+    }
+
     function loadAccounts() {
       fetch(API_BASE + '/accounts', { headers: authHeaders() })
         .then(function(r) {
@@ -2789,6 +2972,123 @@
     var refreshControlBtn = document.getElementById('refreshControlBtn');
     if (refreshControlBtn) {
       refreshControlBtn.addEventListener('click', function() { loadGroupControl(); });
+    }
+    var refreshAdminOpsBtn = document.getElementById('refreshAdminOpsBtn');
+    if (refreshAdminOpsBtn) {
+      refreshAdminOpsBtn.addEventListener('click', function() { loadAdminOpsData(); });
+    }
+    var adminAssignUserSelect = document.getElementById('adminAssignUserSelect');
+    if (adminAssignUserSelect) {
+      adminAssignUserSelect.addEventListener('change', function() {
+        var v = parseInt(String(adminAssignUserSelect.value || '').trim(), 10);
+        if (!isNaN(v)) {
+          var s2 = document.getElementById('adminSkillUserSelect');
+          var s3 = document.getElementById('adminCreditUserSelect');
+          if (s2) s2.value = String(v);
+          if (s3) s3.value = String(v);
+          loadAdminAssignmentsForUser(v);
+          loadAdminSkillForUser(v);
+        }
+      });
+    }
+    var adminSkillUserSelect = document.getElementById('adminSkillUserSelect');
+    if (adminSkillUserSelect) {
+      adminSkillUserSelect.addEventListener('change', function() {
+        var v = parseInt(String(adminSkillUserSelect.value || '').trim(), 10);
+        if (!isNaN(v)) loadAdminSkillForUser(v);
+      });
+    }
+    var adminSaveDeviceAssignBtn = document.getElementById('adminSaveDeviceAssignBtn');
+    if (adminSaveDeviceAssignBtn) {
+      adminSaveDeviceAssignBtn.addEventListener('click', function() {
+        var userId = parseInt(String((document.getElementById('adminAssignUserSelect') || {}).value || '').trim(), 10);
+        var deviceIds = selectedIntValues(document.getElementById('adminDeviceAssignSelect'));
+        var msgEl = document.getElementById('adminAssignMsg');
+        if (!userId) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请选择用户'; } return; }
+        fetch(API_BASE + '/group-control/admin/assign-devices', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ user_id: userId, device_ids: deviceIds })
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            msgEl.className = x.ok ? 'msg ok' : 'msg err';
+            msgEl.textContent = x.ok ? ('设备分配已保存，数量=' + ((x.data && x.data.assigned_count) || 0)) : ((x.data && x.data.detail) || '保存失败');
+          })
+          .catch(function(err) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); } });
+      });
+    }
+    var adminSaveAccountAssignBtn = document.getElementById('adminSaveAccountAssignBtn');
+    if (adminSaveAccountAssignBtn) {
+      adminSaveAccountAssignBtn.addEventListener('click', function() {
+        var userId = parseInt(String((document.getElementById('adminAssignUserSelect') || {}).value || '').trim(), 10);
+        var accountIds = selectedIntValues(document.getElementById('adminAccountAssignSelect'));
+        var msgEl = document.getElementById('adminAssignMsg');
+        if (!userId) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请选择用户'; } return; }
+        fetch(API_BASE + '/group-control/admin/assign-reddit-accounts', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ user_id: userId, account_ids: accountIds })
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            msgEl.className = x.ok ? 'msg ok' : 'msg err';
+            msgEl.textContent = x.ok ? ('账号分配已保存，数量=' + ((x.data && x.data.assigned_count) || 0)) : ((x.data && x.data.detail) || '保存失败');
+          })
+          .catch(function(err) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); } });
+      });
+    }
+    var adminSaveSkillAssignBtn = document.getElementById('adminSaveSkillAssignBtn');
+    if (adminSaveSkillAssignBtn) {
+      adminSaveSkillAssignBtn.addEventListener('click', function() {
+        var userId = parseInt(String((document.getElementById('adminSkillUserSelect') || {}).value || '').trim(), 10);
+        var skillIds = selectedIntValues(document.getElementById('adminSkillAssignSelect')).map(String);
+        // selectedIntValues 不适用于字符串 capability_id，改为直接读取
+        var sel = document.getElementById('adminSkillAssignSelect');
+        if (sel) skillIds = Array.from(sel.selectedOptions || []).map(function(o) { return String(o.value || '').trim(); }).filter(Boolean);
+        var msgEl = document.getElementById('adminSkillMsg');
+        if (!userId) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请选择用户'; } return; }
+        fetch(API_BASE + '/capabilities/admin/assign-user', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ user_id: userId, capability_ids: skillIds, effect: 'allow' })
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            msgEl.className = x.ok ? 'msg ok' : 'msg err';
+            msgEl.textContent = x.ok ? ('能力分配已保存，数量=' + ((x.data && x.data.assigned_count) || 0)) : ((x.data && x.data.detail) || '保存失败');
+          })
+          .catch(function(err) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); } });
+      });
+    }
+    var adminRechargeBtn = document.getElementById('adminRechargeBtn');
+    if (adminRechargeBtn) {
+      adminRechargeBtn.addEventListener('click', function() {
+        var userId = parseInt(String((document.getElementById('adminCreditUserSelect') || {}).value || '').trim(), 10);
+        var amount = parseInt(String((document.getElementById('adminRechargeAmount') || {}).value || '').trim(), 10);
+        var desc = String((document.getElementById('adminRechargeDesc') || {}).value || '').trim();
+        var msgEl = document.getElementById('adminRechargeMsg');
+        if (!userId || !amount || amount <= 0) {
+          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请选择用户并输入正确积分'; }
+          return;
+        }
+        fetch(API_BASE + '/auth/admin/recharge', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ user_id: userId, amount: amount, description: desc || null })
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            msgEl.className = x.ok ? 'msg ok' : 'msg err';
+            msgEl.textContent = x.ok ? ('充值成功，余额=' + ((x.data && x.data.credits) || '-')) : ((x.data && x.data.detail) || '充值失败');
+            if (x.ok) loadDashboard();
+          })
+          .catch(function(err) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); } });
+      });
     }
     var btnAnalyzeRisk = document.getElementById('btnAnalyzeRisk');
     if (btnAnalyzeRisk) {
