@@ -90,6 +90,15 @@ def _policy_match_user(row: CapabilityPolicy, user: User) -> bool:
     return False
 
 
+def _has_any_user_policy(db: Session, user: User) -> bool:
+    """用户是否存在任意启用中的能力策略（allow/deny 任一都算）。"""
+    rows = db.query(CapabilityPolicy).filter(CapabilityPolicy.enabled.is_(True)).all()
+    for r in rows:
+        if _policy_match_user(r, user):
+            return True
+    return False
+
+
 def _capability_allowed_for_user(db: Session, user: User, capability_id: str) -> bool:
     rules = (
         db.query(CapabilityPolicy)
@@ -99,18 +108,29 @@ def _capability_allowed_for_user(db: Session, user: User, capability_id: str) ->
         )
         .all()
     )
+    has_user_policy = _has_any_user_policy(db, user)
     if not rules:
-        return True
+        # 当用户已经被配置过任何能力策略时，进入白名单模式：未配置该能力即不允许。
+        return not has_user_policy
     matched_allow = False
+    matched_policy = False
     for r in rules:
         if not _policy_match_user(r, user):
             continue
+        matched_policy = True
         effect = (r.effect or "allow").strip().lower()
         if effect == "deny":
             return False
         if effect == "allow":
             matched_allow = True
-    return matched_allow
+    if matched_allow:
+        return True
+    # 该能力存在策略但用户未命中 allow 时：
+    # - 若用户在白名单模式，则默认拒绝
+    # - 否则保持兼容：默认允许
+    if has_user_policy:
+        return False
+    return not matched_policy
 
 
 def _serialize_capability(row: CapabilityConfig) -> Dict[str, Any]:
