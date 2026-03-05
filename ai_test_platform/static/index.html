@@ -339,6 +339,35 @@
     .nav-left-item.active { color: var(--accent); background: rgba(6, 182, 212, 0.12); font-weight: 500; }
     .nav-left-sub { margin-left: 0.75rem; margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.15rem; }
     .nav-left-sub .nav-left-item { font-size: 0.85rem; }
+    /* 群控界面布局优化（避免拥挤） */
+    .group-control-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 1.25rem;
+      margin-top: 1rem;
+    }
+    .group-control-form .dispatch-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.35rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .group-control-form .dispatch-actions input {
+      min-width: 220px;
+      flex: 1 1 260px;
+    }
+    .group-control-form .dispatch-actions .btn {
+      flex: 0 0 auto;
+    }
+    .group-control-form .device-filter-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.5rem;
+    }
+    .group-control-form select[multiple] {
+      min-height: 140px;
+    }
     /* 右上角用户下拉 */
     .header-dropdown { position: relative; }
     .header-dropdown-btn {
@@ -439,6 +468,7 @@
       .card-actions { flex-wrap: wrap; }
       .btn { padding: 0.5rem 0.85rem; font-size: 0.85rem; }
       .cards { grid-template-columns: 1fr; }
+      .group-control-grid { grid-template-columns: 1fr; }
       .doc-test-card { padding: 1rem; }
       .doc-test-card .row2 { grid-template-columns: 1fr; }
       .modal { width: 95%; max-width: none; padding: 1rem; }
@@ -545,10 +575,10 @@
               </div>
               <p style="font-size:0.85rem;color:var(--text-muted);margin-top:0.5rem;">查看设备在线状态，创建并追踪 Reddit 任务执行情况。</p>
             </div>
-            <div class="cards" style="margin-top:1rem;">
+            <div class="group-control-grid">
               <div class="card">
                 <div class="card-label">创建任务</div>
-                <form id="controlTaskForm" style="margin-top:0.75rem;">
+                <form id="controlTaskForm" class="group-control-form" style="margin-top:0.75rem;">
                   <label>任务标题</label>
                   <input type="text" name="title" required placeholder="例如：Reddit 关键词浏览任务">
                   <label>设备</label>
@@ -561,14 +591,14 @@
                   <select name="target_group_id" id="controlTargetGroupSelect">
                     <option value="">不使用分组</option>
                   </select>
-                  <div style="display:flex;gap:0.5rem;margin-top:0.35rem;">
+                  <div class="dispatch-actions">
                     <input type="text" id="newDispatchGroupName" placeholder="新分组名称（例如：US-稳定组）">
                     <button type="button" id="createDispatchGroupBtn" class="btn btn-ghost btn-sm">按当前多选创建分组</button>
                     <button type="button" id="updateDispatchGroupBtn" class="btn btn-ghost btn-sm">用当前多选更新分组</button>
                     <button type="button" id="deleteDispatchGroupBtn" class="btn btn-ghost btn-sm">删除当前分组</button>
                   </div>
                   <label>设备筛选（可选）</label>
-                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                  <div class="device-filter-grid">
                     <input type="text" name="device_filter_niche" placeholder="niche (fashion/3c/beauty/pet/general)">
                     <input type="text" name="device_filter_min_phase" placeholder="min_phase (post_ready/phase_2/nurture_phase_1)">
                     <input type="number" name="device_filter_min_karma" placeholder="min_karma">
@@ -2740,7 +2770,7 @@
 
     function isAdminUser() {
       var role = String((currentUserProfile && currentUserProfile.role) || '').toLowerCase();
-      return role === 'admin' || Number((currentUserProfile && currentUserProfile.id) || 0) === 1;
+      return role === 'admin';
     }
 
     function selectedIntValues(selectEl) {

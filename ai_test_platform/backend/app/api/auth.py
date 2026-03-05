@@ -91,7 +91,7 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
 
 def _is_admin_user(user: User) -> bool:
     role = (getattr(user, "role", "") or "").strip().lower()
-    return role == "admin" or getattr(user, "id", None) == 1
+    return role == "admin"
 
 
 async def get_current_user(

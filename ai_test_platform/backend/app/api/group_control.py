@@ -106,7 +106,7 @@ def _ensure_agent_secret(x_agent_secret: Optional[str]) -> None:
 
 def _is_admin(user: User) -> bool:
     role = (getattr(user, "role", "") or "").strip().lower()
-    return role == "admin" or getattr(user, "id", None) == 1
+    return role == "admin"
 
 
 def _device_matches_filter(attrs: Optional[dict], flt: Optional[dict]) -> bool:
