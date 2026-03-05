@@ -620,10 +620,20 @@
                   <div class="card-label">资源分配（设备/系统账号）</div>
                   <label>用户</label>
                   <select id="adminAssignUserSelect"></select>
-                  <label>设备多选</label>
-                  <select id="adminDeviceAssignSelect" multiple size="8"></select>
-                  <label>系统账号多选</label>
-                  <select id="adminAccountAssignSelect" multiple size="8"></select>
+                  <label>设备分配</label>
+                  <div style="display:flex;gap:0.5rem;align-items:center;">
+                    <input type="text" id="adminDeviceSearchInput" placeholder="搜索设备 serial/alias/model">
+                    <label style="display:flex;align-items:center;gap:0.25rem;white-space:nowrap;"><input type="checkbox" id="adminDeviceAssignedOnly"> 仅看已分配</label>
+                  </div>
+                  <div id="adminDeviceAssignCount" class="meta" style="margin-top:0.25rem;"></div>
+                  <div id="adminDeviceAssignList" style="margin-top:0.35rem;max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:0.5rem;"></div>
+                  <label>系统账号分配</label>
+                  <div style="display:flex;gap:0.5rem;align-items:center;">
+                    <input type="text" id="adminAccountSearchInput" placeholder="搜索账号 username">
+                    <label style="display:flex;align-items:center;gap:0.25rem;white-space:nowrap;"><input type="checkbox" id="adminAccountAssignedOnly"> 仅看已分配</label>
+                  </div>
+                  <div id="adminAccountAssignCount" class="meta" style="margin-top:0.25rem;"></div>
+                  <div id="adminAccountAssignList" style="margin-top:0.35rem;max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:0.5rem;"></div>
                   <div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
                     <button type="button" id="adminSaveDeviceAssignBtn" class="btn btn-primary btn-sm">保存设备分配</button>
                     <button type="button" id="adminSaveAccountAssignBtn" class="btn btn-ghost btn-sm">保存账号分配</button>
@@ -634,6 +644,14 @@
                   <div class="card-label">Skill 能力分配</div>
                   <label>用户</label>
                   <select id="adminSkillUserSelect"></select>
+                  <label>新增/更新能力（例如速推视频）</label>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;">
+                    <input type="text" id="adminCapIdInput" placeholder="capability_id，例如 video.generate">
+                    <input type="text" id="adminCapToolInput" placeholder="upstream_tool，例如 video_generate">
+                    <input type="text" id="adminCapDescInput" placeholder="描述，例如 速推视频生产">
+                    <input type="text" id="adminCapUpstreamInput" placeholder="upstream，默认 sutui">
+                  </div>
+                  <button type="button" id="adminCreateCapabilityBtn" class="btn btn-ghost btn-sm" style="margin-top:0.5rem;">新增能力到目录</button>
                   <label>搜索能力</label>
                   <input type="text" id="adminSkillSearchInput" placeholder="输入 capability_id/描述，例如：sutui、stock、image">
                   <div id="adminSkillAssignList" style="margin-top:0.5rem;max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:0.5rem;"></div>
@@ -1235,6 +1253,10 @@
     var currentCapabilityChatLogs = [];
     var adminCapabilityRegistry = [];
     var adminAssignedCapabilityIds = [];
+    var adminDevicePool = [];
+    var adminAccountPool = [];
+    var adminAssignedDeviceIds = [];
+    var adminAssignedAccountIds = [];
 
     var currentView = 'chat';
     var skillPanelLoaded = { templates: false, libraries: false, accounts: false };
@@ -2770,13 +2792,8 @@
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(x) {
           var list = x.ok && Array.isArray(x.data) ? x.data : [];
-          var el = document.getElementById('adminDeviceAssignSelect');
-          if (el) {
-            el.innerHTML = list.map(function(d) {
-              var label = (d.alias ? d.alias + ' - ' : '') + (d.serial || '') + (d.model ? (' [' + d.model + ']') : '');
-              return '<option value="' + d.id + '">' + escapeHtml(label) + '</option>';
-            }).join('');
-          }
+          adminDevicePool = list.slice();
+          renderAdminDeviceAssignList();
           return list;
         });
       var p2 = fetch(API_BASE + '/group-control/reddit-accounts', { headers: authHeaders() })
@@ -2784,15 +2801,67 @@
         .then(function(x) {
           var list = x.ok && Array.isArray(x.data) ? x.data : [];
           var systemOnly = list.filter(function(a) { return String(a.source || '') === 'system'; });
-          var el = document.getElementById('adminAccountAssignSelect');
-          if (el) {
-            el.innerHTML = systemOnly.map(function(a) {
-              return '<option value="' + a.id + '">' + escapeHtml((a.username || '') + ' [' + (a.status || 'active') + ']') + '</option>';
-            }).join('');
-          }
+          adminAccountPool = systemOnly.slice();
+          renderAdminAccountAssignList();
           return systemOnly;
         });
       return Promise.all([p1, p2]);
+    }
+
+    function renderAdminDeviceAssignList() {
+      var wrap = document.getElementById('adminDeviceAssignList');
+      var countEl = document.getElementById('adminDeviceAssignCount');
+      if (!wrap) return;
+      var kw = String((document.getElementById('adminDeviceSearchInput') || {}).value || '').trim().toLowerCase();
+      var assignedOnly = !!((document.getElementById('adminDeviceAssignedOnly') || {}).checked);
+      var rows = (adminDevicePool || []).filter(function(d) {
+        var did = parseInt(d.id, 10);
+        if (assignedOnly && adminAssignedDeviceIds.indexOf(did) < 0) return false;
+        if (!kw) return true;
+        var text = ((d.serial || '') + ' ' + (d.alias || '') + ' ' + (d.model || '') + ' ' + (d.brand || '')).toLowerCase();
+        return text.indexOf(kw) >= 0;
+      });
+      if (countEl) countEl.textContent = '已分配 ' + adminAssignedDeviceIds.length + ' / 总设备 ' + (adminDevicePool || []).length + ' / 当前筛选 ' + rows.length;
+      if (!rows.length) {
+        wrap.innerHTML = '<div class="meta">无匹配设备</div>';
+        return;
+      }
+      wrap.innerHTML = rows.map(function(d) {
+        var did = parseInt(d.id, 10);
+        var checked = adminAssignedDeviceIds.indexOf(did) >= 0 ? 'checked' : '';
+        var label = (d.alias ? d.alias + ' - ' : '') + (d.serial || '');
+        var meta = [d.brand, d.model, d.adb_status].filter(Boolean).join(' · ');
+        return '<label style="display:flex;align-items:flex-start;gap:0.45rem;padding:0.3rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">' +
+          '<input type="checkbox" class="admin-device-item" value="' + did + '" ' + checked + '>' +
+          '<span><div>' + escapeHtml(label) + '</div><div class="meta" style="font-size:0.78rem;">' + escapeHtml(meta || '-') + '</div></span></label>';
+      }).join('');
+    }
+
+    function renderAdminAccountAssignList() {
+      var wrap = document.getElementById('adminAccountAssignList');
+      var countEl = document.getElementById('adminAccountAssignCount');
+      if (!wrap) return;
+      var kw = String((document.getElementById('adminAccountSearchInput') || {}).value || '').trim().toLowerCase();
+      var assignedOnly = !!((document.getElementById('adminAccountAssignedOnly') || {}).checked);
+      var rows = (adminAccountPool || []).filter(function(a) {
+        var aid = parseInt(a.id, 10);
+        if (assignedOnly && adminAssignedAccountIds.indexOf(aid) < 0) return false;
+        if (!kw) return true;
+        var text = ((a.username || '') + ' ' + (a.status || '')).toLowerCase();
+        return text.indexOf(kw) >= 0;
+      });
+      if (countEl) countEl.textContent = '已分配 ' + adminAssignedAccountIds.length + ' / 总账号 ' + (adminAccountPool || []).length + ' / 当前筛选 ' + rows.length;
+      if (!rows.length) {
+        wrap.innerHTML = '<div class="meta">无匹配账号</div>';
+        return;
+      }
+      wrap.innerHTML = rows.map(function(a) {
+        var aid = parseInt(a.id, 10);
+        var checked = adminAssignedAccountIds.indexOf(aid) >= 0 ? 'checked' : '';
+        return '<label style="display:flex;align-items:flex-start;gap:0.45rem;padding:0.3rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">' +
+          '<input type="checkbox" class="admin-account-item" value="' + aid + '" ' + checked + '>' +
+          '<span><div>' + escapeHtml(a.username || '') + '</div><div class="meta" style="font-size:0.78rem;">' + escapeHtml(a.status || 'active') + '</div></span></label>';
+      }).join('');
     }
 
     function loadAdminCapabilities() {
@@ -2853,12 +2922,10 @@
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(x) {
           if (!x.ok) return;
-          var dsel = document.getElementById('adminDeviceAssignSelect');
-          var asel = document.getElementById('adminAccountAssignSelect');
-          var dids = (x.data && x.data.device_ids) || [];
-          var aids = (x.data && x.data.account_ids) || [];
-          if (dsel) Array.from(dsel.options || []).forEach(function(o) { o.selected = dids.indexOf(parseInt(o.value, 10)) >= 0; });
-          if (asel) Array.from(asel.options || []).forEach(function(o) { o.selected = aids.indexOf(parseInt(o.value, 10)) >= 0; });
+          adminAssignedDeviceIds = ((x.data && x.data.device_ids) || []).map(function(v) { return parseInt(v, 10); }).filter(function(v) { return !isNaN(v); });
+          adminAssignedAccountIds = ((x.data && x.data.account_ids) || []).map(function(v) { return parseInt(v, 10); }).filter(function(v) { return !isNaN(v); });
+          renderAdminDeviceAssignList();
+          renderAdminAccountAssignList();
         });
     }
 
@@ -3040,11 +3107,74 @@
         renderAdminSkillCapabilityList(adminSkillSearchInput.value || '');
       });
     }
+    var adminDeviceSearchInput = document.getElementById('adminDeviceSearchInput');
+    if (adminDeviceSearchInput) {
+      adminDeviceSearchInput.addEventListener('input', function() { renderAdminDeviceAssignList(); });
+    }
+    var adminAccountSearchInput = document.getElementById('adminAccountSearchInput');
+    if (adminAccountSearchInput) {
+      adminAccountSearchInput.addEventListener('input', function() { renderAdminAccountAssignList(); });
+    }
+    var adminDeviceAssignedOnly = document.getElementById('adminDeviceAssignedOnly');
+    if (adminDeviceAssignedOnly) {
+      adminDeviceAssignedOnly.addEventListener('change', function() { renderAdminDeviceAssignList(); });
+    }
+    var adminAccountAssignedOnly = document.getElementById('adminAccountAssignedOnly');
+    if (adminAccountAssignedOnly) {
+      adminAccountAssignedOnly.addEventListener('change', function() { renderAdminAccountAssignList(); });
+    }
+    var adminCreateCapabilityBtn = document.getElementById('adminCreateCapabilityBtn');
+    if (adminCreateCapabilityBtn) {
+      adminCreateCapabilityBtn.addEventListener('click', function() {
+        var capId = String((document.getElementById('adminCapIdInput') || {}).value || '').trim();
+        var tool = String((document.getElementById('adminCapToolInput') || {}).value || '').trim();
+        var desc = String((document.getElementById('adminCapDescInput') || {}).value || '').trim();
+        var upstream = String((document.getElementById('adminCapUpstreamInput') || {}).value || '').trim() || 'sutui';
+        var msgEl = document.getElementById('adminSkillMsg');
+        if (!capId || !tool) {
+          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请填写 capability_id 与 upstream_tool'; }
+          return;
+        }
+        fetch(API_BASE + '/capabilities/admin/registry', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            capability_id: capId,
+            description: desc || capId,
+            upstream: upstream,
+            upstream_tool: tool,
+            enabled: true,
+            is_default: false,
+            unit_credits: 0
+          })
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            if (x.ok) {
+              msgEl.className = 'msg ok';
+              msgEl.textContent = '能力已新增到目录，可立即分配给用户';
+              if (document.getElementById('adminCapIdInput')) document.getElementById('adminCapIdInput').value = '';
+              if (document.getElementById('adminCapToolInput')) document.getElementById('adminCapToolInput').value = '';
+              if (document.getElementById('adminCapDescInput')) document.getElementById('adminCapDescInput').value = '';
+              loadAdminCapabilities();
+            } else {
+              msgEl.className = 'msg err';
+              msgEl.textContent = (x.data && x.data.detail) || '新增能力失败';
+            }
+          })
+          .catch(function(err) {
+            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+          });
+      });
+    }
     var adminSaveDeviceAssignBtn = document.getElementById('adminSaveDeviceAssignBtn');
     if (adminSaveDeviceAssignBtn) {
       adminSaveDeviceAssignBtn.addEventListener('click', function() {
         var userId = parseInt(String((document.getElementById('adminAssignUserSelect') || {}).value || '').trim(), 10);
-        var deviceIds = selectedIntValues(document.getElementById('adminDeviceAssignSelect'));
+        var deviceIds = Array.from(document.querySelectorAll('.admin-device-item:checked'))
+          .map(function(o) { return parseInt(o.value, 10); })
+          .filter(function(x) { return !isNaN(x); });
         var msgEl = document.getElementById('adminAssignMsg');
         if (!userId) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请选择用户'; } return; }
         fetch(API_BASE + '/group-control/admin/assign-devices', {
@@ -3057,6 +3187,10 @@
             if (!msgEl) return;
             msgEl.className = x.ok ? 'msg ok' : 'msg err';
             msgEl.textContent = x.ok ? ('设备分配已保存，数量=' + ((x.data && x.data.assigned_count) || 0)) : ((x.data && x.data.detail) || '保存失败');
+            if (x.ok) {
+              adminAssignedDeviceIds = deviceIds.slice();
+              renderAdminDeviceAssignList();
+            }
           })
           .catch(function(err) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); } });
       });
@@ -3065,7 +3199,9 @@
     if (adminSaveAccountAssignBtn) {
       adminSaveAccountAssignBtn.addEventListener('click', function() {
         var userId = parseInt(String((document.getElementById('adminAssignUserSelect') || {}).value || '').trim(), 10);
-        var accountIds = selectedIntValues(document.getElementById('adminAccountAssignSelect'));
+        var accountIds = Array.from(document.querySelectorAll('.admin-account-item:checked'))
+          .map(function(o) { return parseInt(o.value, 10); })
+          .filter(function(x) { return !isNaN(x); });
         var msgEl = document.getElementById('adminAssignMsg');
         if (!userId) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请选择用户'; } return; }
         fetch(API_BASE + '/group-control/admin/assign-reddit-accounts', {
@@ -3078,6 +3214,10 @@
             if (!msgEl) return;
             msgEl.className = x.ok ? 'msg ok' : 'msg err';
             msgEl.textContent = x.ok ? ('账号分配已保存，数量=' + ((x.data && x.data.assigned_count) || 0)) : ((x.data && x.data.detail) || '保存失败');
+            if (x.ok) {
+              adminAssignedAccountIds = accountIds.slice();
+              renderAdminAccountAssignList();
+            }
           })
           .catch(function(err) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); } });
       });

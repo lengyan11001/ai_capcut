@@ -514,3 +514,64 @@ def admin_assign_user_capabilities(
         )
     db.commit()
     return {"detail": "ok", "assigned_count": len(cap_ids)}
+
+
+@router.post("/admin/registry", summary="管理员新增能力（Bearer）")
+def admin_create_registry_bearer(
+    payload: CapabilityConfigIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="admin only")
+    capability_id = (payload.capability_id or "").strip()
+    if not capability_id:
+        raise HTTPException(status_code=400, detail="capability_id 不能为空")
+    exists = db.query(CapabilityConfig).filter(CapabilityConfig.capability_id == capability_id).first()
+    if exists:
+        raise HTTPException(status_code=400, detail="能力已存在")
+    row = CapabilityConfig(
+        capability_id=capability_id,
+        description=(payload.description or "").strip() or capability_id,
+        upstream=(payload.upstream or "sutui").strip() or "sutui",
+        upstream_tool=(payload.upstream_tool or "").strip(),
+        arg_schema=payload.arg_schema,
+        enabled=payload.enabled,
+        is_default=payload.is_default,
+        unit_credits=payload.unit_credits,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _serialize_capability(row)
+
+
+@router.put("/admin/registry/{capability_id}", summary="管理员更新能力（Bearer）")
+def admin_update_registry_bearer(
+    capability_id: str,
+    payload: CapabilityConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="admin only")
+    row = db.query(CapabilityConfig).filter(CapabilityConfig.capability_id == capability_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="能力不存在")
+    if payload.description is not None:
+        row.description = payload.description.strip()
+    if payload.upstream is not None:
+        row.upstream = payload.upstream.strip() or "sutui"
+    if payload.upstream_tool is not None:
+        row.upstream_tool = payload.upstream_tool.strip()
+    if payload.arg_schema is not None:
+        row.arg_schema = payload.arg_schema
+    if payload.enabled is not None:
+        row.enabled = payload.enabled
+    if payload.is_default is not None:
+        row.is_default = payload.is_default
+    if payload.unit_credits is not None:
+        row.unit_credits = payload.unit_credits
+    db.commit()
+    db.refresh(row)
+    return _serialize_capability(row)
