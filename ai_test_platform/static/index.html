@@ -2934,6 +2934,14 @@
       }).join('');
     }
 
+    function toggleAdminSkillSelection(capabilityId, checked) {
+      var cid = String(capabilityId || '').trim();
+      if (!cid) return;
+      var idx = adminAssignedCapabilityIds.indexOf(cid);
+      if (checked && idx < 0) adminAssignedCapabilityIds.push(cid);
+      if (!checked && idx >= 0) adminAssignedCapabilityIds.splice(idx, 1);
+    }
+
     function syncAdminUserSelectors() {
       var ids = ['adminAssignUserSelect', 'adminSkillUserSelect', 'adminCreditUserSelect'];
       var firstVal = '';
@@ -3167,6 +3175,14 @@
         renderAdminSkillCapabilityList(adminSkillSearchInput.value || '');
       });
     }
+    var adminSkillAssignList = document.getElementById('adminSkillAssignList');
+    if (adminSkillAssignList) {
+      adminSkillAssignList.addEventListener('change', function(e) {
+        var target = e.target;
+        if (!target || !target.classList || !target.classList.contains('admin-skill-cap-item')) return;
+        toggleAdminSkillSelection(target.value, !!target.checked);
+      });
+    }
     var adminDeviceSearchInput = document.getElementById('adminDeviceSearchInput');
     if (adminDeviceSearchInput) {
       adminDeviceSearchInput.addEventListener('input', function() { renderAdminDeviceAssignList(); });
@@ -3286,7 +3302,7 @@
     if (adminSaveSkillAssignBtn) {
       adminSaveSkillAssignBtn.addEventListener('click', function() {
         var userId = parseInt(String((document.getElementById('adminSkillUserSelect') || {}).value || '').trim(), 10);
-        var skillIds = Array.from(document.querySelectorAll('.admin-skill-cap-item:checked')).map(function(o) { return String(o.value || '').trim(); }).filter(Boolean);
+        var skillIds = (adminAssignedCapabilityIds || []).map(function(v) { return String(v || '').trim(); }).filter(Boolean);
         var msgEl = document.getElementById('adminSkillMsg');
         if (!userId) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请选择用户'; } return; }
         fetch(API_BASE + '/capabilities/admin/assign-user', {
