@@ -556,10 +556,19 @@ def _dispatch_due_nurture_items(db: Session) -> int:
     for item in due:
         plan = db.query(NurturePlan).filter(NurturePlan.id == item.plan_id).first()
         binding = db.query(NurtureBinding).filter(NurtureBinding.id == item.binding_id).first()
-        if not plan or plan.status not in {"approved", "active"} or not binding:
+        if not plan or not binding:
             item.status = "skipped"
             item.last_error_code = "plan_inactive_or_binding_missing"
-            item.last_error_message = "plan inactive or binding missing"
+            item.last_error_message = "plan or binding missing"
+            item.finished_at = now
+            db.add(item)
+            continue
+        if plan.status in {"draft", "generating", "gen_failed"}:
+            continue
+        if plan.status not in {"approved", "active"}:
+            item.status = "skipped"
+            item.last_error_code = "plan_inactive"
+            item.last_error_message = f"plan status={plan.status}"
             item.finished_at = now
             db.add(item)
             continue
