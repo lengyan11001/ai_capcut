@@ -1392,6 +1392,14 @@ def list_nurture_schedule(
     q = db.query(NurtureScheduleItem).filter(NurtureScheduleItem.user_id == current_user.id)
     if binding_id:
         q = q.filter(NurtureScheduleItem.binding_id == binding_id)
+        latest_plan = (
+            db.query(NurturePlan)
+            .filter(NurturePlan.binding_id == binding_id, NurturePlan.user_id == current_user.id)
+            .order_by(NurturePlan.id.desc())
+            .first()
+        )
+        if latest_plan:
+            q = q.filter(NurtureScheduleItem.plan_id == latest_plan.id)
     if status_filter:
         q = q.filter(NurtureScheduleItem.status == status_filter.strip())
     rows = (
