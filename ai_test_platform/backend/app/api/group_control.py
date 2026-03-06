@@ -1384,7 +1384,6 @@ def list_nurture_schedule(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _dispatch_due_nurture_items(db)
     q = db.query(NurtureScheduleItem).filter(NurtureScheduleItem.user_id == current_user.id)
     if binding_id:
         q = q.filter(NurtureScheduleItem.binding_id == binding_id)
