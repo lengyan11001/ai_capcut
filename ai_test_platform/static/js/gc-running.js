@@ -33,11 +33,13 @@
       var html = pageList.map(function(p) {
         var statusColor = p.plan_status === 'active' ? '#4ade80' : p.plan_status === 'paused' ? '#d97706' : p.plan_status === 'completed' ? '#6b7280' : '#facc15';
         var items = p.items || [];
-        var succCnt = items.filter(function(i) { return i.status === 'success'; }).length;
-        var failCnt = items.filter(function(i) { return i.status === 'failed'; }).length;
-        var runCnt = items.filter(function(i) { return i.status === 'running' || i.status === 'dispatched'; }).length;
-        var skipCnt = items.filter(function(i) { return i.status === 'skipped'; }).length;
-        var summary = '<span class="meta" style="margin-left:0.5rem;">' + items.length + '项';
+        var activeItems = items.filter(function(i) { return i.status !== 'cancelled'; });
+        var cancelledCnt = items.length - activeItems.length;
+        var succCnt = activeItems.filter(function(i) { return i.status === 'success'; }).length;
+        var failCnt = activeItems.filter(function(i) { return i.status === 'failed'; }).length;
+        var runCnt = activeItems.filter(function(i) { return i.status === 'running' || i.status === 'dispatched'; }).length;
+        var skipCnt = activeItems.filter(function(i) { return i.status === 'skipped'; }).length;
+        var summary = '<span class="meta" style="margin-left:0.5rem;">' + activeItems.length + '项';
         if (succCnt) summary += ' <span style="color:#4ade80;">' + succCnt + '成功</span>';
         if (failCnt) summary += ' <span style="color:#f87171;">' + failCnt + '失败</span>';
         if (runCnt) summary += ' <span style="color:#facc15;">' + runCnt + '运行</span>';
@@ -53,28 +55,42 @@
           + '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.72rem;color:#fff;background:' + statusColor + ';">' + escapeHtml(p.plan_status) + '</span></div>';
         var detail = '';
         if (expanded && items.length) {
-          var sortedItems = items.slice().sort(function(a, b) {
-            var da = parseInt(a.day_no || 0, 10), db2 = parseInt(b.day_no || 0, 10);
-            if (da !== db2) return da - db2;
-            return parseInt(a.seq_no || 0, 10) - parseInt(b.seq_no || 0, 10);
-          });
-          var rows = sortedItems.map(function(i) {
-            var ic = i.status === 'success' ? '#4ade80' : i.status === 'failed' ? '#f87171' : i.status === 'running' || i.status === 'dispatched' ? '#facc15' : i.status === 'skipped' ? '#f97316' : '#888';
-            var timeStr = '';
-            if (i.scheduled_at) { var d = new Date(i.scheduled_at); timeStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); }
-            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.03);font-size:0.78rem;">'
-              + '<td style="padding:2px 4px;">' + i.day_no + '-' + i.seq_no + '</td>'
-              + '<td>' + escapeHtml(i.action) + '</td>'
-              + '<td>' + escapeHtml(i.title || '') + '</td>'
-              + '<td><span style="color:' + ic + ';">' + escapeHtml(i.status) + '</span></td>'
-              + '<td style="white-space:nowrap;">' + escapeHtml(timeStr) + '</td>'
-              + '<td style="color:#f87171;font-size:0.72rem;">' + escapeHtml(truncate(i.error,40)) + '</td></tr>';
-          }).join('');
-          detail = '<div style="margin-top:0.4rem;"><table style="width:100%;border-collapse:collapse;"><tr style="border-bottom:1px solid rgba(255,255,255,0.08);font-size:0.75rem;color:var(--text-muted);">'
-            + '<th style="text-align:left;padding:2px 4px;">D-S</th><th style="text-align:left;">动作</th><th style="text-align:left;">标题</th><th>状态</th><th>日期时间</th><th>错误</th></tr>'
-            + rows + '</table></div>';
+          var currentRound = items.filter(function(i) { return i.status !== 'cancelled'; });
+          var historyRound = items.filter(function(i) { return i.status === 'cancelled'; });
+          function _sortItems(arr) {
+            return arr.slice().sort(function(a, b) {
+              var da = parseInt(a.day_no || 0, 10), db2 = parseInt(b.day_no || 0, 10);
+              if (da !== db2) return da - db2;
+              return parseInt(a.seq_no || 0, 10) - parseInt(b.seq_no || 0, 10);
+            });
+          }
+          function _buildRows(arr) {
+            return arr.map(function(i) {
+              var ic = i.status === 'success' ? '#4ade80' : i.status === 'failed' ? '#f87171' : i.status === 'running' || i.status === 'dispatched' ? '#facc15' : i.status === 'skipped' ? '#f97316' : i.status === 'cancelled' ? '#6b7280' : '#888';
+              var timeStr = '';
+              if (i.scheduled_at) { var d = new Date(i.scheduled_at); timeStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); }
+              return '<tr style="border-bottom:1px solid rgba(255,255,255,0.03);font-size:0.78rem;' + (i.status === 'cancelled' ? 'opacity:0.5;' : '') + '">'
+                + '<td style="padding:2px 4px;">' + i.day_no + '-' + i.seq_no + '</td>'
+                + '<td>' + escapeHtml(i.action) + '</td>'
+                + '<td>' + escapeHtml(i.title || '') + '</td>'
+                + '<td><span style="color:' + ic + ';">' + escapeHtml(i.status) + '</span></td>'
+                + '<td style="white-space:nowrap;">' + escapeHtml(timeStr) + '</td>'
+                + '<td style="color:#f87171;font-size:0.72rem;">' + escapeHtml(truncate(i.error,40)) + '</td></tr>';
+            }).join('');
+          }
+          var thRow = '<tr style="border-bottom:1px solid rgba(255,255,255,0.08);font-size:0.75rem;color:var(--text-muted);"><th style="text-align:left;padding:2px 4px;">D-S</th><th style="text-align:left;">动作</th><th style="text-align:left;">标题</th><th>状态</th><th>日期时间</th><th>错误</th></tr>';
+          detail = '<div style="margin-top:0.4rem;">';
+          if (currentRound.length) {
+            detail += '<div style="font-size:0.75rem;font-weight:600;color:var(--accent);margin-bottom:0.2rem;">当前轮次 (' + currentRound.length + '项)</div>';
+            detail += '<table style="width:100%;border-collapse:collapse;">' + thRow + _buildRows(_sortItems(currentRound)) + '</table>';
+          }
+          if (historyRound.length) {
+            detail += '<details style="margin-top:0.5rem;"><summary style="cursor:pointer;font-size:0.75rem;color:var(--text-muted);">历史轮次 (' + historyRound.length + '项)</summary>';
+            detail += '<table style="width:100%;border-collapse:collapse;margin-top:0.2rem;">' + thRow + _buildRows(_sortItems(historyRound)) + '</table></details>';
+          }
+          detail += '</div>';
         } else if (expanded) {
-          detail = '<div class="meta" style="margin-top:0.3rem;">暂无近期调度项</div>';
+          detail = '<div class="meta" style="margin-top:0.3rem;">暂无调度项</div>';
         }
         return '<div style="background:rgba(255,255,255,0.03);border-radius:var(--radius-sm);padding:0.6rem 0.75rem;margin-bottom:0.5rem;">' + header + detail + '</div>';
       }).join('');

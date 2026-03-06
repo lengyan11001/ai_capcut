@@ -1786,30 +1786,38 @@ def approve_nurture_plan(
     tomorrow_cn = datetime(now_cn.year, now_cn.month, now_cn.day) + timedelta(days=1)
     new_start_utc = tomorrow_cn - timedelta(hours=8)
 
-    items = (
+    old_items = (
         db.query(NurtureScheduleItem)
-        .filter(NurtureScheduleItem.plan_id == plan_id)
+        .filter(NurtureScheduleItem.plan_id == plan_id, NurtureScheduleItem.status.in_(["scheduled", "dispatched", "running"]))
         .all()
     )
-    for si in items:
-        day_off = max(int(si.day_no or 1) - 1, 0)
-        payload = si.payload if isinstance(si.payload, dict) else {}
-        plan_json_items = []
-        if isinstance(row.plan_json, dict):
-            plan_json_items = row.plan_json.get("schedule", [])
-        matched = [p for p in plan_json_items if isinstance(p, dict) and int(p.get("day_no", 0)) == si.day_no and int(p.get("seq_no", 0)) == si.seq_no]
-        hour = int(matched[0].get("hour", 10)) if matched else 10
-        minute = int(matched[0].get("minute", 0)) if matched else 0
-        si.scheduled_at = new_start_utc + timedelta(days=day_off, hours=hour, minutes=minute)
-        if si.status in ("skipped", "failed", "dispatched", "running"):
-            si.status = "scheduled"
-            si.last_error_code = None
-            si.last_error_message = None
-            si.finished_at = None
-            si.started_at = None
-            si.dispatched_at = None
-            si.control_task_id = None
+    for si in old_items:
+        si.status = "cancelled"
+        si.finished_at = now_utc
         db.add(si)
+
+    schedule = []
+    if isinstance(row.plan_json, dict):
+        schedule = row.plan_json.get("schedule", [])
+    for item in schedule:
+        if not isinstance(item, dict):
+            continue
+        day_no = int(item.get("day_no") or 1)
+        seq_no = int(item.get("seq_no") or 1)
+        hour = int(item.get("hour") or 10)
+        minute = int(item.get("minute") or 0)
+        when = new_start_utc + timedelta(days=max(day_no - 1, 0), hours=hour, minutes=minute)
+        db.add(NurtureScheduleItem(
+            user_id=current_user.id,
+            binding_id=row.binding_id,
+            plan_id=plan_id,
+            day_no=day_no, seq_no=seq_no,
+            stage=str(item.get("stage") or "warmup"),
+            title=str(item.get("title") or f"nurture-day{day_no:02d}-s{seq_no}"),
+            scheduled_at=when,
+            status="scheduled",
+            payload=item.get("payload") if isinstance(item.get("payload"), dict) else {},
+        ))
 
     row.status = "approved"
     row.requires_reconfirm = False
@@ -1923,14 +1931,16 @@ def delete_nurture_plan(
     if not row:
         raise HTTPException(status_code=404, detail="plan not found")
     schedule_items = db.query(NurtureScheduleItem).filter(NurtureScheduleItem.plan_id == plan_id).all()
-    linked_task_ids = [s.task_id for s in schedule_items if s.task_id]
-    db.query(NurtureScheduleItem).filter(NurtureScheduleItem.plan_id == plan_id).delete(synchronize_session=False)
+    schedule_ids = [s.id for s in schedule_items]
+    linked_task_ids = [s.control_task_id for s in schedule_items if s.control_task_id]
     if linked_task_ids:
         exec_ids = [e.id for e in db.query(TaskExecution).filter(TaskExecution.task_id.in_(linked_task_ids)).all()]
         if exec_ids:
             db.query(TaskExecutionLog).filter(TaskExecutionLog.execution_id.in_(exec_ids)).delete(synchronize_session=False)
             db.query(TaskExecution).filter(TaskExecution.id.in_(exec_ids)).delete(synchronize_session=False)
         db.query(ControlTask).filter(ControlTask.id.in_(linked_task_ids)).delete(synchronize_session=False)
+    if schedule_ids:
+        db.query(NurtureScheduleItem).filter(NurtureScheduleItem.id.in_(schedule_ids)).delete(synchronize_session=False)
     db.delete(row)
     db.commit()
     return {"detail": "deleted", "plan_id": plan_id}

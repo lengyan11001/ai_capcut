@@ -260,6 +260,24 @@
                 <div id="nurtureScheduleList" style="margin-top:0.35rem;max-height:420px;overflow:auto;"></div>
               </div>
             </div>
+            <!-- 复制计划 Modal -->
+            <div id="modalCopyPlan" class="modal-mask">
+              <div class="modal" style="max-width:420px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <h4 id="copyPlanTitle" style="margin:0;">复制计划到设备</h4>
+                  <button type="button" id="closeCopyPlanBtn" class="btn btn-ghost btn-sm">关闭</button>
+                </div>
+                <div style="margin-top:0.5rem;">
+                  <input type="text" id="copyPlanDeviceSearch" placeholder="搜索设备…" style="width:100%;padding:0.3rem 0.5rem;font-size:0.82rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);color:var(--text);margin-bottom:0.4rem;">
+                  <div id="copyPlanDeviceList" style="max-height:280px;overflow:auto;border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius-sm);padding:0.35rem;"></div>
+                </div>
+                <div style="display:flex;gap:0.5rem;margin-top:0.75rem;justify-content:flex-end;">
+                  <button type="button" id="copyPlanConfirmBtn" class="btn btn-primary btn-sm">确定复制</button>
+                  <button type="button" id="copyPlanCancelBtn" class="btn btn-ghost btn-sm">取消</button>
+                </div>
+                <div id="copyPlanMsg" class="msg" style="margin-top:0.5rem;"></div>
+              </div>
+            </div>
             <!-- 任务详情 Modal -->
             <div id="modalTaskDetail" class="modal-mask">
               <div class="modal modal-task-detail">

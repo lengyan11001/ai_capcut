@@ -365,25 +365,7 @@
           e.stopPropagation();
           var planId = parseInt(btn.getAttribute('data-plan-id'), 10);
           if (!planId) return;
-          var devList = (controlDeviceListCache || []).map(function(d) { return d.device_label + ' (#' + d.id + ')'; });
-          var input = prompt('复制计划#' + planId + ' 到哪些设备？\n输入设备ID，用逗号分隔。\n\n可用设备:\n' + devList.join('\n'));
-          if (!input) return;
-          var ids = input.split(',').map(function(s) { return parseInt(s.trim(), 10); }).filter(function(x) { return !isNaN(x) && x > 0; });
-          if (!ids.length) { alert('未输入有效设备ID'); return; }
-          var msgEl = document.getElementById('nurtureMsg');
-          fetch(API_BASE + '/group-control/nurture/plans/' + planId + '/copy', {
-            method: 'POST', headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
-            body: JSON.stringify({ target_device_ids: ids })
-          })
-          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-          .then(function(x) {
-            if (msgEl) {
-              if (x.ok) { msgEl.className = 'msg ok'; msgEl.textContent = x.data.detail || '复制完成'; }
-              else { msgEl.className = 'msg err'; msgEl.textContent = (x.data && x.data.detail) || '复制失败'; }
-            }
-            loadNurturePanel();
-          })
-          .catch(function(err) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); } });
+          _openCopyPlanModal(planId);
         });
       });
       if (scrollParent && savedScroll) scrollParent.scrollTop = savedScroll;
@@ -465,6 +447,79 @@
         ]);
       });
     }
+
+    var _copyPlanId = null;
+    var _copySelectedDevices = {};
+    function _openCopyPlanModal(planId) {
+      _copyPlanId = planId;
+      _copySelectedDevices = {};
+      var modal = document.getElementById('modalCopyPlan');
+      if (!modal) return;
+      var titleEl = document.getElementById('copyPlanTitle');
+      if (titleEl) titleEl.textContent = '复制计划#' + planId + ' 到设备';
+      var msgEl = document.getElementById('copyPlanMsg');
+      if (msgEl) { msgEl.className = 'msg'; msgEl.textContent = ''; msgEl.style.display = 'none'; }
+      var searchEl = document.getElementById('copyPlanDeviceSearch');
+      if (searchEl) searchEl.value = '';
+      _renderCopyDeviceList('');
+      modal.classList.add('visible');
+    }
+    function _renderCopyDeviceList(query) {
+      var el = document.getElementById('copyPlanDeviceList');
+      if (!el) return;
+      var list = controlDeviceListCache || [];
+      var q = (query || '').toLowerCase().trim();
+      if (q) list = list.filter(function(d) {
+        return (d.device_label || '').toLowerCase().indexOf(q) >= 0 || String(d.device_no || '').indexOf(q) >= 0 || String(d.id).indexOf(q) >= 0;
+      });
+      if (!list.length) { el.innerHTML = '<div class="meta">无匹配设备</div>'; return; }
+      el.innerHTML = list.map(function(d) {
+        var ckd = _copySelectedDevices[d.id] ? ' checked' : '';
+        return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0.4rem;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.82rem;">'
+          + '<input type="checkbox" class="copy-device-cb" data-device-id="' + d.id + '"' + ckd + '>'
+          + '<span>' + escapeHtml(d.device_label || d.serial || '#' + d.id) + '</span></label>';
+      }).join('');
+      el.querySelectorAll('.copy-device-cb').forEach(function(cb) {
+        cb.addEventListener('change', function() {
+          var did = parseInt(cb.getAttribute('data-device-id'), 10);
+          if (cb.checked) { _copySelectedDevices[did] = true; } else { delete _copySelectedDevices[did]; }
+        });
+      });
+    }
+    (function() {
+      var searchEl = document.getElementById('copyPlanDeviceSearch');
+      if (searchEl) searchEl.addEventListener('input', function() { _renderCopyDeviceList(searchEl.value); });
+      var cancelBtn = document.getElementById('copyPlanCancelBtn');
+      var closeBtn = document.getElementById('closeCopyPlanBtn');
+      function closeModal() { var m = document.getElementById('modalCopyPlan'); if (m) m.classList.remove('visible'); }
+      if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+      if (closeBtn) closeBtn.addEventListener('click', closeModal);
+      var confirmBtn = document.getElementById('copyPlanConfirmBtn');
+      if (confirmBtn) confirmBtn.addEventListener('click', function() {
+        var ids = Object.keys(_copySelectedDevices).map(function(k) { return parseInt(k, 10); }).filter(function(x) { return !isNaN(x); });
+        if (!ids.length) { alert('请至少选择一个设备'); return; }
+        var msgEl = document.getElementById('copyPlanMsg');
+        confirmBtn.disabled = true; confirmBtn.textContent = '复制中…';
+        fetch(API_BASE + '/group-control/nurture/plans/' + _copyPlanId + '/copy', {
+          method: 'POST', headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+          body: JSON.stringify({ target_device_ids: ids })
+        })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          confirmBtn.disabled = false; confirmBtn.textContent = '确定复制';
+          if (msgEl) {
+            msgEl.style.display = 'block';
+            if (x.ok) { msgEl.className = 'msg ok'; msgEl.textContent = x.data.detail || '复制完成'; }
+            else { msgEl.className = 'msg err'; msgEl.textContent = (x.data && x.data.detail) || '复制失败'; }
+          }
+          if (x.ok) { setTimeout(function() { var m = document.getElementById('modalCopyPlan'); if (m) m.classList.remove('visible'); loadNurturePanel(); }, 1200); }
+        })
+        .catch(function(err) {
+          confirmBtn.disabled = false; confirmBtn.textContent = '确定复制';
+          if (msgEl) { msgEl.style.display = 'block'; msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+        });
+      });
+    })();
 
     var nurtureRefreshBtn = document.getElementById('nurtureRefreshBtn');
     if (nurtureRefreshBtn) {
