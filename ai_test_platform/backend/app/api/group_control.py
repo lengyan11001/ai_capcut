@@ -1225,6 +1225,31 @@ def generate_nurture_plan_by_device(
     return result
 
 
+@router.post("/nurture/plans/generate-batch", summary="批量为所有设备创建养号计划（用户态）")
+def generate_nurture_plans_batch(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    device_ids = sorted(_allowed_device_ids_for_user(db, current_user))
+    if not device_ids:
+        return {"detail": "no devices", "results": []}
+    results: list[dict[str, Any]] = []
+    for did in device_ids:
+        try:
+            r = generate_nurture_plan_by_device(
+                payload=NurturePlanGenerateByDeviceIn(device_id=did, auto_approve=False),
+                db=db,
+                current_user=current_user,
+            )
+            results.append({"device_id": did, "ok": True, "plan_id": r.get("id"), "binding_id": r.get("binding_id")})
+        except HTTPException as e:
+            results.append({"device_id": did, "ok": False, "error": e.detail})
+        except Exception as e:
+            results.append({"device_id": did, "ok": False, "error": str(e)[:200]})
+    ok_count = sum(1 for x in results if x["ok"])
+    return {"detail": f"batch done: {ok_count}/{len(results)} succeeded", "results": results}
+
+
 @router.get("/nurture/plans", summary="养号计划列表（用户态）")
 def list_nurture_plans(
     binding_id: Optional[int] = None,

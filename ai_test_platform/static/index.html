@@ -634,6 +634,11 @@
             <!-- Tab1: 手机列表 -->
             <div id="gcPanelDevices" class="gc-panel visible">
               <div class="card">
+                <div style="display:flex;gap:0.5rem;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
+                  <div class="card-label" style="margin:0;">设备列表</div>
+                  <button type="button" id="batchCreatePlansBtn" class="btn btn-ghost btn-sm">批量创建养号计划</button>
+                </div>
+                <div id="batchCreateMsg" class="meta" style="margin-bottom:0.35rem;"></div>
                 <div id="controlDevicesList"></div>
                 <div id="controlDevicesPager" style="margin-top:0.5rem;display:flex;gap:0.4rem;align-items:center;justify-content:flex-end;"></div>
               </div>
@@ -2742,7 +2747,7 @@
           if (Array.isArray(attrs.tags) && attrs.tags.length) meta += ' tags:' + attrs.tags.join('/');
         }
         if (d.model || d.brand) meta += ' · ' + [d.brand, d.model].filter(Boolean).join(' ');
-        return '<div class="list-item"><div><div class="title">' + escapeHtml(deviceLabel || '') + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts"><button type="button" class="btn btn-ghost btn-sm btn-device-nurture-plan" data-device-id="' + d.id + '">创建养号计划</button></div></div>';
+        return '<div class="list-item"><div><div class="title">' + escapeHtml(deviceLabel || '') + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts"><button type="button" class="btn btn-ghost btn-sm btn-device-nurture-plan" data-device-id="' + d.id + '">创建养号计划</button><span class="meta device-plan-msg" data-device-msg="' + d.id + '" style="margin-left:0.4rem;"></span></div></div>';
       }).join('');
       if (pagerEl) {
         pagerEl.innerHTML = '<button type="button" class="btn btn-ghost btn-sm" id="controlDevicesPrevBtn">上一页</button>' +
@@ -2759,7 +2764,10 @@
         btn.addEventListener('click', function() {
           var deviceId = parseInt(String(btn.getAttribute('data-device-id') || '').trim(), 10);
           if (!deviceId) return;
-          var msgEl = document.getElementById('nurtureMsg');
+          var inlineMsg = document.querySelector('[data-device-msg="' + deviceId + '"]');
+          btn.disabled = true;
+          btn.textContent = '创建中...';
+          if (inlineMsg) { inlineMsg.style.color = 'var(--text-muted)'; inlineMsg.textContent = '请求中...'; }
           fetch(API_BASE + '/group-control/nurture/plans/generate-by-device', {
             method: 'POST',
             headers: authHeaders(),
@@ -2767,19 +2775,20 @@
           })
             .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
             .then(function(x) {
-              if (!msgEl) return;
+              btn.disabled = false;
+              btn.textContent = '创建养号计划';
               if (x.ok) {
-                msgEl.className = 'msg ok';
-                msgEl.textContent = '设备#' + deviceId + ' 计划草案已创建，计划ID=' + (x.data && x.data.id) + '；请到养号进度点击“开始执行”下发';
+                if (inlineMsg) { inlineMsg.style.color = '#16a34a'; inlineMsg.textContent = '已创建 计划#' + (x.data && x.data.id); }
                 loadNurturePanel();
-                loadControlTasks();
               } else {
-                msgEl.className = 'msg err';
-                msgEl.textContent = (x.data && x.data.detail) || '创建养号计划失败';
+                var detail = (x.data && x.data.detail) || '创建失败';
+                if (inlineMsg) { inlineMsg.style.color = '#b91c1c'; inlineMsg.textContent = detail; }
               }
             })
             .catch(function(err) {
-              if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+              btn.disabled = false;
+              btn.textContent = '创建养号计划';
+              if (inlineMsg) { inlineMsg.style.color = '#b91c1c'; inlineMsg.textContent = '网络错误'; }
             });
         });
       });
@@ -3594,6 +3603,42 @@
     if (modalControlTask) {
       modalControlTask.addEventListener('click', function(e) {
         if (e.target === modalControlTask) modalControlTask.classList.remove('visible');
+      });
+    }
+    var batchCreatePlansBtn = document.getElementById('batchCreatePlansBtn');
+    if (batchCreatePlansBtn) {
+      batchCreatePlansBtn.addEventListener('click', function() {
+        var msgEl = document.getElementById('batchCreateMsg');
+        if (!confirm('确定为所有设备批量创建养号计划？')) return;
+        batchCreatePlansBtn.disabled = true;
+        batchCreatePlansBtn.textContent = '批量创建中...';
+        if (msgEl) { msgEl.style.color = 'var(--text-muted)'; msgEl.textContent = '正在为所有设备创建计划，请稍候（可能需要几十秒）...'; }
+        fetch(API_BASE + '/group-control/nurture/plans/generate-batch', { method: 'POST', headers: authHeaders() })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            batchCreatePlansBtn.disabled = false;
+            batchCreatePlansBtn.textContent = '批量创建养号计划';
+            if (x.ok && x.data) {
+              var results = x.data.results || [];
+              var okCount = results.filter(function(r) { return r.ok; }).length;
+              var failCount = results.length - okCount;
+              var txt = '批量完成: ' + okCount + '/' + results.length + ' 成功';
+              if (failCount > 0) {
+                var failDevices = results.filter(function(r) { return !r.ok; }).map(function(r) { return '设备#' + r.device_id + '(' + (r.error || '未知') + ')'; });
+                txt += ' · 失败: ' + failDevices.join(', ');
+              }
+              if (msgEl) { msgEl.style.color = failCount > 0 ? '#b91c1c' : '#16a34a'; msgEl.textContent = txt; }
+              loadNurturePanel();
+              renderControlDevicesPage();
+            } else {
+              if (msgEl) { msgEl.style.color = '#b91c1c'; msgEl.textContent = (x.data && x.data.detail) || '批量创建失败'; }
+            }
+          })
+          .catch(function(err) {
+            batchCreatePlansBtn.disabled = false;
+            batchCreatePlansBtn.textContent = '批量创建养号计划';
+            if (msgEl) { msgEl.style.color = '#b91c1c'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+          });
       });
     }
     var nurtureRefreshBtn = document.getElementById('nurtureRefreshBtn');
