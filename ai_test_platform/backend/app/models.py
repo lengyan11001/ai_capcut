@@ -18,6 +18,7 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     credits: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
     role: Mapped[str] = mapped_column(String(32), default="user", nullable=False)  # admin|user
+    nurture_model_tier: Mapped[str] = mapped_column(String(32), default="basic", nullable=False)  # basic|pro
     is_email_verified: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )

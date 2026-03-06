@@ -72,6 +72,21 @@ def _ensure_user_role_column():
         pass
 
 
+def _ensure_user_nurture_tier_column():
+    """为已有数据库补充 users.nurture_model_tier 列。"""
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            if "sqlite" in (engine.url.drivername or ""):
+                rp = conn.execute(text("PRAGMA table_info(users)"))
+                rows = rp.fetchall()
+                columns = [row[1] for row in rows] if rows else []
+                if "nurture_model_tier" not in columns:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN nurture_model_tier VARCHAR(32) NOT NULL DEFAULT 'basic'"))
+    except Exception:
+        pass
+
+
 def _ensure_document_template_columns():
     """为已有数据库补充 document_templates 表的新列（如 file_content）。"""
     from sqlalchemy import text
@@ -340,6 +355,7 @@ def create_app() -> FastAPI:
     _ensure_accounts_columns()
     _ensure_user_email_columns()
     _ensure_user_role_column()
+    _ensure_user_nurture_tier_column()
     _ensure_document_template_columns()
     _ensure_case_generate_record_credits_reserved()
     _ensure_capability_call_log_columns()

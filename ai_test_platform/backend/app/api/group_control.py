@@ -39,6 +39,42 @@ from .auth import get_current_user
 router = APIRouter(prefix="/group-control", tags=["group-control"])
 logger = logging.getLogger(__name__)
 
+NURTURE_MODEL_OPTIONS = [
+    {"id": "deepseek-chat",               "name": "DeepSeek Chat",          "tier": "basic",   "speed": "fast"},
+    {"id": "deepseek-v3.1",               "name": "DeepSeek V3.1",          "tier": "basic",   "speed": "fast"},
+    {"id": "gpt-4o-mini",                 "name": "GPT-4o Mini",            "tier": "basic",   "speed": "fast"},
+    {"id": "gpt-4o",                      "name": "GPT-4o",                 "tier": "pro",     "speed": "medium"},
+    {"id": "claude-sonnet-4-5-20250929",  "name": "Claude Sonnet 4.5",      "tier": "pro",     "speed": "medium"},
+    {"id": "claude-sonnet-4-6",           "name": "Claude Sonnet 4.6",      "tier": "pro",     "speed": "medium"},
+    {"id": "gemini-2.5-flash",            "name": "Gemini 2.5 Flash",       "tier": "basic",   "speed": "fast"},
+    {"id": "gemini-2.5-pro",              "name": "Gemini 2.5 Pro",         "tier": "pro",     "speed": "medium"},
+]
+NURTURE_DEFAULT_MODEL = "deepseek-chat"
+NURTURE_TIER_ORDER = {"basic": 0, "pro": 1}
+
+
+def _user_nurture_tier(user: User) -> str:
+    return getattr(user, "nurture_model_tier", None) or "basic"
+
+
+def _allowed_models_for_user(user: User) -> list[dict]:
+    tier = _user_nurture_tier(user)
+    tier_level = NURTURE_TIER_ORDER.get(tier, 0)
+    return [m for m in NURTURE_MODEL_OPTIONS if NURTURE_TIER_ORDER.get(m["tier"], 0) <= tier_level]
+
+
+def _validate_model_for_user(user: User, model_id: str) -> str:
+    """校验用户是否有权使用该模型，返回有效 model_id 或抛异常。"""
+    if not model_id:
+        return NURTURE_DEFAULT_MODEL
+    allowed = {m["id"] for m in _allowed_models_for_user(user)}
+    if model_id not in allowed:
+        raise HTTPException(
+            status_code=403,
+            detail=f"模型 {model_id} 不在你的权限范围内，当前 tier: {_user_nurture_tier(user)}",
+        )
+    return model_id
+
 
 def _iso(x: Optional[datetime]) -> Optional[str]:
     return x.isoformat() if x else None
@@ -126,7 +162,7 @@ def _build_nurture_prompt(
         "3. engage 阶段(21天+)可增加 comment，每天最多 2 条评论\n"
         "4. 每天至少安排 1 次 profile_check\n"
         "5. 单次 session 持续时间 duration_min 建议 5-15 分钟\n"
-        "6. plan_horizon_days 取 14-60 的整数，next_review_in_days 取 1-3\n\n"
+        "6. plan_horizon_days 固定为 14，next_review_in_days 取 1-3\n\n"
         f"参数：objective={objective}, risk_preference={risk_preference}, current_phase={binding.phase}, "
         f"current_karma={binding.current_karma}, target_karma={binding.target_karma}, "
         f"account_health={binding.account_health}, mode={binding.automation_mode}。"
@@ -156,11 +192,12 @@ def _call_direct_llm_for_plan(
     binding: NurtureBinding,
     objective: str,
     risk_preference: str,
+    model_override: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
     """直接调用 OpenAI 兼容端点（如 ephone.chat）生成计划，不经过 OpenClaw。"""
     base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
     api_key = (settings.nurture_llm_api_key or "").strip()
-    model = (settings.nurture_llm_model or "deepseek-chat").strip()
+    model = (model_override or settings.nurture_llm_model or NURTURE_DEFAULT_MODEL).strip()
     if not base_url or not api_key:
         return None
     prompt = _build_nurture_prompt(binding, objective, risk_preference)
@@ -174,7 +211,7 @@ def _call_direct_llm_for_plan(
         "Content-Type": "application/json",
     }
     try:
-        with httpx.Client(timeout=60.0) as client:
+        with httpx.Client(timeout=120.0) as client:
             resp = client.post(f"{base_url}/chat/completions", headers=headers, json=body)
             if resp.status_code >= 300:
                 logger.warning("direct LLM returned %s: %s", resp.status_code, resp.text[:200])
@@ -202,12 +239,13 @@ def _call_openclaw_for_plan(
     binding: NurtureBinding,
     objective: str,
     risk_preference: str,
+    model_override: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
     """
     生成养号计划：优先走直接 LLM 端点（ephone.chat 等），
-    失败再走 OpenClaw 网关，最终由上层 fallback 兜底。
+    失败再走 OpenClaw 网关。
     """
-    plan = _call_direct_llm_for_plan(binding, objective, risk_preference)
+    plan = _call_direct_llm_for_plan(binding, objective, risk_preference, model_override=model_override)
     if plan:
         logger.info("nurture plan generated via direct LLM (%s)", plan.get("_model"))
         return plan
@@ -1042,10 +1080,11 @@ class NurtureBindingUpsertIn(BaseModel):
 
 class NurturePlanGenerateIn(BaseModel):
     binding_id: int
-    objective: str = Field(default="safe_growth", max_length=64)  # safe_growth|balanced|fast_growth
-    risk_preference: str = Field(default="conservative", max_length=32)  # conservative|balanced|aggressive
-    start_date: Optional[str] = None  # YYYY-MM-DD, UTC
+    objective: str = Field(default="safe_growth", max_length=64)
+    risk_preference: str = Field(default="conservative", max_length=32)
+    start_date: Optional[str] = None
     name: Optional[str] = Field(default=None, max_length=128)
+    model: Optional[str] = Field(default=None, max_length=64)
 
 
 class NurturePlanGenerateByDeviceIn(BaseModel):
@@ -1055,6 +1094,7 @@ class NurturePlanGenerateByDeviceIn(BaseModel):
     start_date: Optional[str] = None
     name: Optional[str] = Field(default=None, max_length=128)
     auto_approve: bool = False
+    model: Optional[str] = Field(default=None, max_length=64)
 
 
 @router.get("/nurture/bindings", summary="养号绑定列表（用户态）")
@@ -1154,6 +1194,7 @@ def generate_nurture_plan(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    model_id = _validate_model_for_user(current_user, payload.model or "")
     return _generate_nurture_plan_for_binding(
         db=db,
         current_user=current_user,
@@ -1162,6 +1203,7 @@ def generate_nurture_plan(
         risk_preference=(payload.risk_preference or "conservative").strip() or "conservative",
         start_date=payload.start_date,
         name=payload.name,
+        model=model_id,
     )
 
 
@@ -1173,7 +1215,9 @@ def _generate_nurture_plan_for_binding(
     risk_preference: str,
     start_date: Optional[str],
     name: Optional[str],
+    model: Optional[str] = None,
 ) -> dict[str, Any]:
+    model = model or NURTURE_DEFAULT_MODEL
     binding = (
         db.query(NurtureBinding)
         .filter(NurtureBinding.id == binding_id, NurtureBinding.user_id == current_user.id)
@@ -1186,12 +1230,13 @@ def _generate_nurture_plan_for_binding(
         binding,
         objective=objective,
         risk_preference=risk_preference,
+        model_override=model,
     )
     if not isinstance(plan_json, dict):
-        plan_json = _build_fallback_plan(30)
-        plan_json["_source"] = "fallback"
-        plan_json["_model"] = "none"
-        plan_json["_endpoint"] = ""
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI 模型 ({model}) 生成计划失败，请稍后重试或更换模型",
+        )
     days = int(plan_json.get("plan_horizon_days") or 30)
     if days < 1:
         days = 30
@@ -1286,6 +1331,7 @@ def generate_nurture_plan_by_device(
     if not binding_id:
         raise HTTPException(status_code=500, detail="failed to ensure binding")
     binding_is_new = bind_ret.get("detail") == "created"
+    model_id = _validate_model_for_user(current_user, payload.model or "")
     result = _generate_nurture_plan_for_binding(
         db=db,
         current_user=current_user,
@@ -1294,6 +1340,7 @@ def generate_nurture_plan_by_device(
         risk_preference=(payload.risk_preference or "conservative").strip() or "conservative",
         start_date=payload.start_date,
         name=payload.name,
+        model=model_id,
     )
     result["device_id"] = payload.device_id
     result["binding_is_new"] = binding_is_new
@@ -1623,6 +1670,43 @@ def nurture_progress(
     return out
 
 
+@router.get("/nurture/models", summary="当前用户可用的养号模型列表")
+def list_nurture_models(
+    current_user: User = Depends(get_current_user),
+):
+    allowed = _allowed_models_for_user(current_user)
+    return {
+        "tier": _user_nurture_tier(current_user),
+        "default_model": NURTURE_DEFAULT_MODEL,
+        "models": allowed,
+        "all_models": NURTURE_MODEL_OPTIONS if _is_admin(current_user) else None,
+    }
+
+
+class AdminSetNurtureTierIn(BaseModel):
+    user_id: int
+    tier: str = Field(max_length=32)
+
+
+@router.post("/admin/set-nurture-tier", summary="管理员设置用户模型权限等级")
+def admin_set_nurture_tier(
+    payload: AdminSetNurtureTierIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="admin only")
+    if payload.tier not in NURTURE_TIER_ORDER:
+        raise HTTPException(status_code=400, detail=f"invalid tier, allowed: {list(NURTURE_TIER_ORDER.keys())}")
+    user = db.query(User).filter(User.id == payload.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="user not found")
+    user.nurture_model_tier = payload.tier
+    db.add(user)
+    db.commit()
+    return {"user_id": user.id, "nurture_model_tier": payload.tier}
+
+
 @router.get("/admin/users", summary="管理员查看用户列表")
 def list_users_for_admin(
     db: Session = Depends(get_db),
@@ -1631,7 +1715,7 @@ def list_users_for_admin(
     if not _is_admin(current_user):
         raise HTTPException(status_code=403, detail="admin only")
     rows = db.query(User).order_by(User.id.asc()).all()
-    return [{"id": u.id, "email": u.email, "role": getattr(u, "role", "user")} for u in rows]
+    return [{"id": u.id, "email": u.email, "role": getattr(u, "role", "user"), "nurture_model_tier": getattr(u, "nurture_model_tier", "basic") or "basic"} for u in rows]
 
 
 @router.get("/admin/user-assignments/{user_id}", summary="管理员查看用户资源分配")

@@ -636,7 +636,11 @@
               <div class="card">
                 <div style="display:flex;gap:0.5rem;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
                   <div class="card-label" style="margin:0;">设备列表</div>
-                  <button type="button" id="batchCreatePlansBtn" class="btn btn-ghost btn-sm">批量创建养号计划</button>
+                  <div style="display:flex;gap:0.4rem;align-items:center;">
+                    <label class="meta" style="margin:0;white-space:nowrap;">AI模型:</label>
+                    <select id="nurtureModelSelect" style="font-size:12px;padding:2px 4px;border-radius:4px;border:1px solid var(--border);background:var(--card);color:var(--text);max-width:180px;"></select>
+                    <button type="button" id="batchCreatePlansBtn" class="btn btn-ghost btn-sm">批量创建养号计划</button>
+                  </div>
                 </div>
                 <div id="batchCreateMsg" class="meta" style="margin-bottom:0.35rem;"></div>
                 <div id="controlDevicesList"></div>
@@ -750,6 +754,18 @@
                   <input type="text" id="adminRechargeDesc" placeholder="例如：运营补贴">
                   <button type="button" id="adminRechargeBtn" class="btn btn-primary btn-sm" style="margin-top:0.5rem;">执行充值</button>
                   <div id="adminRechargeMsg" class="msg" style="margin-top:0.5rem;"></div>
+                </div>
+                <div class="card">
+                  <div class="card-label">养号模型权限</div>
+                  <label>用户</label>
+                  <select id="adminNurtureTierUserSelect"></select>
+                  <label>模型等级</label>
+                  <select id="adminNurtureTierSelect">
+                    <option value="basic">basic（基础：DeepSeek/GPT-4o-mini/Gemini Flash）</option>
+                    <option value="pro">pro（高级：+Claude/GPT-4o/Gemini Pro）</option>
+                  </select>
+                  <button type="button" id="adminSetNurtureTierBtn" class="btn btn-primary btn-sm" style="margin-top:0.5rem;">保存</button>
+                  <div id="adminNurtureTierMsg" class="msg" style="margin-top:0.5rem;"></div>
                 </div>
               </div>
             </div>
@@ -2721,6 +2737,8 @@
     var controlDeviceListCache = [];
     var controlDevicePage = 1;
     var controlDevicePageSize = 12;
+    var nurtureModelsCache = [];
+    var nurtureDefaultModel = 'deepseek-chat';
 
     function renderControlDevicesPage() {
       var list = controlDeviceListCache || [];
@@ -2771,7 +2789,7 @@
           fetch(API_BASE + '/group-control/nurture/plans/generate-by-device', {
             method: 'POST',
             headers: authHeaders(),
-            body: JSON.stringify({ device_id: deviceId, auto_approve: false })
+            body: JSON.stringify({ device_id: deviceId, auto_approve: false, model: getSelectedNurtureModel() })
           })
             .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
             .then(function(x) {
@@ -2792,6 +2810,29 @@
             });
         });
       });
+    }
+
+    function loadNurtureModels() {
+      return fetch(API_BASE + '/group-control/nurture/models', { headers: authHeaders() })
+        .then(function(r) { return r.ok ? r.json() : { models: [], default_model: 'deepseek-chat' }; })
+        .then(function(data) {
+          nurtureModelsCache = data.models || [];
+          nurtureDefaultModel = data.default_model || 'deepseek-chat';
+          var sel = document.getElementById('nurtureModelSelect');
+          if (sel) {
+            sel.innerHTML = nurtureModelsCache.map(function(m) {
+              var label = m.name + (m.tier === 'pro' ? ' [Pro]' : '') + (m.speed === 'fast' ? ' \u26A1' : '');
+              var selected = m.id === nurtureDefaultModel ? ' selected' : '';
+              return '<option value="' + escapeHtml(m.id) + '"' + selected + '>' + escapeHtml(label) + '</option>';
+            }).join('');
+          }
+        })
+        .catch(function() {});
+    }
+
+    function getSelectedNurtureModel() {
+      var sel = document.getElementById('nurtureModelSelect');
+      return sel ? sel.value : nurtureDefaultModel;
     }
 
     function loadControlDevices() {
@@ -2932,7 +2973,7 @@
     }
 
     function loadGroupControl() {
-      loadControlDevices()
+      Promise.all([loadControlDevices(), loadNurtureModels()])
         .then(function() {
           return Promise.all([loadDispatchGroups(), loadControlTasks(), loadNurturePanel()]);
         })
@@ -3268,10 +3309,24 @@
           var opts = list.map(function(u) {
             return '<option value="' + u.id + '">' + escapeHtml('#' + u.id + ' ' + (u.email || '-') + ' (' + (u.credits || 0) + '积分)') + '</option>';
           }).join('');
-          ['adminAssignUserSelect', 'adminSkillUserSelect', 'adminCreditUserSelect'].forEach(function(id) {
+          ['adminAssignUserSelect', 'adminSkillUserSelect', 'adminCreditUserSelect', 'adminNurtureTierUserSelect'].forEach(function(id) {
             var el = document.getElementById(id);
             if (el) el.innerHTML = opts;
           });
+          var tierSel = document.getElementById('adminNurtureTierUserSelect');
+          if (tierSel) {
+            tierSel.addEventListener('change', function() {
+              var uid = parseInt(tierSel.value, 10);
+              var u = list.find(function(x) { return x.id === uid; });
+              var ts = document.getElementById('adminNurtureTierSelect');
+              if (ts && u) ts.value = u.nurture_model_tier || 'basic';
+            });
+            var first = list[0];
+            if (first) {
+              var ts = document.getElementById('adminNurtureTierSelect');
+              if (ts) ts.value = first.nurture_model_tier || 'basic';
+            }
+          }
           return list;
         });
     }
@@ -3398,7 +3453,7 @@
     }
 
     function syncAdminUserSelectors() {
-      var ids = ['adminAssignUserSelect', 'adminSkillUserSelect', 'adminCreditUserSelect'];
+      var ids = ['adminAssignUserSelect', 'adminSkillUserSelect', 'adminCreditUserSelect', 'adminNurtureTierUserSelect'];
       var firstVal = '';
       ids.forEach(function(id) {
         var el = document.getElementById(id);
@@ -3895,6 +3950,28 @@
             if (x.ok) loadDashboard();
           })
           .catch(function(err) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); } });
+      });
+    }
+    var adminSetNurtureTierBtn = document.getElementById('adminSetNurtureTierBtn');
+    if (adminSetNurtureTierBtn) {
+      adminSetNurtureTierBtn.addEventListener('click', function() {
+        var userId = parseInt(String((document.getElementById('adminNurtureTierUserSelect') || {}).value || '').trim(), 10);
+        var tier = String((document.getElementById('adminNurtureTierSelect') || {}).value || '').trim();
+        var msgEl = document.getElementById('adminNurtureTierMsg');
+        if (!userId || !tier) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '请选择用户和等级'; } return; }
+        fetch(API_BASE + '/group-control/admin/set-nurture-tier', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ user_id: userId, tier: tier })
+        })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (!msgEl) return;
+            msgEl.className = x.ok ? 'msg ok' : 'msg err';
+            msgEl.textContent = x.ok ? ('已设置 tier=' + tier) : ((x.data && x.data.detail) || '设置失败');
+            if (x.ok) loadNurtureModels();
+          })
+          .catch(function(err) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误'; } });
       });
     }
     var btnAnalyzeRisk = document.getElementById('btnAnalyzeRisk');
