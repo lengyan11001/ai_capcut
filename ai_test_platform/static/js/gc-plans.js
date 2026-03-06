@@ -7,6 +7,8 @@
     var nurtureProgressPageSize = 10;
     var selectedNurtureBindingId = null;
     var selectedNurturePlanId = null;
+    var _nurtureAutoRefreshTimer = null;
+    var _expandedEvalPlanIds = {};
 
     function loadNurtureBindings() {
       return fetch(API_BASE + '/group-control/nurture/bindings', { headers: authHeaders() })
@@ -51,6 +53,8 @@
         return (r.device_label || '').toLowerCase().indexOf(q) >= 0 || (r.plan_name || '').toLowerCase().indexOf(q) >= 0 || (r.objective || '').toLowerCase().indexOf(q) >= 0 || String(r.plan_id || '').indexOf(q) >= 0;
       });
       var el = document.getElementById('nurtureProgressList');
+      var scrollParent = el ? el.closest('.card-body') || el.parentElement : null;
+      var savedScroll = scrollParent ? scrollParent.scrollTop : 0;
       var pagerEl = document.getElementById('nurtureProgressPager');
       if (!el) return;
       if (!list.length) {
@@ -184,15 +188,26 @@
         var titleStyle = statusColor ? ' style="color:' + statusColor + ';"' : '';
         return '<div class="list-item nurture-progress-item" data-binding-id="' + (r.binding_id || '') + '" data-plan-id="' + (r.plan_id || '') + '"' + selected + '><div><div class="title"' + titleStyle + '>' + escapeHtml(title) + '</div><div class="meta">' + meta + '</div>' + evalPanel + '</div><div class="acts">' + actions + '</div></div>';
       }).join('');
+      if (_nurtureAutoRefreshTimer) { clearTimeout(_nurtureAutoRefreshTimer); _nurtureAutoRefreshTimer = null; }
       if (hasGenerating) {
-        setTimeout(function() { loadNurtureProgress(); }, 4000);
+        _nurtureAutoRefreshTimer = setTimeout(function() { _nurtureAutoRefreshTimer = null; loadNurtureProgress(); }, 5000);
       }
+      Object.keys(_expandedEvalPlanIds).forEach(function(pid) {
+        if (_expandedEvalPlanIds[pid]) {
+          var panel = document.getElementById('evalPanel_' + pid);
+          if (panel) panel.style.display = 'block';
+        }
+      });
       el.querySelectorAll('.eval-score-tag').forEach(function(tag) {
         tag.addEventListener('click', function(e) {
           e.stopPropagation();
           var pid = tag.getAttribute('data-plan-id');
           var panel = document.getElementById('evalPanel_' + pid);
-          if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+          if (panel) {
+            var show = panel.style.display === 'none';
+            panel.style.display = show ? 'block' : 'none';
+            _expandedEvalPlanIds[pid] = show;
+          }
         });
       });
 
@@ -311,6 +326,7 @@
           openCreatePlanModal(deviceId, null);
         });
       });
+      if (scrollParent && savedScroll) scrollParent.scrollTop = savedScroll;
     }
 
     function loadNurtureSchedule(bindingId) {
