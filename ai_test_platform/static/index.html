@@ -682,9 +682,14 @@
             <div id="gcPanelStats" class="gc-panel visible">
               <div id="statsCards" style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.6rem;margin-bottom:1rem;"></div>
               <div class="card" style="margin-bottom:1rem;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem;">
                   <div class="card-label" style="margin:0;">AI 每日综合报告</div>
-                  <button type="button" id="statsReportRefreshBtn" class="btn btn-ghost btn-sm">刷新报告</button>
+                  <div style="display:flex;gap:0.5rem;align-items:center;">
+                    <select id="statsModelSelect" style="padding:0.25rem 0.4rem;font-size:0.8rem;background:rgba(255,255,255,0.08);color:var(--text);border:1px solid rgba(255,255,255,0.15);border-radius:var(--radius-sm);min-width:160px;">
+                      <option value="">加载中…</option>
+                    </select>
+                    <button type="button" id="statsReportRefreshBtn" class="btn btn-ghost btn-sm">刷新报告</button>
+                  </div>
                 </div>
                 <div id="statsReportContent" class="meta">加载中…</div>
               </div>
@@ -756,7 +761,6 @@
                   </div>
                 </div>
                 <div id="nurtureMsg" class="msg" style="margin-top:0.5rem;"></div>
-                <div id="nurtureStrategySummary" class="meta" style="margin-top:0.4rem;"></div>
                 <div class="card-label" style="margin-top:0.75rem;">养号进度</div>
                 <div id="nurtureProgressList" style="margin-top:0.35rem;"></div>
                 <div id="nurtureProgressPager" style="margin-top:0.5rem;display:flex;gap:0.4rem;align-items:center;justify-content:flex-end;"></div>
@@ -3732,8 +3736,7 @@
         return Promise.all([
           loadNurturePlans(),
           loadNurtureProgress(),
-          loadNurtureSchedule(),
-          loadNurtureStrategy()
+          loadNurtureSchedule()
         ]);
       });
     }
@@ -4761,7 +4764,34 @@
     function truncate(s, len) { s = (s || '').trim(); return s.length <= len ? s : s.slice(0, len) + '…'; }
 
     // ── Stats Panel ──
+    function _initStatsModelSelect() {
+      var sel = document.getElementById('statsModelSelect');
+      if (!sel || sel.dataset.inited) return;
+      sel.dataset.inited = '1';
+      fetch(API_BASE + '/group-control/nurture/models', { headers: authHeaders() })
+        .then(function(r) { return r.ok ? r.json() : { models: [], default_model: 'deepseek-chat' }; })
+        .then(function(data) {
+          var models = data.models || [];
+          var saved = '';
+          try { saved = localStorage.getItem('stats_report_model') || ''; } catch(e) {}
+          var pick = saved || data.default_model || 'deepseek-chat';
+          var found = models.some(function(m) { return m.id === pick; });
+          if (!found && models.length) pick = models[0].id;
+          sel.innerHTML = models.map(function(m) {
+            return '<option value="' + escapeAttr(m.id) + '"' + (m.id === pick ? ' selected' : '') + '>' + escapeHtml(m.name) + (m.tier === 'pro' ? ' [Pro]' : '') + '</option>';
+          }).join('');
+          sel.value = pick;
+        });
+      sel.addEventListener('change', function() {
+        try { localStorage.setItem('stats_report_model', sel.value); } catch(e) {}
+      });
+    }
+    function _getStatsModel() {
+      var sel = document.getElementById('statsModelSelect');
+      return sel ? sel.value : '';
+    }
     function loadStatsPanel() {
+      _initStatsModelSelect();
       loadStatsDaily();
       loadStatsReport();
     }
@@ -4845,8 +4875,9 @@
     (function() {
       var btn = document.getElementById('statsReportRefreshBtn');
       if (btn) btn.addEventListener('click', function() {
+        var m = _getStatsModel();
         btn.disabled = true; btn.textContent = '生成中…';
-        fetch(API_BASE + '/group-control/stats/report-refresh', { method: 'POST', headers: authHeaders() })
+        fetch(API_BASE + '/group-control/stats/report-refresh' + (m ? '?model=' + encodeURIComponent(m) : ''), { method: 'POST', headers: authHeaders() })
           .then(function(r) { return r.json(); })
           .then(function() { loadStatsReport(); btn.disabled = false; btn.textContent = '刷新报告'; })
           .catch(function() { btn.disabled = false; btn.textContent = '刷新报告'; });

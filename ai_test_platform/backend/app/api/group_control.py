@@ -2820,11 +2820,12 @@ def _crawl_reddit_policy() -> Optional[dict[str, Any]]:
     return {"source_urls": urls, "raw_texts": texts}
 
 
-def _summarize_policy_with_ai(raw_texts: list[str], prev_summary: str = "") -> Optional[dict]:
+def _summarize_policy_with_ai(raw_texts: list[str], prev_summary: str = "", model: str = "") -> Optional[dict]:
     base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
     api_key = (settings.nurture_llm_api_key or "").strip()
     if not base_url or not api_key:
         return None
+    use_model = model.strip() if model else (settings.nurture_llm_model or "deepseek-chat")
     combined = "\n---\n".join(raw_texts)[:12000]
     prompt = (
         "你是 Reddit 平台政策分析师。分析以下 Reddit 官方政策页面内容，输出严格 JSON。\n\n"
@@ -2843,7 +2844,7 @@ def _summarize_policy_with_ai(raw_texts: list[str], prev_summary: str = "") -> O
             resp = client.post(
                 f"{base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": settings.nurture_llm_model or "deepseek-chat", "messages": [{"role": "user", "content": prompt}], "temperature": 0.1},
+                json={"model": use_model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1},
             )
             if resp.status_code >= 300:
                 return None
@@ -2859,7 +2860,7 @@ def _summarize_policy_with_ai(raw_texts: list[str], prev_summary: str = "") -> O
         return None
 
 
-def _ensure_daily_policy(db: Session) -> Optional[RedditPolicySnapshot]:
+def _ensure_daily_policy(db: Session, model: str = "") -> Optional[RedditPolicySnapshot]:
     today = datetime.utcnow().date()
     existing = (
         db.query(RedditPolicySnapshot)
@@ -2874,7 +2875,7 @@ def _ensure_daily_policy(db: Session) -> Optional[RedditPolicySnapshot]:
         return None
     prev = db.query(RedditPolicySnapshot).order_by(RedditPolicySnapshot.id.desc()).first()
     prev_summary = prev.ai_summary if prev else ""
-    ai_result = _summarize_policy_with_ai(crawled["raw_texts"], prev_summary)
+    ai_result = _summarize_policy_with_ai(crawled["raw_texts"], prev_summary, model=model)
     snap = RedditPolicySnapshot(
         source_url=", ".join(crawled["source_urls"]),
         raw_content="\n---\n".join(crawled["raw_texts"])[:20000],
@@ -2908,6 +2909,7 @@ def get_policy_latest(
 
 @router.post("/stats/policy-refresh", summary="手动刷新 Reddit 政策")
 def refresh_policy(
+    model: str = "",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -2915,7 +2917,7 @@ def refresh_policy(
     if not crawled:
         raise HTTPException(status_code=502, detail="无法抓取 Reddit 政策页面")
     prev = db.query(RedditPolicySnapshot).order_by(RedditPolicySnapshot.id.desc()).first()
-    ai_result = _summarize_policy_with_ai(crawled["raw_texts"], prev.ai_summary if prev else "")
+    ai_result = _summarize_policy_with_ai(crawled["raw_texts"], prev.ai_summary if prev else "", model=model)
     snap = RedditPolicySnapshot(
         source_url=", ".join(crawled["source_urls"]),
         raw_content="\n---\n".join(crawled["raw_texts"])[:20000],
@@ -2929,9 +2931,9 @@ def refresh_policy(
     return {"id": snap.id, "ai_summary": snap.ai_summary, "severity": snap.severity}
 
 
-def _generate_daily_report_data(db: Session) -> dict[str, Any]:
+def _generate_daily_report_data(db: Session, model: str = "") -> dict[str, Any]:
     stats = _collect_daily_stats(db)
-    policy = _ensure_daily_policy(db)
+    policy = _ensure_daily_policy(db, model=model)
 
     active_plans = db.query(NurturePlan).filter(NurturePlan.status.in_(["approved", "active"])).all()
     binding_ids = [p.binding_id for p in active_plans]
@@ -2951,6 +2953,7 @@ def _generate_daily_report_data(db: Session) -> dict[str, Any]:
 
     base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
     api_key = (settings.nurture_llm_api_key or "").strip()
+    use_model = model.strip() if model else (settings.nurture_llm_model or "deepseek-chat")
     if not base_url or not api_key:
         return {"overall_score": 0, "execution_analysis": "LLM 未配置", "policy_analysis": "", "recommendations": [], "severity": "unknown", "raw_stats": stats}
 
@@ -2977,7 +2980,7 @@ def _generate_daily_report_data(db: Session) -> dict[str, Any]:
             resp = client.post(
                 f"{base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": settings.nurture_llm_model or "deepseek-chat", "messages": [{"role": "user", "content": prompt}], "temperature": 0.15},
+                json={"model": use_model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.15},
             )
             if resp.status_code >= 300:
                 return {"overall_score": 0, "execution_analysis": f"LLM 返回 {resp.status_code}", "policy_analysis": "", "recommendations": [], "severity": "unknown", "raw_stats": stats}
@@ -3023,10 +3026,11 @@ def get_daily_report(
 
 @router.post("/stats/report-refresh", summary="手动生成/刷新每日报告")
 def refresh_daily_report(
+    model: str = "",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    data = _generate_daily_report_data(db)
+    data = _generate_daily_report_data(db, model=model)
     today = datetime.utcnow().date()
     report = db.query(DailyReport).filter(DailyReport.report_date == today).first()
     if report:
