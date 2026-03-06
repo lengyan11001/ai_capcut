@@ -2859,7 +2859,8 @@
               '</div></div>' +
               '<div class="acts">' +
               '<button type="button" class="btn btn-ghost btn-sm btn-task-detail">详情</button> ' +
-              ((t.status === 'pending' || t.status === 'running') ? '<button type="button" class="btn btn-ghost btn-sm btn-task-cancel">取消</button>' : '') +
+              ((t.status === 'pending' || t.status === 'running') ? '<button type="button" class="btn btn-ghost btn-sm btn-task-cancel">取消</button> ' : '') +
+              '<button type="button" class="btn btn-ghost btn-sm btn-task-delete" style="color:#b91c1c;">删除</button>' +
               '</div></div>';
           }).join('');
           el.querySelectorAll('.btn-task-detail').forEach(function(btn) {
@@ -2874,6 +2875,15 @@
             btn.addEventListener('click', function() {
               var id = parseInt(btn.closest('.list-item').dataset.taskId, 10);
               fetch(API_BASE + '/group-control/tasks/' + id + '/cancel', { method: 'POST', headers: authHeaders() })
+                .then(function() { loadControlTasks(); })
+                .catch(function() {});
+            });
+          });
+          el.querySelectorAll('.btn-task-delete').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+              var id = parseInt(btn.closest('.list-item').dataset.taskId, 10);
+              if (!confirm('确定删除任务 #' + id + '？此操作不可恢复。')) return;
+              fetch(API_BASE + '/group-control/tasks/' + id, { method: 'DELETE', headers: authHeaders() })
                 .then(function() { loadControlTasks(); })
                 .catch(function() {});
             });
@@ -2952,9 +2962,14 @@
           var list = x.ok && Array.isArray(x.data) ? x.data : [];
           if (!el) return list;
           if (!list.length) { el.innerHTML = '<p class="meta">暂无绑定进度</p>'; return list; }
-          el.innerHTML = list.map(function(r) {
-            var title = (r.device_label || ('设备#' + (r.device_id || '-'))) + ' · ' + (r.reddit_username || ('账号#' + (r.reddit_account_id || '-')));
-            var meta = 'phase:' + (r.phase || '-') +
+          list.sort(function(a, b) {
+            return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+          });
+          el.innerHTML = list.map(function(r, idx) {
+            var title = '#' + (idx + 1) + ' ' + (r.device_label || ('设备#' + (r.device_id || '-'))) + ' · ' + (r.reddit_username || ('账号#' + (r.reddit_account_id || '-')));
+            var createdStr = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
+            var meta = '创建:' + createdStr +
+              ' · phase:' + (r.phase || '-') +
               ' · health:' + (r.account_health || '-') +
               ' · risk:' + (r.risk_score == null ? '-' : r.risk_score) +
               ' · karma:' + (r.current_karma || 0) + '/' + (r.target_karma || 0) +
@@ -2963,7 +2978,8 @@
               ' · next:' + (r.next_action_at ? new Date(r.next_action_at).toLocaleString() : '-');
             var active = (selectedNurtureBindingId && selectedNurtureBindingId === r.binding_id) ? ' style="border-color:var(--accent);"' : '';
             var actions = '<button type="button" class="btn btn-ghost btn-sm btn-nurture-start" data-plan-id="' + (r.plan_id || '') + '" data-device-id="' + (r.device_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">开始执行</button>' +
-              ' <button type="button" class="btn btn-ghost btn-sm btn-nurture-pause" data-plan-id="' + (r.plan_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">暂停</button>';
+              ' <button type="button" class="btn btn-ghost btn-sm btn-nurture-pause" data-plan-id="' + (r.plan_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">暂停</button>' +
+              (r.plan_id ? ' <button type="button" class="btn btn-ghost btn-sm btn-nurture-delete-plan" data-plan-id="' + r.plan_id + '" style="color:#b91c1c;">删除计划</button>' : '');
             return '<div class="list-item nurture-progress-item" data-binding-id="' + (r.binding_id || '') + '" data-plan-id="' + (r.plan_id || '') + '"' + active + '><div><div class="title">' + escapeHtml(title) + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts">' + actions + '</div></div>';
           }).join('');
           el.querySelectorAll('.nurture-progress-item').forEach(function(itemEl) {
@@ -3027,6 +3043,31 @@
                   } else {
                     msgEl.className = 'msg err';
                     msgEl.textContent = (x3.data && x3.data.detail) || '暂停失败';
+                  }
+                })
+                .catch(function(err) {
+                  if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+                });
+            });
+          });
+          el.querySelectorAll('.btn-nurture-delete-plan').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+              e.stopPropagation();
+              var planId = parseInt(String(btn.getAttribute('data-plan-id') || '').trim(), 10);
+              if (!planId || !confirm('确定删除计划 #' + planId + ' 及其所有执行明细？此操作不可恢复。')) return;
+              var msgEl = document.getElementById('nurtureMsg');
+              fetch(API_BASE + '/group-control/nurture/plans/' + planId, { method: 'DELETE', headers: authHeaders() })
+                .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+                .then(function(x4) {
+                  if (!msgEl) return;
+                  if (x4.ok) {
+                    msgEl.className = 'msg ok';
+                    msgEl.textContent = '计划已删除';
+                    loadNurturePanel();
+                    loadControlTasks();
+                  } else {
+                    msgEl.className = 'msg err';
+                    msgEl.textContent = (x4.data && x4.data.detail) || '删除失败';
                   }
                 })
                 .catch(function(err) {

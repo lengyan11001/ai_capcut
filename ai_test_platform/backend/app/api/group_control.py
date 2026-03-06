@@ -1294,6 +1294,29 @@ def pause_nurture_plan(
     return {"detail": "paused", "plan_id": row.id}
 
 
+@router.delete("/nurture/plans/{plan_id}", summary="删除计划及其执行明细（用户态）")
+def delete_nurture_plan(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = db.query(NurturePlan).filter(NurturePlan.id == plan_id, NurturePlan.user_id == current_user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="plan not found")
+    schedule_items = db.query(NurtureScheduleItem).filter(NurtureScheduleItem.plan_id == plan_id).all()
+    linked_task_ids = [s.task_id for s in schedule_items if s.task_id]
+    db.query(NurtureScheduleItem).filter(NurtureScheduleItem.plan_id == plan_id).delete(synchronize_session=False)
+    if linked_task_ids:
+        exec_ids = [e.id for e in db.query(TaskExecution).filter(TaskExecution.task_id.in_(linked_task_ids)).all()]
+        if exec_ids:
+            db.query(TaskExecutionLog).filter(TaskExecutionLog.execution_id.in_(exec_ids)).delete(synchronize_session=False)
+            db.query(TaskExecution).filter(TaskExecution.id.in_(exec_ids)).delete(synchronize_session=False)
+        db.query(ControlTask).filter(ControlTask.id.in_(linked_task_ids)).delete(synchronize_session=False)
+    db.delete(row)
+    db.commit()
+    return {"detail": "deleted", "plan_id": plan_id}
+
+
 @router.post("/nurture/scheduler/tick", summary="触发一次到点任务派发（用户态）")
 def tick_nurture_scheduler(
     db: Session = Depends(get_db),
@@ -1405,7 +1428,7 @@ def nurture_progress(
     bindings = (
         db.query(NurtureBinding)
         .filter(NurtureBinding.user_id == current_user.id)
-        .order_by(NurtureBinding.updated_at.desc())
+        .order_by(NurtureBinding.created_at.asc())
         .all()
     )
     if not bindings:
@@ -1469,6 +1492,7 @@ def nurture_progress(
                 "plan_updated_at": _iso(p.updated_at) if p else None,
                 "metrics": stat,
                 "next_action_at": _iso(b.next_action_at),
+                "created_at": _iso(b.created_at),
                 "updated_at": _iso(b.updated_at),
             }
         )
@@ -1776,6 +1800,24 @@ def cancel_task(
     db.add(row)
     db.commit()
     return {"detail": "cancelled", "status": row.status}
+
+
+@router.delete("/tasks/{task_id}", summary="删除任务（用户态）")
+def delete_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = db.query(ControlTask).filter(ControlTask.id == task_id, ControlTask.user_id == current_user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="task not found")
+    exec_ids = [e.id for e in db.query(TaskExecution).filter(TaskExecution.task_id == task_id).all()]
+    if exec_ids:
+        db.query(TaskExecutionLog).filter(TaskExecutionLog.execution_id.in_(exec_ids)).delete(synchronize_session=False)
+        db.query(TaskExecution).filter(TaskExecution.id.in_(exec_ids)).delete(synchronize_session=False)
+    db.delete(row)
+    db.commit()
+    return {"detail": "deleted", "task_id": task_id}
 
 
 @router.post("/agents/{agent_key}/next-task", summary="拉取待执行任务（Agent）")
