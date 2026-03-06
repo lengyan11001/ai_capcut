@@ -356,16 +356,16 @@ def _call_llm_for_eval(
     objective: str,
     model: str,
 ) -> Optional[dict[str, Any]]:
-    """调用 LLM 对计划评分（自动 fallback 多通道）。"""
+    """调用 LLM 对计划评分（不 fallback，与计划生成用同一通道）。"""
     prompt = _build_eval_prompt(objective, plan_json)
-    result = _call_llm_with_fallback(
+    result = _call_llm_single_endpoint(
         model=model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
         timeout_read=300.0,
     )
     if not result["ok"]:
-        logger.warning("eval LLM all channels failed: %s", result["error"])
+        logger.warning("eval LLM failed: %s", result["error"])
         return None
     try:
         content = _extract_llm_content(result["data"])
@@ -381,16 +381,16 @@ def _call_llm_for_refine(
     objective: str,
     model: str,
 ) -> Optional[dict[str, Any]]:
-    """调用 LLM 优化计划（自动 fallback 多通道）。"""
+    """调用 LLM 优化计划（不 fallback，与计划生成用同一通道）。"""
     prompt = _build_refine_prompt(objective, plan_json, eval_result)
-    result = _call_llm_with_fallback(
+    result = _call_llm_single_endpoint(
         model=model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
         timeout_read=600.0,
     )
     if not result["ok"]:
-        logger.warning("refine LLM all channels failed: %s", result["error"])
+        logger.warning("refine LLM failed: %s", result["error"])
         return None
     try:
         content = _extract_llm_content(result["data"])
@@ -419,32 +419,64 @@ def _parse_llm_plan_response(content: str) -> Optional[dict[str, Any]]:
     return plan
 
 
+def _call_llm_single_endpoint(
+    model: str,
+    messages: list[dict],
+    temperature: float = 0.2,
+    timeout_read: float = 600.0,
+) -> dict[str, Any]:
+    """
+    Call LLM using the primary endpoint only (no fallback).
+    Returns {"ok": True, "data": ..., "endpoint": ...} or {"ok": False, "error": "..."}.
+    """
+    endpoints = _get_llm_endpoints()
+    if not endpoints:
+        return {"ok": False, "error": "未配置 LLM 通道"}
+    ep = endpoints[0]
+    try:
+        timeout = httpx.Timeout(connect=30.0, read=timeout_read, write=30.0, pool=30.0)
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(
+                f"{ep['base_url']}/chat/completions",
+                headers={"Authorization": f"Bearer {ep['api_key']}", "Content-Type": "application/json"},
+                json={"model": model, "messages": messages, "temperature": temperature},
+            )
+            if resp.status_code >= 300:
+                error_text = resp.text[:300] if resp.text else str(resp.status_code)
+                return {"ok": False, "error": f"模型返回错误 ({resp.status_code}): {error_text[:200]}"}
+            data = resp.json() if resp.content else {}
+            if data.get("error"):
+                err_msg = str(data["error"].get("message", "unknown error"))[:200]
+                return {"ok": False, "error": f"模型错误: {err_msg}"}
+            return {"ok": True, "data": data, "endpoint": ep["label"]}
+    except httpx.TimeoutException:
+        return {"ok": False, "error": "请求超时，模型响应时间过长"}
+    except Exception as exc:
+        return {"ok": False, "error": f"调用失败: {exc}"}
+
+
 def _call_direct_llm_for_plan(
     binding: NurtureBinding,
     objective: str,
     risk_preference: str,
     model_override: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
-    """直接调用 OpenAI 兼容端点生成计划，自动 fallback 多通道。"""
+    """直接调用 LLM 生成计划（不 fallback，用户选的模型报错就报错）。"""
     endpoints = _get_llm_endpoints()
     if not endpoints:
         return None
     model = (model_override or settings.nurture_llm_model or NURTURE_DEFAULT_MODEL).strip()
     prompt = _build_nurture_prompt(binding, objective, risk_preference)
-    result = _call_llm_with_fallback(
+    result = _call_llm_single_endpoint(
         model=model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
         timeout_read=600.0,
     )
     if not result["ok"]:
-        return {"_error": True, "_error_msg": f"所有通道失败: {result['error']}"}
+        return {"_error": True, "_error_msg": f"AI 模型 ({model}) {result['error']}"}
     data = result["data"]
-    choices = data.get("choices") or []
-    content = ""
-    if choices and isinstance(choices[0], dict):
-        msg = choices[0].get("message") or {}
-        content = str(msg.get("content") or "")
+    content = _extract_llm_content(data)
     plan = _parse_llm_plan_response(content)
     if plan:
         resp_model = str(data.get("model") or model)
