@@ -49,6 +49,7 @@ _REDACT_PATTERNS = [
 _REDACT_TERMS = ("速推", "fyshark", "ts-api.fyshark.com", "sutui_account", "account_id")
 _IMAGE_INTENT_RE = re.compile(r"(生成|画|做).{0,8}(图|图片|海报|头像|插画)|文生图|出图|做一张图", re.I)
 _IMAGE_UNAVAILABLE_RE = re.compile(r"(无法|不能|暂时).*?(生成|出).*?(图|图片)|没有可用.*?(图像|图片).*?能力", re.I)
+_SUTUI_CREDIT_INTENT_RE = re.compile(r"(速推|sutui).{0,8}(积分|余额|点数|剩余)|查询.{0,8}(速推|sutui).{0,8}(积分|余额|点数)", re.I)
 
 
 def _check_chat_rate_limit(user_id: int) -> bool:
@@ -86,6 +87,16 @@ def _is_image_intent(text: str) -> bool:
 def _looks_like_image_unavailable_reply(text: str) -> bool:
     t = (text or "").strip()
     return bool(t and _IMAGE_UNAVAILABLE_RE.search(t))
+
+
+def _is_sutui_credit_intent(text: str) -> bool:
+    t = (text or "").strip()
+    return bool(t and _SUTUI_CREDIT_INTENT_RE.search(t))
+
+
+def _is_admin_user(user: User) -> bool:
+    role = (getattr(user, "role", "") or "").strip().lower()
+    return role == "admin"
 
 
 def _today_chat_count(db: Session, user_id: int) -> int:
@@ -312,12 +323,31 @@ async def _try_image_generation_fallback(
     if not success:
         db.commit()
         return None
-    urls = parsed.get("urls") if isinstance(parsed.get("urls"), list) else []
-    first_url = urls[0] if urls else ""
-    if not first_url:
+    urls = [str(x).strip() for x in (parsed.get("urls") if isinstance(parsed.get("urls"), list) else []) if str(x).strip()]
+    if not urls:
         db.commit()
         return None
-    reply = f"已为你生成图片（默认模型：{default_model}）。\n{first_url}"
+    provider = str(parsed.get("provider") or cap.upstream or "sutui").strip() or "sutui"
+    model_used = str(parsed.get("model") or default_model).strip() or default_model
+    media_type = str(parsed.get("media_type") or "image").strip() or "image"
+    lines = [
+        "图片已生成成功。",
+        f"- 来源能力: {cap.capability_id}",
+        f"- 上游渠道: {provider}",
+        f"- 使用模型: {model_used}",
+        f"- 媒体类型: {media_type}",
+    ]
+    # 兼容两种口径：上游实际消耗（若返回）与平台实际扣费（本次记账）。
+    if should_charge:
+        lines.append(f"- 上游消耗: {actual_credits}")
+    else:
+        lines.append("- 上游消耗: 0")
+    lines.append(f"- 平台扣费: {charged}")
+    lines.append(f"- 生成耗时: {latency_ms}ms")
+    lines.append("图片链接:")
+    for idx, u in enumerate(urls, 1):
+        lines.append(f"{idx}. {u}")
+    reply = "\n".join(lines)
     _add_chat_turn_log(
         db=db,
         user_id=current_user.id,
@@ -326,6 +356,70 @@ async def _try_image_generation_fallback(
         session_id=payload.session_id,
         context_id=payload.context_id or "image.generate",
         meta={"fallback": "image.generate", "charged_credits": charged},
+    )
+    db.commit()
+    return reply
+
+
+async def _try_sutui_account_fallback(
+    db: Session,
+    current_user: User,
+    payload: ChatRequest,
+) -> Optional[str]:
+    """管理员查询速推账户积分/余额时，直连 sutui.account 能力。"""
+    if not _is_admin_user(current_user):
+        return None
+    cap = (
+        db.query(CapabilityConfig)
+        .filter(CapabilityConfig.capability_id == "sutui.account", CapabilityConfig.enabled.is_(True))
+        .first()
+    )
+    upstream = (cap.upstream if cap else "sutui") or "sutui"
+    upstream_tool = (cap.upstream_tool if cap else "account") or "account"
+    upstream_urls = _load_capability_upstream_urls()
+    upstream_url = upstream_urls.get(upstream.strip(), "").strip()
+    if not upstream_url:
+        return None
+    t0 = time.perf_counter()
+    upstream_resp = await _call_upstream_mcp_tool(upstream_url, upstream_tool, {})
+    latency_ms = int((time.perf_counter() - t0) * 1000)
+    parsed = _extract_text_json(upstream_resp)
+    success = bool(parsed.get("success", True))
+    err = str(parsed.get("error") or "")[:1000] or None
+    log = CapabilityCallLog(
+        user_id=current_user.id,
+        capability_id="sutui.account",
+        upstream=upstream,
+        upstream_tool=upstream_tool,
+        success=success,
+        credits_charged=0,
+        latency_ms=latency_ms,
+        request_payload={},
+        response_payload=upstream_resp if isinstance(upstream_resp, dict) else {"raw": str(upstream_resp)},
+        error_message=err,
+        source="chat_fallback",
+        chat_session_id=(payload.session_id or "")[:128] or None,
+        chat_context_id=payload.context_id or "sutui.account",
+    )
+    db.add(log)
+    if not success:
+        db.commit()
+        return None
+    key_lines: List[str] = []
+    for k in ("balance", "credits", "points", "remaining", "remaining_credits"):
+        if k in parsed:
+            key_lines.append(f"- {k}: {parsed.get(k)}")
+    if not key_lines:
+        key_lines.append("- 明细: " + json.dumps(parsed, ensure_ascii=False)[:2000])
+    reply = "速推账户信息如下：\n" + "\n".join(key_lines)
+    _add_chat_turn_log(
+        db=db,
+        user_id=current_user.id,
+        user_message=payload.message,
+        assistant_reply=reply,
+        session_id=payload.session_id,
+        context_id=payload.context_id or "sutui.account",
+        meta={"fallback": "sutui.account", "charged_credits": 0},
     )
     db.commit()
     return reply
@@ -443,6 +537,16 @@ async def chat_endpoint(
         )
         db.commit()
         return ChatResponse(reply=reply)
+    # 管理员查询速推积分/余额时，优先直连 sutui.account 能力。
+    if _is_sutui_credit_intent(payload.message):
+        user = db.query(User).filter(User.id == current_user.id).first()
+        if user:
+            account_reply = await _try_sutui_account_fallback(db, user, payload)
+            if account_reply:
+                return JSONResponse(
+                    content=ChatResponse(reply=account_reply).model_dump(),
+                    headers={"X-Chat-Fallback": "sutui.account"},
+                )
     # 图片请求优先走统一能力路由，确保由速推链路执行真实出图。
     if _is_image_intent(payload.message):
         user = db.query(User).filter(User.id == current_user.id).first()

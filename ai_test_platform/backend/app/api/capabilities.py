@@ -18,6 +18,8 @@ from .auth import _require_admin_token, get_current_user
 
 router = APIRouter(prefix="/capabilities", tags=["capabilities"])
 
+ADMIN_ONLY_CAPABILITIES = {"sutui.account"}
+
 
 def _is_admin_user(user: User) -> bool:
     role = (getattr(user, "role", "") or "").strip().lower()
@@ -100,6 +102,10 @@ def _has_any_user_policy(db: Session, user: User) -> bool:
 
 
 def _capability_allowed_for_user(db: Session, user: User, capability_id: str) -> bool:
+    # 关键管理能力仅允许 admin 使用（硬限制，优先于策略表）。
+    # 对 admin 永久放行，避免被普通白名单策略误伤。
+    if capability_id in ADMIN_ONLY_CAPABILITIES:
+        return _is_admin_user(user)
     rules = (
         db.query(CapabilityPolicy)
         .filter(

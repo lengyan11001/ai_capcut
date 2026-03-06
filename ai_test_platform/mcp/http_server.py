@@ -41,6 +41,7 @@ CAPABILITY_ALLOWLIST = {x.strip() for x in _allowlist_raw.split(",") if x.strip(
 CAPABILITY_CATALOG_PATH = os.environ.get("CAPABILITY_CATALOG_PATH", "").strip()
 CAPABILITY_UPSTREAM_URLS_JSON = os.environ.get("CAPABILITY_UPSTREAM_URLS_JSON", "").strip()
 CAPABILITY_IMAGE_DEFAULT_MODEL = os.environ.get("CAPABILITY_IMAGE_DEFAULT_MODEL", "jimeng-4.0").strip()
+ADMIN_ONLY_CAPABILITIES = {"sutui.account"}
 
 DEFAULT_CAPABILITY_CATALOG: Dict[str, Dict[str, Any]] = {
     "image.generate": {
@@ -300,14 +301,40 @@ async def _fetch_backend_capabilities_by_user_id(user_id: int) -> Optional[Dict[
                 allow_set.add(cid)
 
         out: Dict[str, Dict[str, Any]] = {}
+        # 无法确认用户管理员身份时，保守处理：隐藏 admin-only 能力，避免普通用户旁路获取。
+        is_admin_user = False
+        if admin_token:
+            try:
+                async with httpx.AsyncClient(timeout=20.0) as client:
+                    r_users = await client.get(
+                        f"{BASE_URL}/auth/admin/users",
+                        headers=_backend_headers(admin_token),
+                    )
+                if r_users.status_code == 200:
+                    users = r_users.json()
+                    if isinstance(users, list):
+                        for u in users:
+                            if not isinstance(u, dict):
+                                continue
+                            if int(u.get("id") or 0) == int(user_id):
+                                role = str(u.get("role") or "").strip().lower()
+                                is_admin_user = role == "admin"
+                                break
+            except Exception:
+                is_admin_user = False
         if has_any_user_policy:
             for cid in sorted(allow_set):
                 if cid in deny_set:
                     continue
                 if cid in reg_map:
+                    if cid in ADMIN_ONLY_CAPABILITIES and not is_admin_user:
+                        continue
                     out[cid] = reg_map[cid]
             return out
         # 无策略时保持兼容：返回全部启用能力
+        if not is_admin_user:
+            for c in ADMIN_ONLY_CAPABILITIES:
+                reg_map.pop(c, None)
         return reg_map
     except Exception:
         return None
