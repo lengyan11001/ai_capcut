@@ -48,18 +48,25 @@
           + '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.72rem;color:#fff;background:' + statusColor + ';">' + escapeHtml(p.plan_status) + '</span></div>';
         var detail = '';
         if (expanded && items.length) {
-          var rows = items.map(function(i) {
-            var ic = i.status === 'success' ? '#4ade80' : i.status === 'failed' ? '#f87171' : i.status === 'running' || i.status === 'dispatched' ? '#facc15' : '#888';
+          var sortedItems = items.slice().sort(function(a, b) {
+            var da = parseInt(a.day_no || 0, 10), db2 = parseInt(b.day_no || 0, 10);
+            if (da !== db2) return da - db2;
+            return parseInt(a.seq_no || 0, 10) - parseInt(b.seq_no || 0, 10);
+          });
+          var rows = sortedItems.map(function(i) {
+            var ic = i.status === 'success' ? '#4ade80' : i.status === 'failed' ? '#f87171' : i.status === 'running' || i.status === 'dispatched' ? '#facc15' : i.status === 'skipped' ? '#f97316' : '#888';
+            var timeStr = '';
+            if (i.scheduled_at) { var d = new Date(i.scheduled_at); timeStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); }
             return '<tr style="border-bottom:1px solid rgba(255,255,255,0.03);font-size:0.78rem;">'
               + '<td style="padding:2px 4px;">' + i.day_no + '-' + i.seq_no + '</td>'
               + '<td>' + escapeHtml(i.action) + '</td>'
               + '<td>' + escapeHtml(i.title || '') + '</td>'
               + '<td><span style="color:' + ic + ';">' + escapeHtml(i.status) + '</span></td>'
-              + '<td>' + escapeHtml(i.scheduled_at ? i.scheduled_at.split('T').pop().substring(0,5) : '') + '</td>'
+              + '<td style="white-space:nowrap;">' + escapeHtml(timeStr) + '</td>'
               + '<td style="color:#f87171;font-size:0.72rem;">' + escapeHtml(truncate(i.error,40)) + '</td></tr>';
           }).join('');
           detail = '<div style="margin-top:0.4rem;"><table style="width:100%;border-collapse:collapse;"><tr style="border-bottom:1px solid rgba(255,255,255,0.08);font-size:0.75rem;color:var(--text-muted);">'
-            + '<th style="text-align:left;padding:2px 4px;">D-S</th><th style="text-align:left;">动作</th><th style="text-align:left;">标题</th><th>状态</th><th>时间</th><th>错误</th></tr>'
+            + '<th style="text-align:left;padding:2px 4px;">D-S</th><th style="text-align:left;">动作</th><th style="text-align:left;">标题</th><th>状态</th><th>日期时间</th><th>错误</th></tr>'
             + rows + '</table></div>';
         } else if (expanded) {
           detail = '<div class="meta" style="margin-top:0.3rem;">暂无近期调度项</div>';

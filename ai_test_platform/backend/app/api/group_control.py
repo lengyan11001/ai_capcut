@@ -3084,11 +3084,10 @@ def get_nurture_running(
     plan_ids = [p.id for p in plans]
     binding_ids = [p.binding_id for p in plans]
 
-    since = datetime.utcnow() - timedelta(hours=48)
     items = (
         db.query(NurtureScheduleItem)
-        .filter(NurtureScheduleItem.plan_id.in_(plan_ids), NurtureScheduleItem.updated_at >= since)
-        .order_by(NurtureScheduleItem.scheduled_at.desc())
+        .filter(NurtureScheduleItem.plan_id.in_(plan_ids))
+        .order_by(NurtureScheduleItem.day_no.asc(), NurtureScheduleItem.seq_no.asc())
         .all()
     )
 
@@ -3106,7 +3105,7 @@ def get_nurture_running(
     for p in plans:
         b = b_map.get(p.binding_id)
         dev = d_map.get(b.device_id) if b else None
-        p_items = items_by_plan.get(p.id, [])[:20]
+        p_items = items_by_plan.get(p.id, [])
         out.append({
             "plan_id": p.id, "plan_name": p.name, "plan_status": p.status,
             "device_label": _device_label_from_row(dev) if dev else None,
