@@ -475,9 +475,11 @@
       if (!list.length) { el.innerHTML = '<div class="meta">无匹配设备</div>'; return; }
       el.innerHTML = list.map(function(d) {
         var ckd = _copySelectedDevices[d.id] ? ' checked' : '';
-        return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0.4rem;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.82rem;">'
-          + '<input type="checkbox" class="copy-device-cb" data-device-id="' + d.id + '"' + ckd + '>'
-          + '<span>' + escapeHtml(d.device_label || d.serial || '#' + d.id) + '</span></label>';
+        var runBadge = d.running_task_count > 0 ? '<span style="margin-left:auto;font-size:0.7rem;padding:1px 5px;border-radius:3px;background:#facc15;color:#000;">' + d.running_task_count + '运行</span>' : '';
+        return '<label style="display:flex;align-items:center;gap:0.4rem;padding:0.35rem 0.5rem;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.05);font-size:0.82rem;white-space:nowrap;" onmouseover="this.style.background=\'rgba(255,255,255,0.06)\'" onmouseout="this.style.background=\'none\'">'
+          + '<input type="checkbox" class="copy-device-cb" data-device-id="' + d.id + '"' + ckd + ' style="flex-shrink:0;">'
+          + '<span style="overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(d.device_label || d.serial || '#' + d.id) + '</span>'
+          + runBadge + '</label>';
       }).join('');
       el.querySelectorAll('.copy-device-cb').forEach(function(cb) {
         cb.addEventListener('change', function() {
