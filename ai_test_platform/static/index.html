@@ -663,6 +663,7 @@
                 <div id="nurtureStrategySummary" class="meta" style="margin-top:0.4rem;"></div>
                 <div class="card-label" style="margin-top:0.75rem;">养号进度</div>
                 <div id="nurtureProgressList" style="margin-top:0.35rem;"></div>
+                <div id="nurtureProgressPager" style="margin-top:0.5rem;display:flex;gap:0.4rem;align-items:center;justify-content:flex-end;"></div>
               </div>
               <div class="card" style="margin-top:0.75rem;">
                 <div class="card-label">执行明细</div>
@@ -2931,6 +2932,9 @@
 
     var nurtureBindingsCache = [];
     var nurturePlansCache = [];
+    var nurtureProgressCache = [];
+    var nurtureProgressPage = 1;
+    var nurtureProgressPageSize = 10;
     var selectedNurtureBindingId = null;
 
     function loadNurtureBindings() {
@@ -2958,125 +2962,157 @@
       return fetch(API_BASE + '/group-control/nurture/progress', { headers: authHeaders() })
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(x) {
-          var el = document.getElementById('nurtureProgressList');
           var list = x.ok && Array.isArray(x.data) ? x.data : [];
-          if (!el) return list;
-          if (!list.length) { el.innerHTML = '<p class="meta">暂无绑定进度</p>'; return list; }
           list.sort(function(a, b) {
-            return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+            return String(b.created_at || '').localeCompare(String(a.created_at || ''));
           });
-          el.innerHTML = list.map(function(r, idx) {
-            var title = '#' + (idx + 1) + ' ' + (r.device_label || ('设备#' + (r.device_id || '-'))) + ' · ' + (r.reddit_username || ('账号#' + (r.reddit_account_id || '-')));
-            var createdStr = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
-            var meta = '创建:' + createdStr +
-              ' · phase:' + (r.phase || '-') +
-              ' · health:' + (r.account_health || '-') +
-              ' · risk:' + (r.risk_score == null ? '-' : r.risk_score) +
-              ' · karma:' + (r.current_karma || 0) + '/' + (r.target_karma || 0) +
-              ' · plan:' + (r.plan_status || 'none') +
-              (r.plan_requires_reconfirm ? ' (待重确认)' : '') +
-              ' · next:' + (r.next_action_at ? new Date(r.next_action_at).toLocaleString() : '-');
-            var active = (selectedNurtureBindingId && selectedNurtureBindingId === r.binding_id) ? ' style="border-color:var(--accent);"' : '';
-            var actions = '<button type="button" class="btn btn-ghost btn-sm btn-nurture-start" data-plan-id="' + (r.plan_id || '') + '" data-device-id="' + (r.device_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">开始执行</button>' +
-              ' <button type="button" class="btn btn-ghost btn-sm btn-nurture-pause" data-plan-id="' + (r.plan_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">暂停</button>' +
-              (r.plan_id ? ' <button type="button" class="btn btn-ghost btn-sm btn-nurture-delete-plan" data-plan-id="' + r.plan_id + '" style="color:#b91c1c;">删除计划</button>' : '');
-            return '<div class="list-item nurture-progress-item" data-binding-id="' + (r.binding_id || '') + '" data-plan-id="' + (r.plan_id || '') + '"' + active + '><div><div class="title">' + escapeHtml(title) + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts">' + actions + '</div></div>';
-          }).join('');
-          el.querySelectorAll('.nurture-progress-item').forEach(function(itemEl) {
-            itemEl.addEventListener('click', function(e) {
-              if (e.target && (e.target.classList.contains('btn-nurture-start') || e.target.classList.contains('btn-nurture-pause'))) return;
-              var bid = parseInt(String(itemEl.getAttribute('data-binding-id') || '').trim(), 10);
-              if (!isNaN(bid) && bid > 0) {
-                selectedNurtureBindingId = bid;
-                loadNurtureProgress();
-                loadNurtureSchedule(bid);
-              }
-            });
-          });
-          el.querySelectorAll('.btn-nurture-start').forEach(function(btn) {
-            btn.addEventListener('click', function(e) {
-              e.stopPropagation();
-              var msgEl = document.getElementById('nurtureMsg');
-              var planId = parseInt(String(btn.getAttribute('data-plan-id') || '').trim(), 10);
-              var deviceId = parseInt(String(btn.getAttribute('data-device-id') || '').trim(), 10);
-              var bindingId = parseInt(String(btn.getAttribute('data-binding-id') || '').trim(), 10);
-              selectedNurtureBindingId = isNaN(bindingId) ? selectedNurtureBindingId : bindingId;
-              var req = planId ? fetch(API_BASE + '/group-control/nurture/plans/' + planId + '/approve', { method: 'POST', headers: authHeaders() })
-                               : fetch(API_BASE + '/group-control/nurture/plans/generate-by-device', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ device_id: deviceId, auto_approve: true }) });
-              req.then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-                .then(function(x2) {
-                  if (!msgEl) return;
-                  if (x2.ok) {
-                    msgEl.className = 'msg ok';
-                    msgEl.textContent = planId ? '计划已开始执行' : '已自动创建并开始执行计划';
-                    loadNurturePanel();
-                    loadControlTasks();
-                  } else {
-                    msgEl.className = 'msg err';
-                    msgEl.textContent = (x2.data && x2.data.detail) || '开始执行失败';
-                  }
-                })
-                .catch(function(err) {
-                  if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
-                });
-            });
-          });
-          el.querySelectorAll('.btn-nurture-pause').forEach(function(btn) {
-            btn.addEventListener('click', function(e) {
-              e.stopPropagation();
-              var msgEl = document.getElementById('nurtureMsg');
-              var planId = parseInt(String(btn.getAttribute('data-plan-id') || '').trim(), 10);
-              var bindingId = parseInt(String(btn.getAttribute('data-binding-id') || '').trim(), 10);
-              selectedNurtureBindingId = isNaN(bindingId) ? selectedNurtureBindingId : bindingId;
-              if (!planId) {
-                if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '当前记录没有可暂停的计划'; }
-                return;
-              }
-              fetch(API_BASE + '/group-control/nurture/plans/' + planId + '/pause', { method: 'POST', headers: authHeaders() })
-                .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-                .then(function(x3) {
-                  if (!msgEl) return;
-                  if (x3.ok) {
-                    msgEl.className = 'msg ok';
-                    msgEl.textContent = '计划已暂停';
-                    loadNurturePanel();
-                  } else {
-                    msgEl.className = 'msg err';
-                    msgEl.textContent = (x3.data && x3.data.detail) || '暂停失败';
-                  }
-                })
-                .catch(function(err) {
-                  if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
-                });
-            });
-          });
-          el.querySelectorAll('.btn-nurture-delete-plan').forEach(function(btn) {
-            btn.addEventListener('click', function(e) {
-              e.stopPropagation();
-              var planId = parseInt(String(btn.getAttribute('data-plan-id') || '').trim(), 10);
-              if (!planId || !confirm('确定删除计划 #' + planId + ' 及其所有执行明细？此操作不可恢复。')) return;
-              var msgEl = document.getElementById('nurtureMsg');
-              fetch(API_BASE + '/group-control/nurture/plans/' + planId, { method: 'DELETE', headers: authHeaders() })
-                .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-                .then(function(x4) {
-                  if (!msgEl) return;
-                  if (x4.ok) {
-                    msgEl.className = 'msg ok';
-                    msgEl.textContent = '计划已删除';
-                    loadNurturePanel();
-                    loadControlTasks();
-                  } else {
-                    msgEl.className = 'msg err';
-                    msgEl.textContent = (x4.data && x4.data.detail) || '删除失败';
-                  }
-                })
-                .catch(function(err) {
-                  if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
-                });
-            });
-          });
+          nurtureProgressCache = list;
+          renderNurtureProgressPage();
           return list;
         });
+    }
+
+    function renderNurtureProgressPage() {
+      var list = nurtureProgressCache || [];
+      var el = document.getElementById('nurtureProgressList');
+      var pagerEl = document.getElementById('nurtureProgressPager');
+      if (!el) return;
+      if (!list.length) {
+        el.innerHTML = '<p class="meta">暂无绑定进度</p>';
+        if (pagerEl) pagerEl.innerHTML = '';
+        return;
+      }
+      var total = list.length;
+      var pageCount = Math.max(1, Math.ceil(total / nurtureProgressPageSize));
+      if (nurtureProgressPage > pageCount) nurtureProgressPage = pageCount;
+      if (nurtureProgressPage < 1) nurtureProgressPage = 1;
+      var start = (nurtureProgressPage - 1) * nurtureProgressPageSize;
+      var rows = list.slice(start, start + nurtureProgressPageSize);
+
+      el.innerHTML = rows.map(function(r, localIdx) {
+        var globalIdx = total - (start + localIdx);
+        var title = '#' + globalIdx + ' ' + (r.device_label || ('设备#' + (r.device_id || '-'))) + ' · ' + (r.reddit_username || ('账号#' + (r.reddit_account_id || '-')));
+        var createdStr = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
+        var meta = '创建:' + createdStr +
+          ' · phase:' + (r.phase || '-') +
+          ' · health:' + (r.account_health || '-') +
+          ' · risk:' + (r.risk_score == null ? '-' : r.risk_score) +
+          ' · karma:' + (r.current_karma || 0) + '/' + (r.target_karma || 0) +
+          ' · plan:' + (r.plan_status || 'none') +
+          (r.plan_requires_reconfirm ? ' (待重确认)' : '') +
+          ' · next:' + (r.next_action_at ? new Date(r.next_action_at).toLocaleString() : '-');
+        var active = (selectedNurtureBindingId && selectedNurtureBindingId === r.binding_id) ? ' style="border-color:var(--accent);"' : '';
+        var actions = '<button type="button" class="btn btn-ghost btn-sm btn-nurture-start" data-plan-id="' + (r.plan_id || '') + '" data-device-id="' + (r.device_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">开始执行</button>' +
+          ' <button type="button" class="btn btn-ghost btn-sm btn-nurture-pause" data-plan-id="' + (r.plan_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">暂停</button>' +
+          (r.plan_id ? ' <button type="button" class="btn btn-ghost btn-sm btn-nurture-delete-plan" data-plan-id="' + r.plan_id + '" style="color:#b91c1c;">删除计划</button>' : '');
+        return '<div class="list-item nurture-progress-item" data-binding-id="' + (r.binding_id || '') + '" data-plan-id="' + (r.plan_id || '') + '"' + active + '><div><div class="title">' + escapeHtml(title) + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts">' + actions + '</div></div>';
+      }).join('');
+
+      if (pagerEl) {
+        pagerEl.innerHTML = '<button type="button" class="btn btn-ghost btn-sm" id="nurtureProgressPrevBtn">上一页</button>' +
+          '<span class="meta">第 ' + nurtureProgressPage + ' / ' + pageCount + ' 页（共' + total + '条）</span>' +
+          '<button type="button" class="btn btn-ghost btn-sm" id="nurtureProgressNextBtn">下一页</button>';
+        var prev = document.getElementById('nurtureProgressPrevBtn');
+        var next = document.getElementById('nurtureProgressNextBtn');
+        if (prev) prev.disabled = nurtureProgressPage <= 1;
+        if (next) next.disabled = nurtureProgressPage >= pageCount;
+        if (prev) prev.addEventListener('click', function() { nurtureProgressPage -= 1; renderNurtureProgressPage(); });
+        if (next) next.addEventListener('click', function() { nurtureProgressPage += 1; renderNurtureProgressPage(); });
+      }
+
+      el.querySelectorAll('.nurture-progress-item').forEach(function(itemEl) {
+        itemEl.addEventListener('click', function(e) {
+          if (e.target && (e.target.classList.contains('btn-nurture-start') || e.target.classList.contains('btn-nurture-pause') || e.target.classList.contains('btn-nurture-delete-plan'))) return;
+          var bid = parseInt(String(itemEl.getAttribute('data-binding-id') || '').trim(), 10);
+          if (!isNaN(bid) && bid > 0) {
+            selectedNurtureBindingId = bid;
+            renderNurtureProgressPage();
+            loadNurtureSchedule(bid);
+          }
+        });
+      });
+      el.querySelectorAll('.btn-nurture-start').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var msgEl = document.getElementById('nurtureMsg');
+          var planId = parseInt(String(btn.getAttribute('data-plan-id') || '').trim(), 10);
+          var deviceId = parseInt(String(btn.getAttribute('data-device-id') || '').trim(), 10);
+          var bindingId = parseInt(String(btn.getAttribute('data-binding-id') || '').trim(), 10);
+          selectedNurtureBindingId = isNaN(bindingId) ? selectedNurtureBindingId : bindingId;
+          var req = planId ? fetch(API_BASE + '/group-control/nurture/plans/' + planId + '/approve', { method: 'POST', headers: authHeaders() })
+                           : fetch(API_BASE + '/group-control/nurture/plans/generate-by-device', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ device_id: deviceId, auto_approve: true }) });
+          req.then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+            .then(function(x2) {
+              if (!msgEl) return;
+              if (x2.ok) {
+                msgEl.className = 'msg ok';
+                msgEl.textContent = planId ? '计划已开始执行' : '已自动创建并开始执行计划';
+                loadNurturePanel();
+                loadControlTasks();
+              } else {
+                msgEl.className = 'msg err';
+                msgEl.textContent = (x2.data && x2.data.detail) || '开始执行失败';
+              }
+            })
+            .catch(function(err) {
+              if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+            });
+        });
+      });
+      el.querySelectorAll('.btn-nurture-pause').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var msgEl = document.getElementById('nurtureMsg');
+          var planId = parseInt(String(btn.getAttribute('data-plan-id') || '').trim(), 10);
+          var bindingId = parseInt(String(btn.getAttribute('data-binding-id') || '').trim(), 10);
+          selectedNurtureBindingId = isNaN(bindingId) ? selectedNurtureBindingId : bindingId;
+          if (!planId) {
+            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '当前记录没有可暂停的计划'; }
+            return;
+          }
+          fetch(API_BASE + '/group-control/nurture/plans/' + planId + '/pause', { method: 'POST', headers: authHeaders() })
+            .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+            .then(function(x3) {
+              if (!msgEl) return;
+              if (x3.ok) {
+                msgEl.className = 'msg ok';
+                msgEl.textContent = '计划已暂停';
+                loadNurturePanel();
+              } else {
+                msgEl.className = 'msg err';
+                msgEl.textContent = (x3.data && x3.data.detail) || '暂停失败';
+              }
+            })
+            .catch(function(err) {
+              if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+            });
+        });
+      });
+      el.querySelectorAll('.btn-nurture-delete-plan').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var planId = parseInt(String(btn.getAttribute('data-plan-id') || '').trim(), 10);
+          if (!planId || !confirm('确定删除计划 #' + planId + ' 及其所有执行明细？此操作不可恢复。')) return;
+          var msgEl = document.getElementById('nurtureMsg');
+          fetch(API_BASE + '/group-control/nurture/plans/' + planId, { method: 'DELETE', headers: authHeaders() })
+            .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+            .then(function(x4) {
+              if (!msgEl) return;
+              if (x4.ok) {
+                msgEl.className = 'msg ok';
+                msgEl.textContent = '计划已删除';
+                loadNurturePanel();
+                loadControlTasks();
+              } else {
+                msgEl.className = 'msg err';
+                msgEl.textContent = (x4.data && x4.data.detail) || '删除失败';
+              }
+            })
+            .catch(function(err) {
+              if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+            });
+        });
+      });
     }
 
     function loadNurtureSchedule(bindingId) {

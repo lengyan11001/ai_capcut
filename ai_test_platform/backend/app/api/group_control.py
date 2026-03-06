@@ -1428,7 +1428,7 @@ def nurture_progress(
     bindings = (
         db.query(NurtureBinding)
         .filter(NurtureBinding.user_id == current_user.id)
-        .order_by(NurtureBinding.created_at.asc())
+        .order_by(NurtureBinding.created_at.desc())
         .all()
     )
     if not bindings:
