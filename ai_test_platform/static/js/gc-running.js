@@ -1,0 +1,96 @@
+// gc-running.js - 群控：执行列表
+
+    var runningCache = [];
+    var runningPage = 1;
+    var runningPageSize = 10;
+    var runningExpandedPlanIds = {};
+    function loadRunningPanel() {
+      fetch(API_BASE + '/group-control/nurture/running', { headers: authHeaders() })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { runningCache = Array.isArray(d) ? d : []; renderRunningList(); })
+        .catch(function() {});
+    }
+    function renderRunningList() {
+      var el = document.getElementById('runningList');
+      if (!el) return;
+      var q = (document.getElementById('runningSearchInput') || {}).value || '';
+      q = q.toLowerCase().trim();
+      var list = runningCache;
+      if (q) list = list.filter(function(p) {
+        return (p.device_label || '').toLowerCase().indexOf(q) >= 0 || (p.plan_name || '').toLowerCase().indexOf(q) >= 0 || (p.objective || '').toLowerCase().indexOf(q) >= 0 || String(p.plan_id).indexOf(q) >= 0;
+      });
+      if (!list.length) { el.innerHTML = '<div class="meta">暂无执行中的计划</div>'; return; }
+      var total = list.length;
+      var pageCount = Math.max(1, Math.ceil(total / runningPageSize));
+      if (runningPage > pageCount) runningPage = pageCount;
+      if (runningPage < 1) runningPage = 1;
+      var start = (runningPage - 1) * runningPageSize;
+      var pageList = list.slice(start, start + runningPageSize);
+
+      var html = pageList.map(function(p) {
+        var statusColor = p.plan_status === 'active' ? '#4ade80' : '#facc15';
+        var items = p.items || [];
+        var succCnt = items.filter(function(i) { return i.status === 'success'; }).length;
+        var failCnt = items.filter(function(i) { return i.status === 'failed'; }).length;
+        var runCnt = items.filter(function(i) { return i.status === 'running' || i.status === 'dispatched'; }).length;
+        var summary = '<span class="meta" style="margin-left:0.5rem;">' + items.length + '项';
+        if (succCnt) summary += ' <span style="color:#4ade80;">' + succCnt + '成功</span>';
+        if (failCnt) summary += ' <span style="color:#f87171;">' + failCnt + '失败</span>';
+        if (runCnt) summary += ' <span style="color:#facc15;">' + runCnt + '运行</span>';
+        summary += '</span>';
+        var expanded = !!runningExpandedPlanIds[p.plan_id];
+        var arrow = expanded ? '&#9660;' : '&#9654;';
+        var header = '<div class="running-plan-header" data-plan-id="' + p.plan_id + '" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">'
+          + '<div><span style="margin-right:0.3rem;font-size:0.7rem;color:var(--text-muted);">' + arrow + '</span>'
+          + '<span style="font-weight:600;">' + escapeHtml(p.device_label || '?') + '</span> <span class="meta">计划#' + p.plan_id + '</span>'
+          + (p.objective ? ' <span style="font-size:0.75rem;color:#93c5fd;">(' + escapeHtml(p.objective) + ')</span>' : '')
+          + summary + '</div>'
+          + '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.72rem;color:#fff;background:' + statusColor + ';">' + escapeHtml(p.plan_status) + '</span></div>';
+        var detail = '';
+        if (expanded && items.length) {
+          var rows = items.map(function(i) {
+            var ic = i.status === 'success' ? '#4ade80' : i.status === 'failed' ? '#f87171' : i.status === 'running' || i.status === 'dispatched' ? '#facc15' : '#888';
+            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.03);font-size:0.78rem;">'
+              + '<td style="padding:2px 4px;">' + i.day_no + '-' + i.seq_no + '</td>'
+              + '<td>' + escapeHtml(i.action) + '</td>'
+              + '<td>' + escapeHtml(i.title || '') + '</td>'
+              + '<td><span style="color:' + ic + ';">' + escapeHtml(i.status) + '</span></td>'
+              + '<td>' + escapeHtml(i.scheduled_at ? i.scheduled_at.split('T').pop().substring(0,5) : '') + '</td>'
+              + '<td style="color:#f87171;font-size:0.72rem;">' + escapeHtml(truncate(i.error,40)) + '</td></tr>';
+          }).join('');
+          detail = '<div style="margin-top:0.4rem;"><table style="width:100%;border-collapse:collapse;"><tr style="border-bottom:1px solid rgba(255,255,255,0.08);font-size:0.75rem;color:var(--text-muted);">'
+            + '<th style="text-align:left;padding:2px 4px;">D-S</th><th style="text-align:left;">动作</th><th style="text-align:left;">标题</th><th>状态</th><th>时间</th><th>错误</th></tr>'
+            + rows + '</table></div>';
+        } else if (expanded) {
+          detail = '<div class="meta" style="margin-top:0.3rem;">暂无近期调度项</div>';
+        }
+        return '<div style="background:rgba(255,255,255,0.03);border-radius:var(--radius-sm);padding:0.6rem 0.75rem;margin-bottom:0.5rem;">' + header + detail + '</div>';
+      }).join('');
+
+      if (pageCount > 1) {
+        html += '<div style="display:flex;gap:0.4rem;align-items:center;justify-content:flex-end;margin-top:0.5rem;">'
+          + '<button type="button" class="btn btn-ghost btn-sm" id="runningPrevBtn"' + (runningPage <= 1 ? ' disabled' : '') + '>上一页</button>'
+          + '<span class="meta">第 ' + runningPage + ' / ' + pageCount + ' 页（共' + total + '个计划）</span>'
+          + '<button type="button" class="btn btn-ghost btn-sm" id="runningNextBtn"' + (runningPage >= pageCount ? ' disabled' : '') + '>下一页</button></div>';
+      }
+      el.innerHTML = html;
+
+      el.querySelectorAll('.running-plan-header').forEach(function(hdr) {
+        hdr.addEventListener('click', function() {
+          var pid = parseInt(hdr.getAttribute('data-plan-id'), 10);
+          if (runningExpandedPlanIds[pid]) { delete runningExpandedPlanIds[pid]; }
+          else { runningExpandedPlanIds[pid] = true; }
+          renderRunningList();
+        });
+      });
+      var prevBtn = document.getElementById('runningPrevBtn');
+      var nextBtn = document.getElementById('runningNextBtn');
+      if (prevBtn) prevBtn.addEventListener('click', function() { runningPage -= 1; renderRunningList(); });
+      if (nextBtn) nextBtn.addEventListener('click', function() { runningPage += 1; renderRunningList(); });
+    }
+    (function() {
+      var si = document.getElementById('runningSearchInput');
+      if (si) si.addEventListener('input', function() { runningPage = 1; renderRunningList(); });
+      var rb = document.getElementById('runningRefreshBtn');
+      if (rb) rb.addEventListener('click', function() { loadRunningPanel(); });
+    })();
