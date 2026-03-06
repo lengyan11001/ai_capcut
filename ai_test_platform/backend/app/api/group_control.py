@@ -180,6 +180,147 @@ def _build_nurture_prompt(
     )
 
 
+def _build_eval_prompt(objective: str, plan_json: dict) -> str:
+    """构建计划评分 prompt，让 AI 自评并给出优化建议。"""
+    plan_str = json.dumps(plan_json, ensure_ascii=False, indent=None)
+    return (
+        "你是 Reddit 养号计划质量审核员。对以下养号计划进行评分并给出改进建议。\n"
+        "输出严格 JSON，不要 markdown。\n\n"
+        f"养号方向(objective)：{objective}\n\n"
+        f"待评审计划：\n{plan_str}\n\n"
+        "=== 评分维度（每项 0-100 分）===\n"
+        "1. keyword_relevance: search 关键词与 objective 的贴合度（关键词是否精准聚焦在该领域，而非泛泛通用词）\n"
+        "2. subreddit_relevance: subscribe 的 subreddit_name 与 objective 的匹配度（是否是真实存在的相关社区）\n"
+        "3. stage_compliance: 阶段规则遵守情况（warmup 不出现 upvote/subscribe/comment 等）\n"
+        "4. rhythm_naturalness: 时间分布自然度（是否像真人使用，间隔合理，时段分散）\n"
+        "5. risk_control: 风险控制（upvote_ratio 渐进、高风险动作占比）\n"
+        "6. content_diversity: 内容丰富度（关键词是否有变化、动作组合是否多样）\n\n"
+        "=== 输出格式 ===\n"
+        "{\n"
+        '  "scores": {\n'
+        '    "keyword_relevance": <0-100>,\n'
+        '    "subreddit_relevance": <0-100>,\n'
+        '    "stage_compliance": <0-100>,\n'
+        '    "rhythm_naturalness": <0-100>,\n'
+        '    "risk_control": <0-100>,\n'
+        '    "content_diversity": <0-100>\n'
+        "  },\n"
+        '  "total_score": <加权平均, 0-100>,\n'
+        '  "verdict": "pass" 或 "needs_improvement",\n'
+        '  "issues": ["具体问题1", "具体问题2", ...],\n'
+        '  "suggestions": ["改进建议1", "改进建议2", ...]\n'
+        "}\n\n"
+        "total_score 加权：keyword_relevance 25%, subreddit_relevance 20%, stage_compliance 20%, "
+        "rhythm_naturalness 15%, risk_control 10%, content_diversity 10%。\n"
+        "total_score >= 80 时 verdict 为 pass，否则为 needs_improvement。"
+    )
+
+
+def _build_refine_prompt(objective: str, plan_json: dict, eval_result: dict) -> str:
+    """构建计划优化 prompt，把评分反馈给 AI 让其改进。"""
+    plan_str = json.dumps(plan_json, ensure_ascii=False, indent=None)
+    issues = eval_result.get("issues", [])
+    suggestions = eval_result.get("suggestions", [])
+    scores = eval_result.get("scores", {})
+    return (
+        "你是 Reddit 养号计划器。上一版计划被质量审核评为需要改进。\n"
+        "请根据以下反馈优化计划，输出严格 JSON（与原计划相同格式），不要 markdown。\n\n"
+        f"养号方向(objective)：{objective}\n\n"
+        f"上一版计划：\n{plan_str}\n\n"
+        f"评分详情：{json.dumps(scores, ensure_ascii=False)}\n"
+        f"发现的问题：{json.dumps(issues, ensure_ascii=False)}\n"
+        f"改进建议：{json.dumps(suggestions, ensure_ascii=False)}\n\n"
+        "要求：\n"
+        "1. 针对上述问题逐一修正\n"
+        "2. 保持整体结构不变（plan_version, summary, plan_horizon_days, next_review_in_days, schedule）\n"
+        "3. subscribe 必须有 subreddit_name，search 的 keyword 必须与 objective 直接相关\n"
+        "4. 不要回避敏感内容方向，Reddit 允许 NSFW\n"
+        "5. 输出完整的优化后计划 JSON"
+    )
+
+
+def _call_llm_for_eval(
+    plan_json: dict,
+    objective: str,
+    model: str,
+) -> Optional[dict[str, Any]]:
+    """调用 LLM 对计划评分。"""
+    base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
+    api_key = (settings.nurture_llm_api_key or "").strip()
+    if not base_url or not api_key:
+        return None
+    prompt = _build_eval_prompt(objective, plan_json)
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0)
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(f"{base_url}/chat/completions", headers=headers, json=body)
+            if resp.status_code >= 300:
+                return None
+            data = resp.json() if resp.content else {}
+            choices = data.get("choices") or []
+            content = ""
+            if choices and isinstance(choices[0], dict):
+                msg = choices[0].get("message") or {}
+                content = str(msg.get("content") or "")
+            raw = content.strip()
+            if raw.startswith("```"):
+                raw = re.sub(r"^```[a-zA-Z]*", "", raw).strip()
+                raw = raw[:-3].strip() if raw.endswith("```") else raw
+            return json.loads(raw)
+    except Exception as exc:
+        logger.warning("eval LLM call failed: %s", exc)
+        return None
+
+
+def _call_llm_for_refine(
+    plan_json: dict,
+    eval_result: dict,
+    objective: str,
+    model: str,
+) -> Optional[dict[str, Any]]:
+    """调用 LLM 根据评分反馈优化计划。"""
+    base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
+    api_key = (settings.nurture_llm_api_key or "").strip()
+    if not base_url or not api_key:
+        return None
+    prompt = _build_refine_prompt(objective, plan_json, eval_result)
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        timeout = httpx.Timeout(connect=30.0, read=600.0, write=30.0, pool=30.0)
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(f"{base_url}/chat/completions", headers=headers, json=body)
+            if resp.status_code >= 300:
+                return None
+            data = resp.json() if resp.content else {}
+            choices = data.get("choices") or []
+            content = ""
+            if choices and isinstance(choices[0], dict):
+                msg = choices[0].get("message") or {}
+                content = str(msg.get("content") or "")
+            plan = _parse_llm_plan_response(content)
+            return plan
+    except Exception as exc:
+        logger.warning("refine LLM call failed: %s", exc)
+        return None
+
+
 def _parse_llm_plan_response(content: str) -> Optional[dict[str, Any]]:
     """从 LLM 返回的文本中解析出 plan JSON。"""
     raw = content.strip()
@@ -1313,6 +1454,22 @@ def _bg_generate_plan(
         if plan_row.status != "generating":
             return
 
+        eval_rounds: list[dict] = []
+        max_rounds = 3
+        pass_threshold = 80
+
+        def _update_progress(stage: str, round_no: int, detail: str = ""):
+            plan_row.plan_json = {
+                "_status": "generating", "_model": model,
+                "_stage": stage, "_round": round_no, "_detail": detail,
+                "_eval_rounds": eval_rounds,
+            }
+            plan_row.summary = f"{stage}（第{round_no}轮）{detail}"
+            plan_row.updated_at = datetime.utcnow()
+            db.commit()
+
+        _update_progress("生成计划", 1, "正在调用 AI…")
+
         plan_json = _call_openclaw_for_plan(
             user, binding,
             objective=objective,
@@ -1323,18 +1480,77 @@ def _bg_generate_plan(
         if isinstance(plan_json, dict) and plan_json.get("_error"):
             plan_row.status = "gen_failed"
             plan_row.summary = plan_json.get("_error_msg", "模型返回错误")
-            plan_row.plan_json = {"_status": "gen_failed", "_model": model, "_error_msg": plan_json.get("_error_msg", "")}
+            plan_row.plan_json = {"_status": "gen_failed", "_model": model, "_error_msg": plan_json.get("_error_msg", ""), "_eval_rounds": eval_rounds}
             db.commit()
-            logger.warning("bg_generate_plan: model error for plan=%s: %s", plan_id, plan_json.get("_error_msg"))
             return
 
         if not isinstance(plan_json, dict) or not plan_json.get("schedule"):
             plan_row.status = "gen_failed"
             plan_row.summary = "AI 返回数据格式无效，请重试"
-            plan_row.plan_json = {"_status": "gen_failed", "_model": model, "_error_msg": "invalid response format"}
+            plan_row.plan_json = {"_status": "gen_failed", "_model": model, "_error_msg": "invalid response format", "_eval_rounds": eval_rounds}
             db.commit()
-            logger.warning("bg_generate_plan: invalid response for plan=%s", plan_id)
             return
+
+        for round_no in range(1, max_rounds + 1):
+            _update_progress("AI 评分", round_no, "正在评估计划质量…")
+            eval_result = _call_llm_for_eval(plan_json, objective, model)
+
+            if not isinstance(eval_result, dict) or "total_score" not in eval_result:
+                eval_rounds.append({
+                    "round": round_no,
+                    "score": None,
+                    "verdict": "eval_failed",
+                    "detail": "评分调用失败，跳过优化",
+                    "timestamp": datetime.utcnow().isoformat(),
+                })
+                break
+
+            total_score = float(eval_result.get("total_score", 0))
+            scores = eval_result.get("scores", {})
+            verdict = eval_result.get("verdict", "unknown")
+            issues = eval_result.get("issues", [])
+            suggestions = eval_result.get("suggestions", [])
+
+            eval_rounds.append({
+                "round": round_no,
+                "score": total_score,
+                "scores": scores,
+                "verdict": verdict,
+                "issues": issues,
+                "suggestions": suggestions,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+
+            if total_score >= pass_threshold or verdict == "pass":
+                _update_progress("评分通过", round_no, f"得分 {total_score:.0f}")
+                break
+
+            if round_no >= max_rounds:
+                _update_progress("达到最大轮次", round_no, f"最终得分 {total_score:.0f}")
+                break
+
+            _update_progress("优化计划", round_no + 1,
+                             f"上轮得分 {total_score:.0f}，正在改进…")
+            refined = _call_llm_for_refine(plan_json, eval_result, objective, model)
+            if isinstance(refined, dict) and refined.get("schedule"):
+                src = plan_json.get("_source", "direct_llm")
+                mdl = plan_json.get("_model", model)
+                ep = plan_json.get("_endpoint", "")
+                refined["_source"] = src
+                refined["_model"] = mdl
+                refined["_endpoint"] = ep
+                plan_json = refined
+            else:
+                eval_rounds.append({
+                    "round": round_no + 1,
+                    "score": None,
+                    "verdict": "refine_failed",
+                    "detail": "优化调用失败，使用当前版本",
+                    "timestamp": datetime.utcnow().isoformat(),
+                })
+                break
+
+        plan_json["_eval_rounds"] = eval_rounds
 
         days = int(plan_json.get("plan_horizon_days") or 14)
         if days < 1:
@@ -1345,10 +1561,12 @@ def _bg_generate_plan(
         if not isinstance(schedule, list):
             schedule = []
 
+        final_score = eval_rounds[-1].get("score") if eval_rounds else None
+        score_summary = f" (AI评分:{final_score:.0f})" if isinstance(final_score, (int, float)) else ""
         plan_row.status = "draft"
         plan_row.plan_version = str(plan_json.get("plan_version") or "v1")
         plan_row.plan_horizon_days = days
-        plan_row.summary = str(plan_json.get("summary") or "")
+        plan_row.summary = str(plan_json.get("summary") or "") + score_summary
         plan_row.plan_json = plan_json
         plan_row.next_review_at = datetime.utcnow() + timedelta(days=max(1, min(3, int(plan_json.get("next_review_in_days") or 1))))
         plan_row.updated_at = datetime.utcnow()
@@ -1387,7 +1605,7 @@ def _bg_generate_plan(
                 )
             )
         db.commit()
-        logger.info("bg_generate_plan: plan=%s completed (%s items)", plan_id, len(schedule))
+        logger.info("bg_generate_plan: plan=%s completed (%s items, %d eval rounds)", plan_id, len(schedule), len(eval_rounds))
     except Exception as exc:
         logger.exception("bg_generate_plan: unexpected error for plan=%s: %s", plan_id, exc)
         try:
@@ -1746,6 +1964,9 @@ def nurture_progress(
                 "plan_objective": getattr(p, "objective", None) or "",
                 "plan_source": (p.plan_json or {}).get("_source", "unknown") if isinstance(p.plan_json, dict) else "unknown",
                 "plan_model": (p.plan_json or {}).get("_model", "") if isinstance(p.plan_json, dict) else "",
+                "plan_gen_stage": (p.plan_json or {}).get("_stage", "") if isinstance(p.plan_json, dict) else "",
+                "plan_gen_round": (p.plan_json or {}).get("_round", 0) if isinstance(p.plan_json, dict) else 0,
+                "plan_eval_rounds": (p.plan_json or {}).get("_eval_rounds", []) if isinstance(p.plan_json, dict) else [],
                 "plan_created_at": _iso(p.created_at),
                 "plan_updated_at": _iso(p.updated_at),
                 "binding_id": p.binding_id,

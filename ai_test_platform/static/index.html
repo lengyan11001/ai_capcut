@@ -3197,28 +3197,88 @@
         var m = r.metrics || {};
         var sourceTag = '';
         if (r.plan_status === 'generating') {
-          sourceTag = '<span style="background:#f59e0b;color:#000;padding:1px 6px;border-radius:3px;font-size:11px;animation:pulse 1.5s infinite;">&#9889; ' + escapeHtml(r.plan_model || 'AI') + ' 生成中</span>';
+          var stageLabel = r.plan_gen_stage || '准备中';
+          var roundLabel = r.plan_gen_round ? ('第' + r.plan_gen_round + '轮') : '';
+          sourceTag = '<span style="background:#f59e0b;color:#000;padding:1px 6px;border-radius:3px;font-size:11px;animation:pulse 1.5s infinite;">&#9889; ' + escapeHtml(stageLabel) + ' ' + roundLabel + '</span>';
         } else if (r.plan_status === 'gen_failed') {
           sourceTag = '<span style="background:#ef4444;color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;">&#10060; 生成失败</span>';
         } else {
           var sourceLabel = r.plan_source === 'direct_llm' ? ('AI:' + (r.plan_model || '?'))
             : r.plan_source === 'openclaw' ? ('OpenClaw:' + (r.plan_model || '?'))
             : r.plan_source === 'fallback' ? '静态兜底' : '未知';
-          var sourceColor = r.plan_source === 'direct_llm' ? '#7c3aed'
+          var srcClr = r.plan_source === 'direct_llm' ? '#7c3aed'
             : r.plan_source === 'openclaw' ? '#2563eb'
             : r.plan_source === 'fallback' ? '#9ca3af' : '#6b7280';
-          sourceTag = '<span style="background:' + sourceColor + ';color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;">' + escapeHtml(sourceLabel) + '</span>';
+          sourceTag = '<span style="background:' + srcClr + ';color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;">' + escapeHtml(sourceLabel) + '</span>';
         }
         var objTag = r.plan_objective ? ' <span style="background:rgba(139,92,246,0.15);color:#c4b5fd;padding:1px 6px;border-radius:3px;font-size:11px;border:1px solid rgba(139,92,246,0.25);">' + escapeHtml(r.plan_objective) + '</span>' : '';
-        var meta = sourceTag + objTag + ' ' +
+        var evalRounds = r.plan_eval_rounds || [];
+        var evalTag = '';
+        if (evalRounds.length && r.plan_status !== 'generating') {
+          var lastR = evalRounds[evalRounds.length - 1];
+          var sc = lastR.score;
+          if (typeof sc === 'number') {
+            var scClr = sc >= 80 ? '#10b981' : sc >= 60 ? '#f59e0b' : '#ef4444';
+            evalTag = ' <span style="background:' + scClr + ';color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;cursor:pointer;" class="eval-score-tag" data-plan-id="' + r.plan_id + '">AI评分:' + Math.round(sc) + ' (' + evalRounds.length + '轮)</span>';
+          }
+        }
+        var meta = sourceTag + objTag + evalTag + ' ' +
           '创建:' + createdStr + ' · 状态:<b style="color:' + (statusColor || 'inherit') + ';">' + statusText + '</b>' +
           (r.plan_requires_reconfirm ? ' (待重确认)' : '');
         if (r.plan_status === 'gen_failed') {
           meta += ' · <span style="color:#f87171;font-size:0.8rem;">' + escapeHtml(r.plan_summary || '') + '</span>';
+        } else if (r.plan_status === 'generating') {
+          var genRounds = r.plan_eval_rounds || [];
+          if (genRounds.length) {
+            meta += '<div class="eval-timeline" style="margin-top:6px;">';
+            genRounds.forEach(function(er) {
+              var badge = typeof er.score === 'number' ? ('<b>' + Math.round(er.score) + '分</b>') : (er.verdict || '?');
+              meta += '<div class="eval-step" style="font-size:0.78rem;color:#a1a1aa;padding:2px 0;">第' + er.round + '轮 → ' + badge;
+              if (er.issues && er.issues.length) meta += ' · 问题:' + er.issues.length + '个';
+              meta += '</div>';
+            });
+            meta += '</div>';
+          }
         } else if (r.plan_status !== 'generating') {
           meta += ' · ' + (m.total || 0) + '项(成功' + (m.success || 0) + '/失败' + (m.failed || 0) + '/执行中' + (m.running || 0) + '/待执行' + (m.scheduled || 0) + ')' +
             ' · phase:' + (r.phase || '-') +
             ' · karma:' + (r.current_karma || 0) + '/' + (r.target_karma || 0);
+        }
+        var evalPanel = '';
+        if (evalRounds.length && r.plan_status !== 'generating') {
+          evalPanel = '<div class="eval-panel" id="evalPanel_' + r.plan_id + '" style="display:none;margin-top:8px;padding:10px;background:rgba(0,0,0,0.25);border-radius:8px;border:1px solid rgba(255,255,255,0.06);font-size:0.82rem;">';
+          evalRounds.forEach(function(er) {
+            var scColor = typeof er.score === 'number' ? (er.score >= 80 ? '#10b981' : er.score >= 60 ? '#f59e0b' : '#ef4444') : '#6b7280';
+            evalPanel += '<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.06);">';
+            evalPanel += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">';
+            evalPanel += '<span style="font-weight:700;color:var(--accent);">第' + er.round + '轮</span>';
+            if (typeof er.score === 'number') {
+              evalPanel += '<span style="background:' + scColor + ';color:#fff;padding:1px 8px;border-radius:4px;font-weight:700;font-size:0.9rem;">' + Math.round(er.score) + '分</span>';
+              evalPanel += '<span style="color:' + (er.verdict === 'pass' ? '#10b981' : '#f59e0b') + ';">' + (er.verdict === 'pass' ? '✓ 通过' : '⚠ 需改进') + '</span>';
+            } else {
+              evalPanel += '<span style="color:#f87171;">' + escapeHtml(er.verdict || er.detail || '失败') + '</span>';
+            }
+            evalPanel += '</div>';
+            if (er.scores) {
+              var dimNames = { keyword_relevance:'关键词贴合', subreddit_relevance:'社区匹配', stage_compliance:'阶段合规', rhythm_naturalness:'节奏自然', risk_control:'风险控制', content_diversity:'内容丰富' };
+              evalPanel += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px;">';
+              Object.keys(er.scores).forEach(function(k) {
+                var v = er.scores[k];
+                var bc = v >= 80 ? 'rgba(16,185,129,0.15)' : v >= 60 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)';
+                var fc = v >= 80 ? '#6ee7b7' : v >= 60 ? '#fcd34d' : '#fca5a5';
+                evalPanel += '<span style="background:' + bc + ';color:' + fc + ';padding:2px 6px;border-radius:4px;font-size:0.75rem;">' + (dimNames[k] || k) + ':' + v + '</span>';
+              });
+              evalPanel += '</div>';
+            }
+            if (er.issues && er.issues.length) {
+              evalPanel += '<div style="color:#fca5a5;margin-top:3px;">问题: ' + er.issues.map(function(i) { return escapeHtml(i); }).join(' · ') + '</div>';
+            }
+            if (er.suggestions && er.suggestions.length) {
+              evalPanel += '<div style="color:#93c5fd;margin-top:2px;">建议: ' + er.suggestions.map(function(s) { return escapeHtml(s); }).join(' · ') + '</div>';
+            }
+            evalPanel += '</div>';
+          });
+          evalPanel += '</div>';
         }
         var selected = (selectedNurturePlanId && selectedNurturePlanId === r.plan_id) ? ' style="border-color:var(--accent);"' : '';
         var actions = '';
@@ -3239,11 +3299,19 @@
           actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-delete-plan" data-plan-id="' + r.plan_id + '" style="color:#b91c1c;">删除</button>';
         }
         var titleStyle = statusColor ? ' style="color:' + statusColor + ';"' : '';
-        return '<div class="list-item nurture-progress-item" data-binding-id="' + (r.binding_id || '') + '" data-plan-id="' + (r.plan_id || '') + '"' + selected + '><div><div class="title"' + titleStyle + '>' + escapeHtml(title) + '</div><div class="meta">' + meta + '</div></div><div class="acts">' + actions + '</div></div>';
+        return '<div class="list-item nurture-progress-item" data-binding-id="' + (r.binding_id || '') + '" data-plan-id="' + (r.plan_id || '') + '"' + selected + '><div><div class="title"' + titleStyle + '>' + escapeHtml(title) + '</div><div class="meta">' + meta + '</div>' + evalPanel + '</div><div class="acts">' + actions + '</div></div>';
       }).join('');
       if (hasGenerating) {
-        setTimeout(function() { loadNurtureProgress(); }, 5000);
+        setTimeout(function() { loadNurtureProgress(); }, 4000);
       }
+      el.querySelectorAll('.eval-score-tag').forEach(function(tag) {
+        tag.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var pid = tag.getAttribute('data-plan-id');
+          var panel = document.getElementById('evalPanel_' + pid);
+          if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        });
+      });
 
       if (pagerEl) {
         pagerEl.innerHTML = '<button type="button" class="btn btn-ghost btn-sm" id="nurtureProgressPrevBtn">上一页</button>' +
