@@ -636,11 +636,7 @@
               <div class="card">
                 <div style="display:flex;gap:0.5rem;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
                   <div class="card-label" style="margin:0;">设备列表</div>
-                  <div style="display:flex;gap:0.4rem;align-items:center;">
-                    <label class="meta" style="margin:0;white-space:nowrap;">AI模型:</label>
-                    <select id="nurtureModelSelect" style="font-size:12px;padding:2px 4px;border-radius:4px;border:1px solid var(--border);background:var(--card);color:var(--text);max-width:180px;"></select>
-                    <button type="button" id="batchCreatePlansBtn" class="btn btn-ghost btn-sm">批量创建养号计划</button>
-                  </div>
+                  <button type="button" id="batchCreatePlansBtn" class="btn btn-ghost btn-sm">批量创建养号计划</button>
                 </div>
                 <div id="batchCreateMsg" class="meta" style="margin-bottom:0.35rem;"></div>
                 <div id="controlDevicesList"></div>
@@ -988,6 +984,20 @@
           </div>
         </form>
         <div id="controlTaskModalMsg" class="msg" style="margin-top:0.5rem;"></div>
+      </div>
+    </div>
+    <div id="modalCreatePlan" class="modal-mask">
+      <div class="modal" style="max-width:420px;">
+        <h4>创建养号计划</h4>
+        <div id="modalCreatePlanDeviceInfo" class="meta" style="margin-bottom:0.75rem;"></div>
+        <label>AI 模型</label>
+        <select id="modalPlanModelSelect" style="width:100%;font-size:13px;padding:6px 8px;border-radius:4px;border:1px solid var(--border);background:var(--card);color:var(--text);margin-bottom:0.5rem;"></select>
+        <div class="meta" style="margin-bottom:0.75rem;">basic 模型速度快成本低 · pro 模型质量高但较慢</div>
+        <div class="btns" style="display:flex;gap:0.5rem;">
+          <button type="button" id="modalCreatePlanConfirm" class="btn btn-primary">确认创建</button>
+          <button type="button" id="modalCreatePlanCancel" class="btn btn-ghost">取消</button>
+        </div>
+        <div id="modalCreatePlanMsg" class="msg" style="margin-top:0.5rem;"></div>
       </div>
     </div>
     <div id="modalSelectAccount" class="modal-mask">
@@ -2782,32 +2792,7 @@
         btn.addEventListener('click', function() {
           var deviceId = parseInt(String(btn.getAttribute('data-device-id') || '').trim(), 10);
           if (!deviceId) return;
-          var inlineMsg = document.querySelector('[data-device-msg="' + deviceId + '"]');
-          btn.disabled = true;
-          btn.textContent = '创建中...';
-          if (inlineMsg) { inlineMsg.style.color = 'var(--text-muted)'; inlineMsg.textContent = '请求中...'; }
-          fetch(API_BASE + '/group-control/nurture/plans/generate-by-device', {
-            method: 'POST',
-            headers: authHeaders(),
-            body: JSON.stringify({ device_id: deviceId, auto_approve: false, model: getSelectedNurtureModel() })
-          })
-            .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-            .then(function(x) {
-              btn.disabled = false;
-              btn.textContent = '创建养号计划';
-              if (x.ok) {
-                if (inlineMsg) { inlineMsg.style.color = '#16a34a'; inlineMsg.textContent = '计划#' + (x.data && x.data.id) + ' 绑定#' + (x.data && x.data.binding_id) + (x.data && x.data.binding_is_new ? '(新)' : '(已有)') + ' 总进度:' + (x.data && x.data.total_bindings); }
-                loadNurturePanel();
-              } else {
-                var detail = (x.data && x.data.detail) || '创建失败';
-                if (inlineMsg) { inlineMsg.style.color = '#b91c1c'; inlineMsg.textContent = detail; }
-              }
-            })
-            .catch(function(err) {
-              btn.disabled = false;
-              btn.textContent = '创建养号计划';
-              if (inlineMsg) { inlineMsg.style.color = '#b91c1c'; inlineMsg.textContent = '网络错误'; }
-            });
+          openCreatePlanModal(deviceId, btn);
         });
       });
     }
@@ -2818,21 +2803,71 @@
         .then(function(data) {
           nurtureModelsCache = data.models || [];
           nurtureDefaultModel = data.default_model || 'deepseek-chat';
-          var sel = document.getElementById('nurtureModelSelect');
-          if (sel) {
-            sel.innerHTML = nurtureModelsCache.map(function(m) {
-              var label = m.name + (m.tier === 'pro' ? ' [Pro]' : '') + (m.speed === 'fast' ? ' \u26A1' : '');
-              var selected = m.id === nurtureDefaultModel ? ' selected' : '';
-              return '<option value="' + escapeHtml(m.id) + '"' + selected + '>' + escapeHtml(label) + '</option>';
-            }).join('');
-          }
+          _renderModelSelect();
         })
         .catch(function() {});
     }
 
-    function getSelectedNurtureModel() {
-      var sel = document.getElementById('nurtureModelSelect');
-      return sel ? sel.value : nurtureDefaultModel;
+    function _renderModelSelect() {
+      var sel = document.getElementById('modalPlanModelSelect');
+      if (!sel) return;
+      sel.innerHTML = nurtureModelsCache.map(function(m) {
+        var label = m.name + (m.tier === 'pro' ? ' [Pro]' : '') + (m.speed === 'fast' ? ' \u26A1' : '');
+        var selected = m.id === nurtureDefaultModel ? ' selected' : '';
+        return '<option value="' + escapeHtml(m.id) + '"' + selected + '>' + escapeHtml(label) + '</option>';
+      }).join('');
+    }
+
+    var _pendingPlanDeviceId = null;
+    var _pendingPlanBtn = null;
+
+    function openCreatePlanModal(deviceId, triggerBtn) {
+      _pendingPlanDeviceId = deviceId;
+      _pendingPlanBtn = triggerBtn;
+      _renderModelSelect();
+      var info = document.getElementById('modalCreatePlanDeviceInfo');
+      var device = (controlDeviceListCache || []).find(function(d) { return d.id === deviceId; });
+      if (info) info.textContent = '设备: ' + (device ? (device.device_label || device.alias || device.serial) : '#' + deviceId);
+      var msgEl = document.getElementById('modalCreatePlanMsg');
+      if (msgEl) { msgEl.className = 'msg'; msgEl.textContent = ''; }
+      var confirmBtn = document.getElementById('modalCreatePlanConfirm');
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '确认创建'; }
+      var modal = document.getElementById('modalCreatePlan');
+      if (modal) modal.classList.add('visible');
+    }
+
+    function _doCreatePlan() {
+      var deviceId = _pendingPlanDeviceId;
+      if (!deviceId) return;
+      var sel = document.getElementById('modalPlanModelSelect');
+      var model = sel ? sel.value : nurtureDefaultModel;
+      var confirmBtn = document.getElementById('modalCreatePlanConfirm');
+      var msgEl = document.getElementById('modalCreatePlanMsg');
+      if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '创建中...'; }
+      if (msgEl) { msgEl.className = 'msg'; msgEl.textContent = '正在调用 AI 生成计划，请耐心等待...'; }
+      fetch(API_BASE + '/group-control/nurture/plans/generate-by-device', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ device_id: deviceId, auto_approve: false, model: model })
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '确认创建'; }
+          if (x.ok) {
+            if (msgEl) { msgEl.className = 'msg ok'; msgEl.textContent = '创建成功 计划#' + (x.data && x.data.id) + ' (模型:' + model + ')'; }
+            var inlineMsg = document.querySelector('[data-device-msg="' + deviceId + '"]');
+            if (inlineMsg) { inlineMsg.style.color = '#16a34a'; inlineMsg.textContent = '计划#' + (x.data && x.data.id); }
+            loadNurturePanel();
+            setTimeout(function() { var m = document.getElementById('modalCreatePlan'); if (m) m.classList.remove('visible'); }, 1500);
+          } else {
+            var detail = (x.data && x.data.detail) || '创建失败';
+            if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = detail; }
+          }
+        })
+        .catch(function(err) {
+          if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '确认创建'; }
+          if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
+        });
     }
 
     function loadControlDevices() {
@@ -3680,6 +3715,23 @@
     if (modalControlTask) {
       modalControlTask.addEventListener('click', function(e) {
         if (e.target === modalControlTask) modalControlTask.classList.remove('visible');
+      });
+    }
+    var modalCreatePlan = document.getElementById('modalCreatePlan');
+    if (modalCreatePlan) {
+      modalCreatePlan.addEventListener('click', function(e) {
+        if (e.target === modalCreatePlan) modalCreatePlan.classList.remove('visible');
+      });
+    }
+    var modalCreatePlanConfirm = document.getElementById('modalCreatePlanConfirm');
+    if (modalCreatePlanConfirm) {
+      modalCreatePlanConfirm.addEventListener('click', _doCreatePlan);
+    }
+    var modalCreatePlanCancel = document.getElementById('modalCreatePlanCancel');
+    if (modalCreatePlanCancel) {
+      modalCreatePlanCancel.addEventListener('click', function() {
+        var m = document.getElementById('modalCreatePlan');
+        if (m) m.classList.remove('visible');
       });
     }
     var batchCreatePlansBtn = document.getElementById('batchCreatePlansBtn');
