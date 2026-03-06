@@ -443,6 +443,16 @@ async def chat_endpoint(
         )
         db.commit()
         return ChatResponse(reply=reply)
+    # 图片请求优先走统一能力路由，确保由速推链路执行真实出图。
+    if _is_image_intent(payload.message):
+        user = db.query(User).filter(User.id == current_user.id).first()
+        if user:
+            fallback_reply = await _try_image_generation_fallback(db, user, payload)
+            if fallback_reply:
+                return JSONResponse(
+                    content=ChatResponse(reply=fallback_reply).model_dump(),
+                    headers={"X-Chat-Fallback": "image.generate"},
+                )
     base, token, agent_id = _resolve_openclaw_target(db, current_user)
     url = f"{base}/v1/chat/completions"
     messages = []
