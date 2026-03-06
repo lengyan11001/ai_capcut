@@ -1773,16 +1773,45 @@ def approve_nurture_plan(
                 status_code=409,
                 detail=f"该设备已有执行中的计划(计划#{active_plan.id})，请先暂停或删除后再开始新计划",
             )
+    now_utc = datetime.utcnow()
+    now_cn = now_utc + timedelta(hours=8)
+    tomorrow_cn = datetime(now_cn.year, now_cn.month, now_cn.day) + timedelta(days=1)
+    new_start_utc = tomorrow_cn - timedelta(hours=8)
+
+    items = (
+        db.query(NurtureScheduleItem)
+        .filter(NurtureScheduleItem.plan_id == plan_id)
+        .all()
+    )
+    for si in items:
+        day_off = max(int(si.day_no or 1) - 1, 0)
+        payload = si.payload if isinstance(si.payload, dict) else {}
+        plan_json_items = []
+        if isinstance(row.plan_json, dict):
+            plan_json_items = row.plan_json.get("schedule", [])
+        matched = [p for p in plan_json_items if isinstance(p, dict) and int(p.get("day_no", 0)) == si.day_no and int(p.get("seq_no", 0)) == si.seq_no]
+        hour = int(matched[0].get("hour", 10)) if matched else 10
+        minute = int(matched[0].get("minute", 0)) if matched else 0
+        si.scheduled_at = new_start_utc + timedelta(days=day_off, hours=hour, minutes=minute)
+        if si.status == "skipped":
+            si.status = "scheduled"
+            si.last_error_code = None
+            si.last_error_message = None
+            si.finished_at = None
+        db.add(si)
+
     row.status = "approved"
     row.requires_reconfirm = False
     row.approved_by = current_user.id
-    row.approved_at = datetime.utcnow()
-    row.last_review_at = datetime.utcnow()
-    row.next_review_at = datetime.utcnow() + timedelta(days=1)
+    row.approved_at = now_utc
+    row.start_at = new_start_utc
+    row.last_review_at = now_utc
+    row.next_review_at = now_utc + timedelta(days=1)
     db.add(row)
     db.commit()
     dispatched = _dispatch_due_nurture_items(db)
-    return {"detail": "approved", "plan_id": row.id, "dispatched_now": dispatched}
+    start_display = tomorrow_cn.strftime("%Y-%m-%d")
+    return {"detail": "approved", "plan_id": row.id, "dispatched_now": dispatched, "start_date": start_display}
 
 
 @router.post("/nurture/plans/{plan_id}/pause", summary="暂停计划（用户态）")

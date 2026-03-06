@@ -251,7 +251,8 @@
               if (!msgEl) return;
               if (x2.ok) {
                 msgEl.className = 'msg ok';
-                msgEl.textContent = planId ? '计划已开始执行' : '已自动创建并开始执行计划';
+                var startInfo = (x2.data && x2.data.start_date) ? '，将从 ' + x2.data.start_date + ' 开始' : '';
+                msgEl.textContent = planId ? '计划已开始执行' + startInfo : '已自动创建并开始执行计划' + startInfo;
                 loadNurturePanel();
                 loadControlTasks();
               } else {
