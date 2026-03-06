@@ -212,9 +212,17 @@
             <div id="gcPanelRunning" class="gc-panel">
               <div class="card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-                  <div class="card-label" style="margin:0;">执行中计划实时状态</div>
+                  <div class="card-label" style="margin:0;">执行列表</div>
                   <div style="display:flex;gap:0.5rem;align-items:center;">
-                    <input type="text" id="runningSearchInput" placeholder="搜索设备 / 计划…" style="width:180px;padding:0.25rem 0.5rem;font-size:0.82rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);color:var(--text);">
+                    <select id="runningStatusFilter" style="padding:0.25rem 0.4rem;font-size:0.82rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);color:var(--text);">
+                      <option value="">执行中+待执行+暂停</option>
+                      <option value="active">执行中</option>
+                      <option value="approved">待执行</option>
+                      <option value="paused">已暂停</option>
+                      <option value="completed">已完成</option>
+                      <option value="all">全部</option>
+                    </select>
+                    <input type="text" id="runningSearchInput" placeholder="搜索设备 / 计划…" style="width:160px;padding:0.25rem 0.5rem;font-size:0.82rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);color:var(--text);">
                     <button type="button" id="runningRefreshBtn" class="btn btn-ghost btn-sm">刷新</button>
                   </div>
                 </div>

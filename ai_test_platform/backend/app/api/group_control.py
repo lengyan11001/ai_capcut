@@ -7,7 +7,7 @@ import threading
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
 import httpx
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
@@ -3100,14 +3100,22 @@ def refresh_daily_report(
     }
 
 
-@router.get("/nurture/running", summary="执行中的养号计划实时状态")
+@router.get("/nurture/running", summary="养号计划执行列表（含历史）")
 def get_nurture_running(
+    status: Optional[str] = Query(default=None, description="筛选计划状态: all/active/approved/paused/completed，默认显示 approved+active+paused"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    allowed = {"approved", "active", "paused", "completed"}
+    if status and status != "all":
+        filter_statuses = [s.strip() for s in status.split(",") if s.strip() in allowed]
+    elif status == "all":
+        filter_statuses = list(allowed)
+    else:
+        filter_statuses = ["approved", "active", "paused"]
     plans = (
         db.query(NurturePlan)
-        .filter(NurturePlan.user_id == current_user.id, NurturePlan.status.in_(["approved", "active"]))
+        .filter(NurturePlan.user_id == current_user.id, NurturePlan.status.in_(filter_statuses))
         .order_by(NurturePlan.updated_at.desc())
         .all()
     )

@@ -5,7 +5,10 @@
     var runningPageSize = 10;
     var runningExpandedPlanIds = {};
     function loadRunningPanel() {
-      fetch(API_BASE + '/group-control/nurture/running', { headers: authHeaders() })
+      var statusSel = document.getElementById('runningStatusFilter');
+      var sv = statusSel ? statusSel.value : '';
+      var qs = sv ? '?status=' + encodeURIComponent(sv) : '';
+      fetch(API_BASE + '/group-control/nurture/running' + qs, { headers: authHeaders() })
         .then(function(r) { return r.json(); })
         .then(function(d) { runningCache = Array.isArray(d) ? d : []; renderRunningList(); })
         .catch(function() {});
@@ -19,7 +22,7 @@
       if (q) list = list.filter(function(p) {
         return (p.device_label || '').toLowerCase().indexOf(q) >= 0 || (p.plan_name || '').toLowerCase().indexOf(q) >= 0 || (p.objective || '').toLowerCase().indexOf(q) >= 0 || String(p.plan_id).indexOf(q) >= 0;
       });
-      if (!list.length) { el.innerHTML = '<div class="meta">暂无执行中的计划</div>'; return; }
+      if (!list.length) { el.innerHTML = '<div class="meta">暂无匹配的计划记录</div>'; return; }
       var total = list.length;
       var pageCount = Math.max(1, Math.ceil(total / runningPageSize));
       if (runningPage > pageCount) runningPage = pageCount;
@@ -28,15 +31,17 @@
       var pageList = list.slice(start, start + runningPageSize);
 
       var html = pageList.map(function(p) {
-        var statusColor = p.plan_status === 'active' ? '#4ade80' : '#facc15';
+        var statusColor = p.plan_status === 'active' ? '#4ade80' : p.plan_status === 'paused' ? '#d97706' : p.plan_status === 'completed' ? '#6b7280' : '#facc15';
         var items = p.items || [];
         var succCnt = items.filter(function(i) { return i.status === 'success'; }).length;
         var failCnt = items.filter(function(i) { return i.status === 'failed'; }).length;
         var runCnt = items.filter(function(i) { return i.status === 'running' || i.status === 'dispatched'; }).length;
+        var skipCnt = items.filter(function(i) { return i.status === 'skipped'; }).length;
         var summary = '<span class="meta" style="margin-left:0.5rem;">' + items.length + '项';
         if (succCnt) summary += ' <span style="color:#4ade80;">' + succCnt + '成功</span>';
         if (failCnt) summary += ' <span style="color:#f87171;">' + failCnt + '失败</span>';
         if (runCnt) summary += ' <span style="color:#facc15;">' + runCnt + '运行</span>';
+        if (skipCnt) summary += ' <span style="color:#f97316;">' + skipCnt + '跳过</span>';
         summary += '</span>';
         var expanded = !!runningExpandedPlanIds[p.plan_id];
         var arrow = expanded ? '&#9660;' : '&#9654;';
@@ -100,4 +105,6 @@
       if (si) si.addEventListener('input', function() { runningPage = 1; renderRunningList(); });
       var rb = document.getElementById('runningRefreshBtn');
       if (rb) rb.addEventListener('click', function() { loadRunningPanel(); });
+      var sf = document.getElementById('runningStatusFilter');
+      if (sf) sf.addEventListener('change', function() { runningPage = 1; loadRunningPanel(); });
     })();
