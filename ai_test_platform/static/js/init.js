@@ -344,6 +344,13 @@
           openCapabilityView(capabilityId);
         }
         if (view === 'group-control') {
+          var activeGcTab = document.querySelector('.gc-tabs button.active');
+          var activeKey = activeGcTab ? activeGcTab.dataset.gcTab : 'stats';
+          var gcPanelMap = { stats: 'gcPanelStats', devices: 'gcPanelDevices', plans: 'gcPanelPlans', running: 'gcPanelRunning', tasks: 'gcPanelTasks' };
+          Object.keys(gcPanelMap).forEach(function(k) {
+            var p = document.getElementById(gcPanelMap[k]);
+            if (p) p.classList.toggle('visible', k === activeKey);
+          });
           loadGroupControl();
         }
         if (view === 'admin-console') {
