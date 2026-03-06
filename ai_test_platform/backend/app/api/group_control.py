@@ -42,6 +42,100 @@ from .auth import get_current_user
 router = APIRouter(prefix="/group-control", tags=["group-control"])
 logger = logging.getLogger(__name__)
 
+
+def _get_llm_endpoints() -> list[dict[str, str]]:
+    """Return ordered list of LLM endpoints for fallback."""
+    endpoints: list[dict[str, str]] = []
+    raw = (settings.nurture_llm_endpoints or "").strip()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                for ep in parsed:
+                    if isinstance(ep, dict) and ep.get("base_url") and ep.get("api_key"):
+                        endpoints.append({
+                            "base_url": ep["base_url"].strip().rstrip("/"),
+                            "api_key": ep["api_key"].strip(),
+                            "label": ep.get("label", ep["base_url"]),
+                        })
+        except Exception:
+            logger.warning("Failed to parse NURTURE_LLM_ENDPOINTS")
+    base = (settings.nurture_llm_base_url or "").strip().rstrip("/")
+    key = (settings.nurture_llm_api_key or "").strip()
+    if base and key:
+        already = any(ep["base_url"] == base for ep in endpoints)
+        if not already:
+            endpoints.append({"base_url": base, "api_key": key, "label": base})
+    return endpoints
+
+
+_BILLING_ERROR_KEYWORDS = [
+    "billing", "insufficient", "balance", "quota", "credit", "payment",
+    "exceeded", "limit reached", "top up", "run out", "402",
+]
+
+
+def _is_billing_error(text: str) -> bool:
+    lower = text.lower()
+    return any(kw in lower for kw in _BILLING_ERROR_KEYWORDS)
+
+
+def _call_llm_with_fallback(
+    model: str,
+    messages: list[dict],
+    temperature: float = 0.2,
+    timeout_read: float = 600.0,
+) -> dict[str, Any]:
+    """
+    Call LLM with automatic endpoint fallback.
+    Returns {"ok": True, "data": <api_response>, "endpoint": "..."} on success,
+    or {"ok": False, "error": "...", "tried": [...]} on all-fail.
+    """
+    endpoints = _get_llm_endpoints()
+    if not endpoints:
+        return {"ok": False, "error": "未配置任何 LLM 通道", "tried": []}
+    tried: list[str] = []
+    last_error = ""
+    for ep in endpoints:
+        label = ep["label"]
+        tried.append(label)
+        try:
+            timeout = httpx.Timeout(connect=30.0, read=timeout_read, write=30.0, pool=30.0)
+            with httpx.Client(timeout=timeout) as client:
+                resp = client.post(
+                    f"{ep['base_url']}/chat/completions",
+                    headers={"Authorization": f"Bearer {ep['api_key']}", "Content-Type": "application/json"},
+                    json={"model": model, "messages": messages, "temperature": temperature},
+                )
+                if resp.status_code >= 300:
+                    error_text = resp.text[:300] if resp.text else str(resp.status_code)
+                    if _is_billing_error(error_text):
+                        logger.warning("LLM endpoint %s billing error, trying next: %s", label, error_text[:120])
+                        last_error = f"[{label}] 余额不足: {error_text[:120]}"
+                        continue
+                    last_error = f"[{label}] HTTP {resp.status_code}: {error_text[:120]}"
+                    continue
+                data = resp.json() if resp.content else {}
+                if data.get("error"):
+                    err_msg = str(data["error"].get("message", ""))[:200]
+                    if _is_billing_error(err_msg):
+                        logger.warning("LLM endpoint %s billing error in body, trying next: %s", label, err_msg[:120])
+                        last_error = f"[{label}] 余额不足: {err_msg[:120]}"
+                        continue
+                    last_error = f"[{label}] API error: {err_msg[:120]}"
+                    continue
+                return {"ok": True, "data": data, "endpoint": label}
+        except httpx.TimeoutException:
+            last_error = f"[{label}] 请求超时"
+            logger.warning("LLM endpoint %s timeout, trying next", label)
+            continue
+        except Exception as exc:
+            last_error = f"[{label}] {exc}"
+            logger.warning("LLM endpoint %s failed: %s, trying next", label, exc)
+            continue
+    return {"ok": False, "error": last_error, "tried": tried}
+
+
 NURTURE_MODEL_OPTIONS = [
     {"id": "deepseek-chat",               "name": "DeepSeek Chat",          "tier": "basic",   "speed": "fast"},
     {"id": "deepseek-v3.1",               "name": "DeepSeek V3.1",          "tier": "basic",   "speed": "fast"},
@@ -241,45 +335,43 @@ def _build_refine_prompt(objective: str, plan_json: dict, eval_result: dict) -> 
     )
 
 
+def _extract_llm_content(data: dict) -> str:
+    choices = data.get("choices") or []
+    if choices and isinstance(choices[0], dict):
+        msg = choices[0].get("message") or {}
+        return str(msg.get("content") or "")
+    return ""
+
+
+def _parse_json_from_llm(content: str) -> Optional[dict]:
+    raw = content.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z]*", "", raw).strip()
+        raw = raw[:-3].strip() if raw.endswith("```") else raw
+    return json.loads(raw)
+
+
 def _call_llm_for_eval(
     plan_json: dict,
     objective: str,
     model: str,
 ) -> Optional[dict[str, Any]]:
-    """调用 LLM 对计划评分。"""
-    base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
-    api_key = (settings.nurture_llm_api_key or "").strip()
-    if not base_url or not api_key:
-        return None
+    """调用 LLM 对计划评分（自动 fallback 多通道）。"""
     prompt = _build_eval_prompt(objective, plan_json)
-    body = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.1,
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    result = _call_llm_with_fallback(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
+        timeout_read=300.0,
+    )
+    if not result["ok"]:
+        logger.warning("eval LLM all channels failed: %s", result["error"])
+        return None
     try:
-        timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0)
-        with httpx.Client(timeout=timeout) as client:
-            resp = client.post(f"{base_url}/chat/completions", headers=headers, json=body)
-            if resp.status_code >= 300:
-                return None
-            data = resp.json() if resp.content else {}
-            choices = data.get("choices") or []
-            content = ""
-            if choices and isinstance(choices[0], dict):
-                msg = choices[0].get("message") or {}
-                content = str(msg.get("content") or "")
-            raw = content.strip()
-            if raw.startswith("```"):
-                raw = re.sub(r"^```[a-zA-Z]*", "", raw).strip()
-                raw = raw[:-3].strip() if raw.endswith("```") else raw
-            return json.loads(raw)
+        content = _extract_llm_content(result["data"])
+        return _parse_json_from_llm(content)
     except Exception as exc:
-        logger.warning("eval LLM call failed: %s", exc)
+        logger.warning("eval LLM parse failed: %s", exc)
         return None
 
 
@@ -289,37 +381,22 @@ def _call_llm_for_refine(
     objective: str,
     model: str,
 ) -> Optional[dict[str, Any]]:
-    """调用 LLM 根据评分反馈优化计划。"""
-    base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
-    api_key = (settings.nurture_llm_api_key or "").strip()
-    if not base_url or not api_key:
-        return None
+    """调用 LLM 优化计划（自动 fallback 多通道）。"""
     prompt = _build_refine_prompt(objective, plan_json, eval_result)
-    body = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2,
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    result = _call_llm_with_fallback(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        timeout_read=600.0,
+    )
+    if not result["ok"]:
+        logger.warning("refine LLM all channels failed: %s", result["error"])
+        return None
     try:
-        timeout = httpx.Timeout(connect=30.0, read=600.0, write=30.0, pool=30.0)
-        with httpx.Client(timeout=timeout) as client:
-            resp = client.post(f"{base_url}/chat/completions", headers=headers, json=body)
-            if resp.status_code >= 300:
-                return None
-            data = resp.json() if resp.content else {}
-            choices = data.get("choices") or []
-            content = ""
-            if choices and isinstance(choices[0], dict):
-                msg = choices[0].get("message") or {}
-                content = str(msg.get("content") or "")
-            plan = _parse_llm_plan_response(content)
-            return plan
+        content = _extract_llm_content(result["data"])
+        return _parse_llm_plan_response(content)
     except Exception as exc:
-        logger.warning("refine LLM call failed: %s", exc)
+        logger.warning("refine LLM parse failed: %s", exc)
         return None
 
 
@@ -348,49 +425,33 @@ def _call_direct_llm_for_plan(
     risk_preference: str,
     model_override: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
-    """直接调用 OpenAI 兼容端点（如 ephone.chat）生成计划，不经过 OpenClaw。"""
-    base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
-    api_key = (settings.nurture_llm_api_key or "").strip()
+    """直接调用 OpenAI 兼容端点生成计划，自动 fallback 多通道。"""
+    endpoints = _get_llm_endpoints()
+    if not endpoints:
+        return None
     model = (model_override or settings.nurture_llm_model or NURTURE_DEFAULT_MODEL).strip()
-    if not base_url or not api_key:
-        return None
     prompt = _build_nurture_prompt(binding, objective, risk_preference)
-    body = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2,
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    try:
-        timeout = httpx.Timeout(connect=30.0, read=600.0, write=30.0, pool=30.0)
-        with httpx.Client(timeout=timeout) as client:
-            resp = client.post(f"{base_url}/chat/completions", headers=headers, json=body)
-            if resp.status_code >= 300:
-                error_text = resp.text[:300] if resp.text else str(resp.status_code)
-                logger.warning("direct LLM returned %s: %s", resp.status_code, error_text)
-                return {"_error": True, "_error_msg": f"模型返回错误 ({resp.status_code}): {error_text[:120]}"}
-            data = resp.json() if resp.content else {}
-            if data.get("error"):
-                err_msg = str(data["error"].get("message", "unknown error"))[:120]
-                return {"_error": True, "_error_msg": f"模型错误: {err_msg}"}
-            choices = data.get("choices") or []
-            content = ""
-            if choices and isinstance(choices[0], dict):
-                msg = choices[0].get("message") or {}
-                content = str(msg.get("content") or "")
-            plan = _parse_llm_plan_response(content)
-            if plan:
-                resp_model = str(data.get("model") or model)
-                plan["_source"] = "direct_llm"
-                plan["_model"] = resp_model
-                plan["_endpoint"] = base_url
-            return plan
-    except Exception as exc:
-        logger.warning("direct LLM call failed: %s", exc)
-        return None
+    result = _call_llm_with_fallback(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        timeout_read=600.0,
+    )
+    if not result["ok"]:
+        return {"_error": True, "_error_msg": f"所有通道失败: {result['error']}"}
+    data = result["data"]
+    choices = data.get("choices") or []
+    content = ""
+    if choices and isinstance(choices[0], dict):
+        msg = choices[0].get("message") or {}
+        content = str(msg.get("content") or "")
+    plan = _parse_llm_plan_response(content)
+    if plan:
+        resp_model = str(data.get("model") or model)
+        plan["_source"] = "direct_llm"
+        plan["_model"] = resp_model
+        plan["_endpoint"] = result.get("endpoint", "")
+    return plan
 
 
 def _call_openclaw_for_plan(
@@ -3122,10 +3183,6 @@ def _gather_all_intelligence(db: Session) -> dict[str, Any]:
 
 
 def _summarize_policy_with_ai(intel: dict[str, Any], prev_summary: str = "", model: str = "") -> Optional[dict]:
-    base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
-    api_key = (settings.nurture_llm_api_key or "").strip()
-    if not base_url or not api_key:
-        return None
     use_model = model.strip() if model else (settings.nurture_llm_model or "deepseek-chat")
 
     prompt_parts = ["你是 Reddit 平台政策与风控综合分析师。根据以下多维度情报，输出严格 JSON 格式的综合分析。\n"]
@@ -3178,25 +3235,20 @@ def _summarize_policy_with_ai(intel: dict[str, Any], prev_summary: str = "", mod
     if len(prompt) > 15000:
         prompt = prompt[:15000] + "\n...(截断)"
 
+    result = _call_llm_with_fallback(
+        model=use_model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
+        timeout_read=120.0,
+    )
+    if not result["ok"]:
+        logger.warning("policy AI summary all channels failed: %s", result["error"])
+        return None
     try:
-        timeout = httpx.Timeout(connect=20.0, read=120.0, write=20.0, pool=20.0)
-        with httpx.Client(timeout=timeout) as client:
-            resp = client.post(
-                f"{base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": use_model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1},
-            )
-            if resp.status_code >= 300:
-                return None
-            data = resp.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            raw = content.strip()
-            if raw.startswith("```"):
-                raw = re.sub(r"^```[a-zA-Z]*", "", raw).strip()
-                raw = raw[:-3].strip() if raw.endswith("```") else raw
-            return json.loads(raw)
+        content = _extract_llm_content(result["data"])
+        return _parse_json_from_llm(content)
     except Exception as exc:
-        logger.warning("policy AI summary failed: %s", exc)
+        logger.warning("policy AI summary parse failed: %s", exc)
         return None
 
 
@@ -3316,10 +3368,8 @@ def _generate_daily_report_data(db: Session, model: str = "") -> dict[str, Any]:
             "health": b.account_health,
         })
 
-    base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
-    api_key = (settings.nurture_llm_api_key or "").strip()
     use_model = model.strip() if model else (settings.nurture_llm_model or "deepseek-chat")
-    if not base_url or not api_key:
+    if not _get_llm_endpoints():
         return {"overall_score": 0, "execution_analysis": "LLM 未配置", "policy_analysis": "", "recommendations": [], "severity": "unknown", "raw_stats": stats}
 
     anomaly_section = ""
@@ -3349,28 +3399,22 @@ def _generate_daily_report_data(db: Session, model: str = "") -> dict[str, Any]:
         "}\n"
         "overall_score 综合考虑成功率、账号健康度、政策风险、异常信号。"
     )
+    llm_result = _call_llm_with_fallback(
+        model=use_model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.15,
+        timeout_read=180.0,
+    )
+    if not llm_result["ok"]:
+        return {"overall_score": 0, "execution_analysis": f"所有 LLM 通道失败: {llm_result['error']}", "policy_analysis": "", "recommendations": [], "severity": "unknown", "raw_stats": stats}
     try:
-        timeout = httpx.Timeout(connect=20.0, read=180.0, write=20.0, pool=20.0)
-        with httpx.Client(timeout=timeout) as client:
-            resp = client.post(
-                f"{base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": use_model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.15},
-            )
-            if resp.status_code >= 300:
-                return {"overall_score": 0, "execution_analysis": f"LLM 返回 {resp.status_code}", "policy_analysis": "", "recommendations": [], "severity": "unknown", "raw_stats": stats}
-            data = resp.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            raw = content.strip()
-            if raw.startswith("```"):
-                raw = re.sub(r"^```[a-zA-Z]*", "", raw).strip()
-                raw = raw[:-3].strip() if raw.endswith("```") else raw
-            result = json.loads(raw)
-            result["raw_stats"] = stats
-            return result
+        content = _extract_llm_content(llm_result["data"])
+        result = _parse_json_from_llm(content)
+        result["raw_stats"] = stats
+        return result
     except Exception as exc:
-        logger.warning("daily report AI failed: %s", exc)
-        return {"overall_score": 0, "execution_analysis": f"AI 生成失败: {exc}", "policy_analysis": "", "recommendations": [], "severity": "unknown", "raw_stats": stats}
+        logger.warning("daily report AI parse failed: %s", exc)
+        return {"overall_score": 0, "execution_analysis": f"AI 输出解析失败: {exc}", "policy_analysis": "", "recommendations": [], "severity": "unknown", "raw_stats": stats}
 
 
 @router.get("/stats/report", summary="最新每日综合报告")

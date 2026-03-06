@@ -48,10 +48,16 @@ class Settings(BaseSettings):
     nurture_llm_base_url: str | None = None  # 如 https://api.ephone.chat/v1
     nurture_llm_api_key: str | None = None
     nurture_llm_model: str = "deepseek-chat"  # 发给端点的 model 名
+    # 多通道 fallback：JSON 数组，每项 {"base_url":"...","api_key":"...","label":"..."}
+    # 调用时按顺序尝试，第一个成功即返回；未配置则只用上面单通道
+    nurture_llm_endpoints: str | None = None
     # 群控控制面配置
     control_agent_secret: str | None = None  # 本地 Agent 注册/拉任务鉴权密钥
     control_task_lease_seconds: int = 120
     control_agent_offline_seconds: int = 90
+    # FB Ads 海外 VPS 代理配置
+    fb_ads_vps_url: str | None = None  # 海外 VPS API 地址，如 http://vps-ip:8000
+    fb_ads_server_secret: str | None = None  # 与 VPS 的 server-to-server 鉴权密钥
 
     class Config:
         env_file = ".env"
