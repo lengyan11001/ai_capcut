@@ -3007,7 +3007,15 @@
         var title = '计划#' + (r.plan_id || '-') + ' ' + (r.device_label || ('设备#' + (r.device_id || '-')));
         var createdStr = r.plan_created_at ? new Date(r.plan_created_at).toLocaleString() : (r.created_at ? new Date(r.created_at).toLocaleString() : '-');
         var m = r.metrics || {};
-        var meta = '创建:' + createdStr +
+        var sourceLabel = r.plan_source === 'direct_llm' ? ('AI:' + (r.plan_model || '?'))
+          : r.plan_source === 'openclaw' ? ('OpenClaw:' + (r.plan_model || '?'))
+          : r.plan_source === 'fallback' ? '静态兜底'
+          : '未知';
+        var sourceColor = r.plan_source === 'direct_llm' ? '#7c3aed'
+          : r.plan_source === 'openclaw' ? '#2563eb'
+          : r.plan_source === 'fallback' ? '#9ca3af' : '#6b7280';
+        var meta = '<span style="background:' + sourceColor + ';color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;">' + escapeHtml(sourceLabel) + '</span> ' +
+          '创建:' + createdStr +
           ' · 状态:' + statusText +
           (r.plan_requires_reconfirm ? ' (待重确认)' : '') +
           ' · ' + (m.total || 0) + '项(成功' + (m.success || 0) + '/失败' + (m.failed || 0) + '/执行中' + (m.running || 0) + '/待执行' + (m.scheduled || 0) + ')' +
@@ -3026,7 +3034,7 @@
         }
         actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-delete-plan" data-plan-id="' + r.plan_id + '" style="color:#b91c1c;">删除</button>';
         var titleStyle = statusColor ? ' style="color:' + statusColor + ';"' : '';
-        return '<div class="list-item nurture-progress-item" data-binding-id="' + (r.binding_id || '') + '" data-plan-id="' + (r.plan_id || '') + '"' + selected + '><div><div class="title"' + titleStyle + '>' + escapeHtml(title) + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts">' + actions + '</div></div>';
+        return '<div class="list-item nurture-progress-item" data-binding-id="' + (r.binding_id || '') + '" data-plan-id="' + (r.plan_id || '') + '"' + selected + '><div><div class="title"' + titleStyle + '>' + escapeHtml(title) + '</div><div class="meta">' + meta + '</div></div><div class="acts">' + actions + '</div></div>';
       }).join('');
 
       if (pagerEl) {

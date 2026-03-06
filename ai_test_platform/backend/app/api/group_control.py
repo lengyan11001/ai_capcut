@@ -185,7 +185,13 @@ def _call_direct_llm_for_plan(
             if choices and isinstance(choices[0], dict):
                 msg = choices[0].get("message") or {}
                 content = str(msg.get("content") or "")
-            return _parse_llm_plan_response(content)
+            plan = _parse_llm_plan_response(content)
+            if plan:
+                resp_model = str(data.get("model") or model)
+                plan["_source"] = "direct_llm"
+                plan["_model"] = resp_model
+                plan["_endpoint"] = base_url
+            return plan
     except Exception as exc:
         logger.warning("direct LLM call failed: %s", exc)
         return None
@@ -203,7 +209,7 @@ def _call_openclaw_for_plan(
     """
     plan = _call_direct_llm_for_plan(binding, objective, risk_preference)
     if plan:
-        logger.info("nurture plan generated via direct LLM")
+        logger.info("nurture plan generated via direct LLM (%s)", plan.get("_model"))
         return plan
 
     from .chat import _resolve_openclaw_target
@@ -244,7 +250,13 @@ def _call_openclaw_for_plan(
             if choices and isinstance(choices[0], dict):
                 msg = choices[0].get("message") or {}
                 content = str(msg.get("content") or "")
-            return _parse_llm_plan_response(content)
+            plan = _parse_llm_plan_response(content)
+            if plan:
+                resp_model = str(data.get("model") or "openclaw")
+                plan["_source"] = "openclaw"
+                plan["_model"] = resp_model
+                plan["_endpoint"] = base.rstrip("/")
+            return plan
     except Exception:
         return None
 
@@ -1177,6 +1189,9 @@ def _generate_nurture_plan_for_binding(
     )
     if not isinstance(plan_json, dict):
         plan_json = _build_fallback_plan(30)
+        plan_json["_source"] = "fallback"
+        plan_json["_model"] = "none"
+        plan_json["_endpoint"] = ""
     days = int(plan_json.get("plan_horizon_days") or 30)
     if days < 1:
         days = 30
@@ -1588,6 +1603,8 @@ def nurture_progress(
                 "plan_horizon_days": getattr(p, "plan_horizon_days", 30),
                 "plan_requires_reconfirm": bool(getattr(p, "requires_reconfirm", False)),
                 "plan_summary": p.summary,
+                "plan_source": (p.plan_json or {}).get("_source", "unknown") if isinstance(p.plan_json, dict) else "unknown",
+                "plan_model": (p.plan_json or {}).get("_model", "") if isinstance(p.plan_json, dict) else "",
                 "plan_created_at": _iso(p.created_at),
                 "plan_updated_at": _iso(p.updated_at),
                 "binding_id": p.binding_id,
