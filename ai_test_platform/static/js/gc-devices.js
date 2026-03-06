@@ -5,6 +5,7 @@ var controlDevicePage = 1;
 var controlDevicePageSize = 12;
 var nurtureModelsCache = [];
 var nurtureDefaultModel = 'deepseek-chat';
+var selectedDeviceIds = {};
 
 function renderControlDevicesPage() {
   var list = controlDeviceListCache || [];
@@ -43,7 +44,8 @@ function renderControlDevicesPage() {
     if (d.running_task_count > 0) {
       runBadge = '<span style="display:inline-block;margin-left:0.4rem;padding:1px 6px;border-radius:4px;font-size:0.7rem;background:#facc15;color:#000;font-weight:600;">' + d.running_task_count + ' 运行中</span>';
     }
-    return '<div class="list-item"><div><div class="title">' + escapeHtml(deviceLabel || '') + runBadge + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts"><button type="button" class="btn btn-ghost btn-sm btn-device-nurture-plan" data-device-id="' + d.id + '">创建养号计划</button><span class="meta device-plan-msg" data-device-msg="' + d.id + '" style="margin-left:0.4rem;"></span></div></div>';
+    var ckd = selectedDeviceIds[d.id] ? ' checked' : '';
+    return '<div class="list-item" style="display:flex;align-items:center;gap:0.5rem;"><label style="display:flex;align-items:center;cursor:pointer;flex-shrink:0;"><input type="checkbox" class="device-select-cb" data-device-id="' + d.id + '"' + ckd + '></label><div style="flex:1;min-width:0;"><div class="title">' + escapeHtml(deviceLabel || '') + runBadge + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts"><button type="button" class="btn btn-ghost btn-sm btn-device-nurture-plan" data-device-id="' + d.id + '">创建养号计划</button><span class="meta device-plan-msg" data-device-msg="' + d.id + '" style="margin-left:0.4rem;"></span></div></div>';
   }).join('');
   if (pagerEl) {
     pagerEl.innerHTML = '<button type="button" class="btn btn-ghost btn-sm" id="controlDevicesPrevBtn">上一页</button>' +
@@ -56,6 +58,13 @@ function renderControlDevicesPage() {
     if (prev) prev.addEventListener('click', function() { controlDevicePage -= 1; renderControlDevicesPage(); });
     if (next) next.addEventListener('click', function() { controlDevicePage += 1; renderControlDevicesPage(); });
   }
+  el.querySelectorAll('.device-select-cb').forEach(function(cb) {
+    cb.addEventListener('change', function() {
+      var did = parseInt(cb.getAttribute('data-device-id'), 10);
+      if (cb.checked) { selectedDeviceIds[did] = true; } else { delete selectedDeviceIds[did]; }
+      _updateBatchBtn();
+    });
+  });
   el.querySelectorAll('.btn-device-nurture-plan').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var deviceId = parseInt(String(btn.getAttribute('data-device-id') || '').trim(), 10);
@@ -63,6 +72,22 @@ function renderControlDevicesPage() {
       openCreatePlanModal(deviceId, btn);
     });
   });
+}
+function _updateBatchBtn() {
+  var cnt = Object.keys(selectedDeviceIds).length;
+  var btn = document.getElementById('batchCreatePlansBtn');
+  if (btn) btn.textContent = cnt > 0 ? '为选中(' + cnt + '台)创建计划' : '批量创建养号计划';
+}
+function _toggleSelectAll() {
+  var cbs = document.querySelectorAll('.device-select-cb');
+  var allChecked = true;
+  cbs.forEach(function(cb) { if (!cb.checked) allChecked = false; });
+  cbs.forEach(function(cb) {
+    var did = parseInt(cb.getAttribute('data-device-id'), 10);
+    cb.checked = !allChecked;
+    if (!allChecked) { selectedDeviceIds[did] = true; } else { delete selectedDeviceIds[did]; }
+  });
+  _updateBatchBtn();
 }
 
 function loadNurtureModels() {
@@ -279,11 +304,15 @@ var batchCreatePlansBtn = document.getElementById('batchCreatePlansBtn');
 if (batchCreatePlansBtn) {
   batchCreatePlansBtn.addEventListener('click', function() {
     var msgEl = document.getElementById('batchCreateMsg');
-    if (!confirm('确定为所有设备批量创建养号计划？')) return;
+    var ids = Object.keys(selectedDeviceIds).map(function(k) { return parseInt(k, 10); }).filter(function(x) { return !isNaN(x); });
+    var label = ids.length > 0 ? '为选中的 ' + ids.length + ' 台设备' : '为所有设备';
+    if (!confirm('确定' + label + '批量创建养号计划？')) return;
     batchCreatePlansBtn.disabled = true;
     batchCreatePlansBtn.textContent = '批量创建中...';
-    if (msgEl) { msgEl.style.color = 'var(--text-muted)'; msgEl.textContent = '正在为所有设备创建计划，请稍候（可能需要几十秒）...'; }
-    fetch(API_BASE + '/group-control/nurture/plans/generate-batch', { method: 'POST', headers: authHeaders() })
+    if (msgEl) { msgEl.style.color = 'var(--text-muted)'; msgEl.textContent = '正在' + label + '创建计划，请稍候…'; }
+    var body = ids.length > 0 ? JSON.stringify({ device_ids: ids }) : '{}';
+    var hdrs = authHeaders(); hdrs['Content-Type'] = 'application/json';
+    fetch(API_BASE + '/group-control/nurture/plans/generate-batch', { method: 'POST', headers: hdrs, body: body })
       .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
       .then(function(x) {
         batchCreatePlansBtn.disabled = false;

@@ -1690,12 +1690,20 @@ def generate_nurture_plan_by_device(
     return result
 
 
-@router.post("/nurture/plans/generate-batch", summary="批量为所有设备创建养号计划（用户态）")
+class BatchGenerateIn(BaseModel):
+    device_ids: Optional[list[int]] = None
+
+@router.post("/nurture/plans/generate-batch", summary="批量为指定/全部设备创建养号计划（用户态）")
 def generate_nurture_plans_batch(
+    payload: Optional[BatchGenerateIn] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    device_ids = sorted(_allowed_device_ids_for_user(db, current_user))
+    allowed = set(_allowed_device_ids_for_user(db, current_user))
+    if payload and payload.device_ids:
+        device_ids = sorted(d for d in payload.device_ids if d in allowed)
+    else:
+        device_ids = sorted(allowed)
     if not device_ids:
         return {"detail": "no devices", "results": []}
     results: list[dict[str, Any]] = []
@@ -1815,6 +1823,79 @@ def approve_nurture_plan(
     dispatched = _dispatch_due_nurture_items(db)
     start_display = tomorrow_cn.strftime("%Y-%m-%d")
     return {"detail": "approved", "plan_id": row.id, "dispatched_now": dispatched, "start_date": start_display}
+
+
+class CopyPlanIn(BaseModel):
+    target_device_ids: list[int]
+
+@router.post("/nurture/plans/{plan_id}/copy", summary="复制计划到其他设备（用户态）")
+def copy_nurture_plan(
+    plan_id: int,
+    payload: CopyPlanIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    src = db.query(NurturePlan).filter(NurturePlan.id == plan_id, NurturePlan.user_id == current_user.id).first()
+    if not src:
+        raise HTTPException(status_code=404, detail="plan not found")
+    if not src.plan_json or not isinstance(src.plan_json, dict):
+        raise HTTPException(status_code=400, detail="source plan has no valid plan_json")
+    allowed = set(_allowed_device_ids_for_user(db, current_user))
+    results: list[dict[str, Any]] = []
+    for did in payload.target_device_ids:
+        if did not in allowed:
+            results.append({"device_id": did, "ok": False, "error": "no permission"})
+            continue
+        try:
+            account_id = _resolve_device_account_id(db, current_user, did, None)
+            binding = db.query(NurtureBinding).filter(
+                NurtureBinding.user_id == current_user.id, NurtureBinding.device_id == did
+            ).first()
+            if not binding:
+                binding = NurtureBinding(
+                    user_id=current_user.id, device_id=did,
+                    reddit_account_id=account_id, target_karma=100,
+                    phase="warmup", automation_mode="normal", status="active",
+                )
+                db.add(binding)
+                db.flush()
+            plan_json = dict(src.plan_json)
+            new_plan = NurturePlan(
+                user_id=current_user.id, binding_id=binding.id,
+                name=f"复制自#{plan_id} → 设备#{did}",
+                status="draft",
+                plan_version=src.plan_version or "v1",
+                approval_mode=src.approval_mode or "plan_once_then_auto",
+                plan_horizon_days=src.plan_horizon_days or 14,
+                plan_json=plan_json,
+                summary=f"[复制] {src.summary or ''}",
+                objective=getattr(src, "objective", "") or "",
+            )
+            if hasattr(src, "eval_rounds") and src.eval_rounds:
+                new_plan.eval_rounds = src.eval_rounds
+            db.add(new_plan)
+            db.flush()
+            schedule = plan_json.get("schedule", [])
+            for item in schedule:
+                if not isinstance(item, dict):
+                    continue
+                day_no = int(item.get("day_no") or 1)
+                seq_no = int(item.get("seq_no") or 1)
+                db.add(NurtureScheduleItem(
+                    user_id=current_user.id, binding_id=binding.id, plan_id=new_plan.id,
+                    day_no=day_no, seq_no=seq_no,
+                    stage=str(item.get("stage") or "warmup"),
+                    title=str(item.get("title") or f"nurture-day{day_no:02d}-s{seq_no}"),
+                    scheduled_at=datetime.utcnow(),
+                    status="scheduled",
+                    payload=item.get("payload") if isinstance(item.get("payload"), dict) else {},
+                ))
+            db.commit()
+            results.append({"device_id": did, "ok": True, "plan_id": new_plan.id})
+        except Exception as e:
+            results.append({"device_id": did, "ok": False, "error": str(e)[:200]})
+    ok_count = sum(1 for x in results if x["ok"])
+    return {"detail": f"copied: {ok_count}/{len(results)}", "results": results}
 
 
 @router.post("/nurture/plans/{plan_id}/pause", summary="暂停计划（用户态）")

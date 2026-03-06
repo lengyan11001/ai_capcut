@@ -239,60 +239,6 @@ if (modalControlTask) {
   });
 }
 
-var btnAnalyzeRisk = document.getElementById('btnAnalyzeRisk');
-if (btnAnalyzeRisk) {
-  btnAnalyzeRisk.addEventListener('click', function() {
-    var msgEl = document.getElementById('controlAiMsg');
-    if (msgEl) { msgEl.className = 'msg'; msgEl.textContent = '分析中…'; }
-    fetch(API_BASE + '/group-control/analyze', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ platform: 'reddit', days: 7 })
-    })
-      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-      .then(function(x) {
-        if (!msgEl) return;
-        if (x.ok) {
-          msgEl.className = 'msg ok';
-          msgEl.textContent = '分析完成，报告ID=' + (x.data && x.data.id) + '。摘要：' + (x.data && x.data.summary ? x.data.summary.substring(0, 120) + '…' : '');
-        } else {
-          msgEl.className = 'msg err';
-          msgEl.textContent = (x.data && x.data.detail) || '分析失败';
-        }
-      })
-      .catch(function(err) {
-        if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
-      });
-  });
-}
-
-var btnGenerateStrategy = document.getElementById('btnGenerateStrategy');
-if (btnGenerateStrategy) {
-  btnGenerateStrategy.addEventListener('click', function() {
-    var msgEl = document.getElementById('controlAiMsg');
-    if (msgEl) { msgEl.className = 'msg'; msgEl.textContent = '生成中…'; }
-    fetch(API_BASE + '/group-control/strategies/generate', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ category: 'general', niche: 'general' })
-    })
-      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-      .then(function(x) {
-        if (!msgEl) return;
-        if (x.ok) {
-          msgEl.className = 'msg ok';
-          msgEl.textContent = '策略已生成，ID=' + (x.data && x.data.id) + '，名称：' + (x.data && x.data.name || '');
-        } else {
-          msgEl.className = 'msg err';
-          msgEl.textContent = (x.data && x.data.detail) || '生成失败';
-        }
-      })
-      .catch(function(err) {
-        if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
-      });
-  });
-}
-
 var createDispatchGroupBtn = document.getElementById('createDispatchGroupBtn');
 if (createDispatchGroupBtn) {
   createDispatchGroupBtn.addEventListener('click', function() {

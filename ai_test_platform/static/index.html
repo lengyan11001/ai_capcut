@@ -200,6 +200,7 @@
                   <div class="card-label" style="margin:0;">设备列表</div>
                   <div style="display:flex;gap:0.5rem;align-items:center;">
                     <input type="text" id="devicesSearchInput" placeholder="搜索设备…" style="width:150px;padding:0.25rem 0.5rem;font-size:0.82rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);color:var(--text);">
+                    <button type="button" onclick="_toggleSelectAll()" class="btn btn-ghost btn-sm" style="font-size:0.75rem;">全选/取消</button>
                     <button type="button" id="batchCreatePlansBtn" class="btn btn-ghost btn-sm">批量创建养号计划</button>
                   </div>
                 </div>
@@ -237,14 +238,6 @@
                   <input type="text" id="tasksSearchInput" placeholder="搜索任务…" style="width:180px;padding:0.25rem 0.5rem;font-size:0.82rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);color:var(--text);">
                 </div>
                 <div id="controlTasksList"></div>
-              </div>
-              <div class="card" style="margin-top:0.75rem;">
-                <div class="card-label">AI 能力</div>
-                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
-                  <button type="button" id="btnAnalyzeRisk" class="btn btn-ghost btn-sm">风控分析</button>
-                  <button type="button" id="btnGenerateStrategy" class="btn btn-ghost btn-sm">策略生成</button>
-                </div>
-                <div id="controlAiMsg" class="msg" style="margin-top:0.5rem;"></div>
               </div>
             </div>
             <!-- Tab3: 计划列表 -->
@@ -531,6 +524,7 @@
               <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
                 <h3 style="margin:0;">投放计划</h3>
                 <div style="display:flex;gap:0.5rem;align-items:center;">
+                  <button type="button" class="btn btn-primary btn-sm" id="fbNewPlanBtn">+ AI 生成计划</button>
                   <select id="fbCampaignStatusFilter" class="search-input" style="width:120px;">
                     <option value="">全部状态</option>
                     <option value="draft">待确认</option>
@@ -541,20 +535,18 @@
                   <button type="button" class="btn btn-ghost btn-sm" id="fbRefreshCampaignsBtn">刷新</button>
                 </div>
               </div>
-              <!-- Plans list (draft plans for review) -->
               <div class="card-label" style="margin-top:1rem;">待审核计划</div>
               <div id="fbPlansTable" class="table-wrap" style="margin-top:0.5rem;">
                 <table><thead><tr>
-                  <th>计划 ID</th><th>模型</th><th>目标国家</th><th>日预算</th><th>状态</th><th>创建时间</th><th>操作</th>
+                  <th>计划 ID</th><th>产品</th><th>模型</th><th>目标国家</th><th>日预算</th><th>状态</th><th>创建时间</th><th>操作</th>
                 </tr></thead><tbody id="fbPlansTbody"></tbody></table>
               </div>
               <div id="fbPlansPager" style="display:flex;align-items:center;justify-content:center;gap:0.75rem;margin-top:0.75rem;"></div>
 
-              <!-- Campaigns list (active FB campaigns) -->
               <div class="card-label" style="margin-top:1.5rem;">活跃 Campaign</div>
               <div id="fbCampaignsTable" class="table-wrap" style="margin-top:0.5rem;">
                 <table><thead><tr>
-                  <th>名称</th><th>目标</th><th>日预算</th><th>状态</th><th>创建时间</th><th>操作</th>
+                  <th>名称</th><th>目标</th><th>日预算</th><th>状态</th><th>花费</th><th>创建时间</th><th>操作</th>
                 </tr></thead><tbody id="fbCampaignsTbody"></tbody></table>
               </div>
               <div id="fbCampaignsPager" style="display:flex;align-items:center;justify-content:center;gap:0.75rem;margin-top:0.75rem;"></div>
@@ -572,6 +564,91 @@
                 </div>
               </div>
             </div>
+
+            <!-- AI Plan Wizard Modal -->
+            <div class="modal-mask" id="fbWizardModal" style="display:none;">
+              <div class="modal fb-wizard-modal" style="max-height:85vh;overflow-y:auto;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <h3>AI 智能投放计划</h3>
+                  <button type="button" class="btn btn-ghost btn-sm" id="fbWizardCloseBtn">✕</button>
+                </div>
+                <div class="fb-wizard-section">
+                  <div class="fb-wizard-label">1. 产品信息</div>
+                  <div class="fb-field">
+                    <label>产品名称 / 描述 <span style="color:#f87171;">*</span></label>
+                    <textarea id="fbWizardProduct" placeholder="描述你要推广的产品或服务，例如：&#10;无线蓝牙耳机，主打降噪功能，售价 $29.99，适合通勤人群"></textarea>
+                  </div>
+                  <div class="fb-field">
+                    <label>产品链接（可选）</label>
+                    <input type="url" id="fbWizardProductUrl" placeholder="https://yourshop.com/product">
+                  </div>
+                </div>
+                <div class="fb-wizard-section">
+                  <div class="fb-wizard-label">2. 投放配置</div>
+                  <div class="fb-wizard-row">
+                    <div class="fb-field">
+                      <label>目标国家 <span style="color:#f87171;">*</span></label>
+                      <select id="fbWizardCountry" multiple size="4">
+                        <option value="US">美国 (US)</option>
+                        <option value="GB">英国 (GB)</option>
+                        <option value="CA">加拿大 (CA)</option>
+                        <option value="AU">澳大利亚 (AU)</option>
+                        <option value="DE">德国 (DE)</option>
+                        <option value="FR">法国 (FR)</option>
+                        <option value="JP">日本 (JP)</option>
+                        <option value="KR">韩国 (KR)</option>
+                        <option value="BR">巴西 (BR)</option>
+                        <option value="MX">墨西哥 (MX)</option>
+                        <option value="IN">印度 (IN)</option>
+                        <option value="SA">沙特 (SA)</option>
+                        <option value="AE">阿联酋 (AE)</option>
+                        <option value="SG">新加坡 (SG)</option>
+                        <option value="MY">马来西亚 (MY)</option>
+                      </select>
+                      <div class="fb-hint">按住 Ctrl 多选</div>
+                    </div>
+                    <div class="fb-field">
+                      <label>广告账户 <span style="color:#f87171;">*</span></label>
+                      <select id="fbWizardAccount">
+                        <option value="">选择广告账户...</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="fb-wizard-row">
+                    <div class="fb-field">
+                      <label>日预算 (USD) <span style="color:#f87171;">*</span></label>
+                      <input type="number" id="fbWizardBudget" min="5" step="1" placeholder="50">
+                    </div>
+                    <div class="fb-field">
+                      <label>投放目标</label>
+                      <select id="fbWizardObjective">
+                        <option value="CONVERSIONS">转化</option>
+                        <option value="LINK_CLICKS">链接点击</option>
+                        <option value="REACH">覆盖</option>
+                        <option value="BRAND_AWARENESS">品牌认知</option>
+                        <option value="APP_INSTALLS">应用安装</option>
+                        <option value="VIDEO_VIEWS">视频观看</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <div class="fb-wizard-section">
+                  <div class="fb-wizard-label">3. AI 模型选择</div>
+                  <div class="fb-field">
+                    <label>生成计划使用的模型</label>
+                    <select id="fbWizardModel">
+                      <option value="">加载中...</option>
+                    </select>
+                    <div class="fb-hint">AI 将分析产品、调研市场并生成完整投放方案，确认后再执行</div>
+                  </div>
+                </div>
+                <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.5rem;">
+                  <button type="button" class="btn btn-ghost btn-sm" id="fbWizardCancelBtn">取消</button>
+                  <button type="button" class="btn btn-primary" id="fbWizardSubmitBtn" style="padding:0.6rem 1.5rem;">生成投放计划</button>
+                </div>
+                <div id="fbWizardMsg" class="msg" style="margin-top:0.75rem;"></div>
+              </div>
+            </div>
           </div>
 
           <!-- ===== FB 投放 - 素材库 ===== -->
@@ -580,13 +657,21 @@
               <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
                 <h3 style="margin:0;">素材库</h3>
                 <div style="display:flex;gap:0.5rem;align-items:center;">
+                  <button type="button" class="btn btn-primary btn-sm" id="fbAiGenerateCreativeBtn">AI 生成素材</button>
                   <select id="fbCreativeTypeFilter" class="search-input" style="width:120px;">
                     <option value="">全部类型</option>
                     <option value="image">图片</option>
                     <option value="video">视频</option>
+                    <option value="copy">文案</option>
                   </select>
                   <button type="button" class="btn btn-ghost btn-sm" id="fbRefreshCreativesBtn">刷新</button>
                 </div>
+              </div>
+              <div id="fbCreativeUploadZone" class="fb-upload-zone" style="margin-top:1rem;">
+                <div class="fb-upload-icon">📁</div>
+                <div>拖拽文件到此处或点击上传</div>
+                <div style="font-size:0.78rem;margin-top:0.3rem;">支持 JPG/PNG/MP4，单文件最大 50MB</div>
+                <input type="file" id="fbCreativeFileInput" accept="image/*,video/mp4" multiple style="display:none;">
               </div>
               <div id="fbCreativesGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem;margin-top:1rem;"></div>
               <div id="fbCreativesPager" style="display:flex;align-items:center;justify-content:center;gap:0.75rem;margin-top:1rem;"></div>
@@ -595,9 +680,24 @@
 
           <!-- ===== FB 投放 - 数据看板 ===== -->
           <div id="content-fb-analytics" class="content-block">
-            <div class="card">
+            <div id="fbAnalyticsCards" class="fb-metric-grid" style="margin-bottom:1rem;"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+              <div class="card">
+                <div class="card-label">花费趋势</div>
+                <div id="fbChartSpend" class="fb-chart-placeholder" style="margin-top:0.5rem;">
+                  数据同步后展示花费趋势图
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-label">转化趋势</div>
+                <div id="fbChartConversions" class="fb-chart-placeholder" style="margin-top:0.5rem;">
+                  数据同步后展示转化趋势图
+                </div>
+              </div>
+            </div>
+            <div class="card" style="margin-top:1rem;">
               <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-                <h3 style="margin:0;">数据看板</h3>
+                <div class="card-label" style="margin:0;">账户概览</div>
                 <div style="display:flex;gap:0.5rem;align-items:center;">
                   <select id="fbAnalyticsDays" class="search-input" style="width:120px;">
                     <option value="7">最近 7 天</option>
@@ -607,8 +707,11 @@
                   <button type="button" class="btn btn-ghost btn-sm" id="fbRefreshAnalyticsBtn">刷新</button>
                 </div>
               </div>
-              <div id="fbAnalyticsCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1rem;margin-top:1rem;"></div>
-              <div id="fbAnalyticsDetail" style="margin-top:1.5rem;"></div>
+              <div id="fbAnalyticsTable" class="table-wrap" style="margin-top:0.75rem;">
+                <table><thead><tr>
+                  <th>账户</th><th>花费</th><th>展示</th><th>点击</th><th>CTR</th><th>转化</th><th>CPA</th><th>ROAS</th>
+                </tr></thead><tbody id="fbAnalyticsTbody"></tbody></table>
+              </div>
             </div>
           </div>
 

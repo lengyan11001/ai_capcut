@@ -31,7 +31,8 @@
         });
     }
 
-    function loadNurtureProgress() {
+    var _nurtureProgressAutoRefresh = false;
+    function loadNurtureProgress(isAutoRefresh) {
       return fetch(API_BASE + '/group-control/nurture/progress', { headers: authHeaders() })
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(x) {
@@ -39,10 +40,39 @@
           list.sort(function(a, b) {
             return String(b.created_at || '').localeCompare(String(a.created_at || ''));
           });
+          var prevCache = nurtureProgressCache;
           nurtureProgressCache = list;
-          renderNurtureProgressPage();
+          if (isAutoRefresh && prevCache.length) {
+            _patchGeneratingItems(prevCache, list);
+          } else {
+            renderNurtureProgressPage();
+          }
           return list;
         });
+    }
+    function _patchGeneratingItems(oldList, newList) {
+      var changed = false;
+      var newMap = {};
+      newList.forEach(function(r) { newMap[r.plan_id] = r; });
+      oldList.forEach(function(r) {
+        var n = newMap[r.plan_id];
+        if (!n) { changed = true; return; }
+        if (r.plan_status !== n.plan_status) changed = true;
+        if (r.plan_status === 'generating' || n.plan_status === 'generating') changed = true;
+      });
+      if (newList.length !== oldList.length) changed = true;
+      if (changed) {
+        renderNurtureProgressPage();
+      } else {
+        _scheduleGeneratingRefresh();
+      }
+    }
+    function _scheduleGeneratingRefresh() {
+      if (_nurtureAutoRefreshTimer) { clearTimeout(_nurtureAutoRefreshTimer); _nurtureAutoRefreshTimer = null; }
+      var hasGen = nurtureProgressCache.some(function(r) { return r.plan_status === 'generating'; });
+      if (hasGen) {
+        _nurtureAutoRefreshTimer = setTimeout(function() { _nurtureAutoRefreshTimer = null; loadNurtureProgress(true); }, 5000);
+      }
     }
 
     function renderNurtureProgressPage() {
@@ -183,6 +213,9 @@
           actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-start" data-plan-id="' + r.plan_id + '" data-device-id="' + (r.device_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">恢复执行</button> ';
         }
         if (r.plan_status !== 'generating') {
+          if (r.plan_status === 'draft' || r.plan_status === 'approved' || r.plan_status === 'active' || r.plan_status === 'paused' || r.plan_status === 'completed') {
+            actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-copy" data-plan-id="' + r.plan_id + '" style="color:#7c3aed;">复制</button> ';
+          }
           actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-delete-plan" data-plan-id="' + r.plan_id + '" style="color:#b91c1c;">删除</button>';
         }
         var titleStyle = statusColor ? ' style="color:' + statusColor + ';"' : '';
@@ -190,7 +223,7 @@
       }).join('');
       if (_nurtureAutoRefreshTimer) { clearTimeout(_nurtureAutoRefreshTimer); _nurtureAutoRefreshTimer = null; }
       if (hasGenerating) {
-        _nurtureAutoRefreshTimer = setTimeout(function() { _nurtureAutoRefreshTimer = null; loadNurtureProgress(); }, 5000);
+        _nurtureAutoRefreshTimer = setTimeout(function() { _nurtureAutoRefreshTimer = null; loadNurtureProgress(true); }, 5000);
       }
       Object.keys(_expandedEvalPlanIds).forEach(function(pid) {
         if (_expandedEvalPlanIds[pid]) {
@@ -225,7 +258,7 @@
 
       el.querySelectorAll('.nurture-progress-item').forEach(function(itemEl) {
         itemEl.addEventListener('click', function(e) {
-          if (e.target && (e.target.classList.contains('btn-nurture-start') || e.target.classList.contains('btn-nurture-pause') || e.target.classList.contains('btn-nurture-delete-plan'))) return;
+          if (e.target && (e.target.classList.contains('btn-nurture-start') || e.target.classList.contains('btn-nurture-pause') || e.target.classList.contains('btn-nurture-delete-plan') || e.target.classList.contains('btn-nurture-copy'))) return;
           var bid = parseInt(String(itemEl.getAttribute('data-binding-id') || '').trim(), 10);
           var pid = parseInt(String(itemEl.getAttribute('data-plan-id') || '').trim(), 10);
           if (!isNaN(pid) && pid > 0) {
@@ -325,6 +358,32 @@
           var deviceId = parseInt(String(btn.getAttribute('data-device-id') || '').trim(), 10);
           if (!deviceId) return;
           openCreatePlanModal(deviceId, null);
+        });
+      });
+      el.querySelectorAll('.btn-nurture-copy').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var planId = parseInt(btn.getAttribute('data-plan-id'), 10);
+          if (!planId) return;
+          var devList = (controlDeviceListCache || []).map(function(d) { return d.device_label + ' (#' + d.id + ')'; });
+          var input = prompt('复制计划#' + planId + ' 到哪些设备？\n输入设备ID，用逗号分隔。\n\n可用设备:\n' + devList.join('\n'));
+          if (!input) return;
+          var ids = input.split(',').map(function(s) { return parseInt(s.trim(), 10); }).filter(function(x) { return !isNaN(x) && x > 0; });
+          if (!ids.length) { alert('未输入有效设备ID'); return; }
+          var msgEl = document.getElementById('nurtureMsg');
+          fetch(API_BASE + '/group-control/nurture/plans/' + planId + '/copy', {
+            method: 'POST', headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+            body: JSON.stringify({ target_device_ids: ids })
+          })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+          .then(function(x) {
+            if (msgEl) {
+              if (x.ok) { msgEl.className = 'msg ok'; msgEl.textContent = x.data.detail || '复制完成'; }
+              else { msgEl.className = 'msg err'; msgEl.textContent = (x.data && x.data.detail) || '复制失败'; }
+            }
+            loadNurturePanel();
+          })
+          .catch(function(err) { if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); } });
         });
       });
       if (scrollParent && savedScroll) scrollParent.scrollTop = savedScroll;
