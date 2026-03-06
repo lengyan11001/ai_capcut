@@ -2930,46 +2930,254 @@ def get_daily_stats(
     return _collect_daily_stats(db)
 
 
+_REDDIT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+
+
+def _html_to_text(html: str, max_len: int = 8000) -> str:
+    import re as _re
+    clean = _re.sub(r"<script[\s\S]*?</script>", " ", html, flags=_re.I)
+    clean = _re.sub(r"<style[\s\S]*?</style>", " ", clean, flags=_re.I)
+    clean = _re.sub(r"<[^>]+>", " ", clean)
+    clean = _re.sub(r"\s+", " ", clean).strip()
+    return clean[:max_len]
+
+
+def _fetch_url_text(url: str, max_len: int = 8000) -> Optional[str]:
+    try:
+        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+            resp = client.get(url, headers={"User-Agent": _REDDIT_UA})
+            if resp.status_code < 300 and resp.text:
+                return _html_to_text(resp.text, max_len)
+    except Exception as exc:
+        logger.warning("fetch failed for %s: %s", url, exc)
+    return None
+
+
+def _fetch_reddit_json(url: str) -> Optional[Any]:
+    try:
+        with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+            resp = client.get(url, headers={"User-Agent": _REDDIT_UA})
+            if resp.status_code < 300:
+                return resp.json()
+    except Exception as exc:
+        logger.warning("reddit json fetch failed for %s: %s", url, exc)
+    return None
+
+
 def _crawl_reddit_policy() -> Optional[dict[str, Any]]:
+    """Crawl official Reddit policy pages."""
     urls = [
         "https://www.redditinc.com/policies/content-policy",
         "https://support.reddit.com/hc/en-us/articles/20451297193108",
     ]
     texts: list[str] = []
+    fetched_urls: list[str] = []
     for url in urls:
-        try:
-            with httpx.Client(timeout=30.0, follow_redirects=True) as client:
-                resp = client.get(url, headers={"User-Agent": "Mozilla/5.0"})
-                if resp.status_code < 300 and resp.text:
-                    import re as _re
-                    clean = _re.sub(r"<[^>]+>", " ", resp.text)
-                    clean = _re.sub(r"\s+", " ", clean).strip()
-                    texts.append(clean[:8000])
-        except Exception as exc:
-            logger.warning("policy crawl failed for %s: %s", url, exc)
+        t = _fetch_url_text(url)
+        if t:
+            texts.append(t)
+            fetched_urls.append(url)
     if not texts:
         return None
-    return {"source_urls": urls, "raw_texts": texts}
+    return {"source_urls": fetched_urls, "raw_texts": texts}
 
 
-def _summarize_policy_with_ai(raw_texts: list[str], prev_summary: str = "", model: str = "") -> Optional[dict]:
+def _crawl_reddit_announcements() -> list[dict[str, str]]:
+    """Fetch recent posts from official Reddit announcement subreddits."""
+    subs = ["reddit", "changelog", "ModSupport"]
+    posts: list[dict[str, str]] = []
+    for sub in subs:
+        data = _fetch_reddit_json(f"https://www.reddit.com/r/{sub}/new.json?limit=5")
+        if not data:
+            continue
+        for child in (data.get("data", {}).get("children", []))[:5]:
+            p = child.get("data", {})
+            title = p.get("title", "")
+            selftext = (p.get("selftext") or "")[:800]
+            created = p.get("created_utc", 0)
+            if title:
+                posts.append({
+                    "subreddit": sub,
+                    "title": title,
+                    "text": selftext,
+                    "url": f"https://www.reddit.com{p.get('permalink', '')}",
+                    "created_utc": str(int(created)) if created else "",
+                })
+    return posts
+
+
+def _crawl_subreddit_rules(db: Session) -> list[dict[str, Any]]:
+    """Fetch rules for subreddits referenced in active nurture plans."""
+    active_plans = db.query(NurturePlan).filter(NurturePlan.status.in_(["approved", "active"])).all()
+    subreddit_names: set[str] = set()
+    for p in active_plans:
+        pj = p.plan_json if isinstance(p.plan_json, dict) else {}
+        for item in pj.get("schedule", []):
+            payload = item.get("payload", {})
+            sub = payload.get("subreddit_name", "")
+            if sub:
+                subreddit_names.add(sub)
+
+    rules_data: list[dict[str, Any]] = []
+    for sub_name in list(subreddit_names)[:10]:
+        data = _fetch_reddit_json(f"https://www.reddit.com/r/{sub_name}/about/rules.json")
+        if not data:
+            continue
+        rules_list = data.get("rules", data) if isinstance(data, dict) else data
+        if isinstance(rules_list, list):
+            rules_data.append({
+                "subreddit": sub_name,
+                "rules": [
+                    {"title": r.get("short_name", ""), "description": (r.get("description", "") or "")[:300]}
+                    for r in rules_list[:15]
+                ],
+            })
+        elif isinstance(rules_list, dict) and "rules" in rules_list:
+            inner = rules_list["rules"]
+            if isinstance(inner, list):
+                rules_data.append({
+                    "subreddit": sub_name,
+                    "rules": [
+                        {"title": r.get("short_name", ""), "description": (r.get("description", "") or "")[:300]}
+                        for r in inner[:15]
+                    ],
+                })
+    return rules_data
+
+
+def _collect_execution_anomalies(db: Session, days: int = 2) -> dict[str, Any]:
+    """Analyze recent execution logs for anomaly patterns."""
+    since = datetime.utcnow() - timedelta(days=days)
+    failed_items = (
+        db.query(NurtureScheduleItem)
+        .filter(
+            NurtureScheduleItem.status.in_(["failed", "skipped"]),
+            NurtureScheduleItem.updated_at >= since,
+        )
+        .order_by(NurtureScheduleItem.updated_at.desc())
+        .limit(100)
+        .all()
+    )
+    error_counts: dict[str, int] = {}
+    error_samples: list[dict[str, str]] = []
+    for si in failed_items:
+        err = si.last_error_message or si.last_error_code or "unknown"
+        err_key = err[:80]
+        error_counts[err_key] = error_counts.get(err_key, 0) + 1
+        if len(error_samples) < 15:
+            error_samples.append({
+                "plan_id": str(si.plan_id),
+                "day_seq": f"{si.day_no}-{si.seq_no}",
+                "status": si.status,
+                "error": err[:200],
+            })
+
+    exec_logs = (
+        db.query(TaskExecutionLog)
+        .filter(TaskExecutionLog.created_at >= since, TaskExecutionLog.level.in_(["error", "warning"]))
+        .order_by(TaskExecutionLog.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    log_patterns: dict[str, int] = {}
+    for log in exec_logs:
+        msg = (log.message or "")[:100].lower()
+        for keyword in ["rate limit", "captcha", "banned", "suspended", "shadow", "locked", "spam", "timeout", "403", "429"]:
+            if keyword in msg:
+                log_patterns[keyword] = log_patterns.get(keyword, 0) + 1
+
+    return {
+        "failed_count": len(failed_items),
+        "error_distribution": dict(sorted(error_counts.items(), key=lambda x: -x[1])[:10]),
+        "risk_signals": log_patterns,
+        "error_samples": error_samples,
+    }
+
+
+def _gather_all_intelligence(db: Session) -> dict[str, Any]:
+    """Gather all intelligence sources into a single dict."""
+    intel: dict[str, Any] = {"sources_used": []}
+
+    policy = _crawl_reddit_policy()
+    if policy:
+        intel["official_policy"] = policy
+        intel["sources_used"].append("official_policy_pages")
+
+    announcements = _crawl_reddit_announcements()
+    if announcements:
+        intel["announcements"] = announcements
+        intel["sources_used"].append(f"reddit_announcements({len(announcements)} posts)")
+
+    sub_rules = _crawl_subreddit_rules(db)
+    if sub_rules:
+        intel["subreddit_rules"] = sub_rules
+        intel["sources_used"].append(f"subreddit_rules({len(sub_rules)} subs)")
+
+    anomalies = _collect_execution_anomalies(db)
+    if anomalies["failed_count"] > 0 or anomalies["risk_signals"]:
+        intel["execution_anomalies"] = anomalies
+        intel["sources_used"].append("execution_anomalies")
+
+    return intel
+
+
+def _summarize_policy_with_ai(intel: dict[str, Any], prev_summary: str = "", model: str = "") -> Optional[dict]:
     base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
     api_key = (settings.nurture_llm_api_key or "").strip()
     if not base_url or not api_key:
         return None
     use_model = model.strip() if model else (settings.nurture_llm_model or "deepseek-chat")
-    combined = "\n---\n".join(raw_texts)[:12000]
-    prompt = (
-        "你是 Reddit 平台政策分析师。分析以下 Reddit 官方政策页面内容，输出严格 JSON。\n\n"
-        f"当前政策原文（截取）：\n{combined}\n\n"
-    )
+
+    prompt_parts = ["你是 Reddit 平台政策与风控综合分析师。根据以下多维度情报，输出严格 JSON 格式的综合分析。\n"]
+
+    if "official_policy" in intel:
+        combined = "\n---\n".join(intel["official_policy"]["raw_texts"])[:6000]
+        prompt_parts.append(f"=== 1. Reddit 官方政策页面 ===\n{combined}\n")
+
+    if "announcements" in intel:
+        ann_text = "\n".join(
+            f"[r/{a['subreddit']}] {a['title']}: {a['text'][:200]}"
+            for a in intel["announcements"][:8]
+        )[:3000]
+        prompt_parts.append(f"=== 2. Reddit 官方公告（近期） ===\n{ann_text}\n")
+
+    if "subreddit_rules" in intel:
+        rules_text = ""
+        for sr in intel["subreddit_rules"][:5]:
+            rules_text += f"\nr/{sr['subreddit']}:\n"
+            for r in sr["rules"][:8]:
+                rules_text += f"  - {r['title']}: {r['description'][:100]}\n"
+        prompt_parts.append(f"=== 3. 目标子版块规则 ===\n{rules_text[:3000]}\n")
+
+    if "execution_anomalies" in intel:
+        anom = intel["execution_anomalies"]
+        anom_text = f"近2天失败任务: {anom['failed_count']}个\n"
+        if anom["risk_signals"]:
+            anom_text += f"风险信号: {json.dumps(anom['risk_signals'], ensure_ascii=False)}\n"
+        if anom["error_distribution"]:
+            top_errs = list(anom["error_distribution"].items())[:5]
+            anom_text += "常见错误:\n" + "\n".join(f"  [{cnt}次] {err}" for err, cnt in top_errs) + "\n"
+        prompt_parts.append(f"=== 4. 内部执行异常监测 ===\n{anom_text}\n")
+
     if prev_summary:
-        prompt += f"上次摘要：\n{prev_summary}\n\n请对比变化。\n"
-    prompt += (
-        "输出格式：\n"
-        '{"ai_summary":"简要中文摘要(200字内)","key_changes":["变化1","变化2"],"severity":"low/medium/high"}\n'
-        "如果没有明显变化，severity 设为 low，key_changes 设为空数组。"
+        prompt_parts.append(f"=== 上次分析摘要 ===\n{prev_summary}\n请与上次对比，识别变化。\n")
+
+    prompt_parts.append(
+        "=== 输出格式（严格 JSON） ===\n"
+        "{\n"
+        '  "ai_summary": "<中文综合摘要，涵盖政策现状+公告动态+子版块规则要点+异常信号，300字内>",\n'
+        '  "key_changes": ["变化或发现1", "变化或发现2", ...],\n'
+        '  "subreddit_risks": [{"sub":"子版块名","risk":"具体风险描述"}],\n'
+        '  "anomaly_assessment": "<中文，基于执行数据的风险评估，100字内>",\n'
+        '  "severity": "low/medium/high"\n'
+        "}\n"
+        "如果没有明显变化或风险，severity 设为 low。"
     )
+
+    prompt = "\n".join(prompt_parts)
+    if len(prompt) > 15000:
+        prompt = prompt[:15000] + "\n...(截断)"
+
     try:
         timeout = httpx.Timeout(connect=20.0, read=120.0, write=20.0, pool=20.0)
         with httpx.Client(timeout=timeout) as client:
@@ -3002,16 +3210,26 @@ def _ensure_daily_policy(db: Session, model: str = "") -> Optional[RedditPolicyS
     )
     if existing:
         return existing
-    crawled = _crawl_reddit_policy()
-    if not crawled:
+    intel = _gather_all_intelligence(db)
+    if not intel.get("official_policy") and not intel.get("announcements"):
         return None
     prev = db.query(RedditPolicySnapshot).order_by(RedditPolicySnapshot.id.desc()).first()
     prev_summary = prev.ai_summary if prev else ""
-    ai_result = _summarize_policy_with_ai(crawled["raw_texts"], prev_summary, model=model)
+    ai_result = _summarize_policy_with_ai(intel, prev_summary, model=model)
+    all_sources = ", ".join(intel.get("sources_used", []))
+    raw_parts: list[str] = []
+    if "official_policy" in intel:
+        raw_parts.extend(intel["official_policy"]["raw_texts"])
+    if "announcements" in intel:
+        raw_parts.append("--- ANNOUNCEMENTS ---\n" + json.dumps(intel["announcements"], ensure_ascii=False)[:4000])
+    if "subreddit_rules" in intel:
+        raw_parts.append("--- SUBREDDIT RULES ---\n" + json.dumps(intel["subreddit_rules"], ensure_ascii=False)[:4000])
+    if "execution_anomalies" in intel:
+        raw_parts.append("--- ANOMALIES ---\n" + json.dumps(intel["execution_anomalies"], ensure_ascii=False)[:2000])
     snap = RedditPolicySnapshot(
-        source_url=", ".join(crawled["source_urls"]),
-        raw_content="\n---\n".join(crawled["raw_texts"])[:20000],
-        ai_summary=ai_result.get("ai_summary", "") if ai_result else "爬取成功但 AI 摘要失败",
+        source_url=all_sources,
+        raw_content="\n---\n".join(raw_parts)[:20000],
+        ai_summary=ai_result.get("ai_summary", "") if ai_result else "数据采集成功但 AI 摘要失败",
         key_changes=ai_result.get("key_changes", []) if ai_result else [],
         severity=ai_result.get("severity", "low") if ai_result else "unknown",
     )
@@ -3036,6 +3254,7 @@ def get_policy_latest(
         "ai_summary": snap.ai_summary or "",
         "key_changes": snap.key_changes or [],
         "severity": snap.severity,
+        "sources": snap.source_url or "",
     }
 
 
@@ -3045,14 +3264,24 @@ def refresh_policy(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    crawled = _crawl_reddit_policy()
-    if not crawled:
-        raise HTTPException(status_code=502, detail="无法抓取 Reddit 政策页面")
+    intel = _gather_all_intelligence(db)
+    if not intel.get("official_policy") and not intel.get("announcements"):
+        raise HTTPException(status_code=502, detail="无法抓取任何 Reddit 数据源")
     prev = db.query(RedditPolicySnapshot).order_by(RedditPolicySnapshot.id.desc()).first()
-    ai_result = _summarize_policy_with_ai(crawled["raw_texts"], prev.ai_summary if prev else "", model=model)
+    ai_result = _summarize_policy_with_ai(intel, prev.ai_summary if prev else "", model=model)
+    all_sources = ", ".join(intel.get("sources_used", []))
+    raw_parts: list[str] = []
+    if "official_policy" in intel:
+        raw_parts.extend(intel["official_policy"]["raw_texts"])
+    if "announcements" in intel:
+        raw_parts.append("--- ANNOUNCEMENTS ---\n" + json.dumps(intel["announcements"], ensure_ascii=False)[:4000])
+    if "subreddit_rules" in intel:
+        raw_parts.append("--- SUBREDDIT RULES ---\n" + json.dumps(intel["subreddit_rules"], ensure_ascii=False)[:4000])
+    if "execution_anomalies" in intel:
+        raw_parts.append("--- ANOMALIES ---\n" + json.dumps(intel["execution_anomalies"], ensure_ascii=False)[:2000])
     snap = RedditPolicySnapshot(
-        source_url=", ".join(crawled["source_urls"]),
-        raw_content="\n---\n".join(crawled["raw_texts"])[:20000],
+        source_url=all_sources,
+        raw_content="\n---\n".join(raw_parts)[:20000],
         ai_summary=ai_result.get("ai_summary", "") if ai_result else "AI 摘要失败",
         key_changes=ai_result.get("key_changes", []) if ai_result else [],
         severity=ai_result.get("severity", "low") if ai_result else "unknown",
@@ -3060,12 +3289,16 @@ def refresh_policy(
     db.add(snap)
     db.commit()
     db.refresh(snap)
-    return {"id": snap.id, "ai_summary": snap.ai_summary, "severity": snap.severity}
+    return {
+        "id": snap.id, "ai_summary": snap.ai_summary, "severity": snap.severity,
+        "sources": intel.get("sources_used", []),
+    }
 
 
 def _generate_daily_report_data(db: Session, model: str = "") -> dict[str, Any]:
     stats = _collect_daily_stats(db)
     policy = _ensure_daily_policy(db, model=model)
+    anomalies = _collect_execution_anomalies(db)
 
     active_plans = db.query(NurturePlan).filter(NurturePlan.status.in_(["approved", "active"])).all()
     binding_ids = [p.binding_id for p in active_plans]
@@ -3089,22 +3322,32 @@ def _generate_daily_report_data(db: Session, model: str = "") -> dict[str, Any]:
     if not base_url or not api_key:
         return {"overall_score": 0, "execution_analysis": "LLM 未配置", "policy_analysis": "", "recommendations": [], "severity": "unknown", "raw_stats": stats}
 
+    anomaly_section = ""
+    if anomalies["failed_count"] > 0 or anomalies["risk_signals"]:
+        anomaly_section = f"\n=== 执行异常监测 ===\n近2天失败任务: {anomalies['failed_count']}个\n"
+        if anomalies["risk_signals"]:
+            anomaly_section += f"风险信号(关键词命中): {json.dumps(anomalies['risk_signals'], ensure_ascii=False)}\n"
+        if anomalies["error_distribution"]:
+            top3 = list(anomalies["error_distribution"].items())[:3]
+            anomaly_section += "高频错误: " + "; ".join(f"{e}({c}次)" for e, c in top3) + "\n"
+
     prompt = (
-        "你是 Reddit 养号运营分析师。根据以下数据生成每日运营报告，输出严格 JSON。\n\n"
+        "你是 Reddit 养号运营分析师。根据以下多维度数据生成每日运营报告，输出严格 JSON。\n\n"
         f"=== 昨日执行统计 ===\n{json.dumps(stats, ensure_ascii=False)}\n\n"
         f"=== 当前活跃账号状态 ===\n{json.dumps(account_context, ensure_ascii=False)}\n\n"
-        f"=== Reddit 平台政策摘要 ===\n{policy.ai_summary if policy else '暂无政策数据'}\n"
+        f"=== Reddit 平台政策综合分析 ===\n{policy.ai_summary if policy else '暂无政策数据'}\n"
         f"政策变化: {json.dumps(policy.key_changes if policy else [], ensure_ascii=False)}\n"
-        f"风险等级: {policy.severity if policy else 'unknown'}\n\n"
+        f"风险等级: {policy.severity if policy else 'unknown'}\n"
+        f"{anomaly_section}\n"
         "=== 输出格式 ===\n"
         "{\n"
         '  "overall_score": <0-100 综合评分>,\n'
         '  "execution_analysis": "<中文，昨日执行情况分析，200字内>",\n'
-        '  "policy_analysis": "<中文，平台政策风险分析，150字内>",\n'
+        '  "policy_analysis": "<中文，平台政策+子版块规则+异常信号综合风险分析，200字内>",\n'
         '  "recommendations": ["建议1", "建议2", ...],\n'
         '  "severity": "low/medium/high"\n'
         "}\n"
-        "overall_score 综合考虑成功率、账号健康度、政策风险。"
+        "overall_score 综合考虑成功率、账号健康度、政策风险、异常信号。"
     )
     try:
         timeout = httpx.Timeout(connect=20.0, read=180.0, write=20.0, pool=20.0)

@@ -30,6 +30,7 @@
       _initStatsModelSelect();
       loadStatsDaily();
       loadStatsReport();
+      loadStatsPolicyIntel();
     }
     function loadStatsDaily() {
       fetch(API_BASE + '/group-control/stats/daily', { headers: authHeaders() })
@@ -108,6 +109,40 @@
         })
         .catch(function() { el.innerHTML = '<div class="meta" style="color:#f87171;">加载失败</div>'; });
     }
+    function loadStatsPolicyIntel() {
+      var el = document.getElementById('statsPolicyIntel');
+      if (!el) return;
+      el.innerHTML = '<span class="meta">加载中…</span>';
+      fetch(API_BASE + '/group-control/stats/policy-latest', { headers: authHeaders() })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.exists) { el.innerHTML = '<div class="meta">暂无政策情报。刷新报告时将自动采集。</div>'; return; }
+          var sevColor = d.severity === 'high' ? '#f87171' : d.severity === 'medium' ? '#facc15' : '#4ade80';
+          var html = '<div style="display:flex;gap:0.75rem;align-items:flex-start;margin-bottom:0.5rem;">'
+            + '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.72rem;color:#fff;background:' + sevColor + ';">风险: ' + escapeHtml(d.severity || 'unknown') + '</span>'
+            + '<span class="meta">采集时间: ' + escapeHtml(d.crawled_at || '') + '</span></div>';
+          var sources = d.sources || '';
+          if (sources) {
+            var srcList = typeof sources === 'string' ? sources.split(', ') : (Array.isArray(sources) ? sources : []);
+            if (srcList.length) {
+              html += '<div style="margin-bottom:0.5rem;"><span style="font-size:0.78rem;font-weight:600;color:var(--accent);">数据来源 (' + srcList.length + ')</span>';
+              html += '<div style="display:flex;flex-wrap:wrap;gap:0.3rem;margin-top:0.25rem;">';
+              srcList.forEach(function(s) {
+                html += '<span style="font-size:0.72rem;padding:2px 6px;background:rgba(96,165,250,0.12);color:#93c5fd;border-radius:3px;">' + escapeHtml(s) + '</span>';
+              });
+              html += '</div></div>';
+            }
+          }
+          html += '<div style="font-size:0.82rem;line-height:1.5;margin-bottom:0.4rem;">' + escapeHtml(d.ai_summary || '') + '</div>';
+          if (d.key_changes && d.key_changes.length) {
+            html += '<div style="font-size:0.78rem;"><strong>关键发现:</strong><ul style="margin:3px 0 0 1.2rem;">';
+            d.key_changes.forEach(function(c) { html += '<li>' + escapeHtml(c) + '</li>'; });
+            html += '</ul></div>';
+          }
+          el.innerHTML = html;
+        })
+        .catch(function() { el.innerHTML = '<div class="meta" style="color:#f87171;">加载失败</div>'; });
+    }
     (function() {
       var btn = document.getElementById('statsReportRefreshBtn');
       if (btn) btn.addEventListener('click', function() {
@@ -115,7 +150,7 @@
         btn.disabled = true; btn.textContent = '生成中…';
         fetch(API_BASE + '/group-control/stats/report-refresh' + (m ? '?model=' + encodeURIComponent(m) : ''), { method: 'POST', headers: authHeaders() })
           .then(function(r) { return r.json(); })
-          .then(function() { loadStatsReport(); btn.disabled = false; btn.textContent = '刷新报告'; })
+          .then(function() { loadStatsReport(); loadStatsPolicyIntel(); btn.disabled = false; btn.textContent = '刷新报告'; })
           .catch(function() { btn.disabled = false; btn.textContent = '刷新报告'; });
       });
     })();
