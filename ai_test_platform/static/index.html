@@ -492,8 +492,26 @@
     .plan-modal-input { width: 100%; padding: 0.55rem 0.7rem; font-size: 0.95rem; color: #e4e4e7; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; outline: none; transition: border-color 0.2s; box-sizing: border-box; }
     .plan-modal-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(6,182,212,0.15); }
     .plan-modal-input::placeholder { color: #71717a; }
-    .plan-modal-select { width: 100%; padding: 0.5rem 0.7rem; font-size: 0.9rem; color: #e4e4e7; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; outline: none; appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a1a1aa' d='M2 4l4 4 4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+    .plan-modal-select { width: 100%; padding: 0.5rem 0.7rem; font-size: 0.9rem; color: #e4e4e7; background-color: #1a1a2e; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; outline: none; cursor: pointer; }
     .plan-modal-select:focus { border-color: var(--accent); }
+    .plan-modal-select option { background: #1a1a2e; color: #e4e4e7; padding: 0.4rem 0.5rem; }
+    .plan-modal-select option:checked { background: #0f3460; color: #fff; }
+    .plan-modal-select option:hover { background: #16213e; }
+    .custom-dropdown { position: relative; width: 100%; }
+    .custom-dropdown-toggle { width: 100%; padding: 0.55rem 0.7rem; font-size: 0.9rem; color: #e4e4e7; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; transition: border-color 0.2s; }
+    .custom-dropdown-toggle:hover { border-color: rgba(255,255,255,0.2); }
+    .custom-dropdown-toggle.open { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(6,182,212,0.15); }
+    .custom-dropdown-toggle .dd-arrow { font-size: 0.65rem; color: #71717a; transition: transform 0.2s; }
+    .custom-dropdown-toggle.open .dd-arrow { transform: rotate(180deg); }
+    .custom-dropdown-list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #1a1a2e; border: 1px solid rgba(6,182,212,0.2); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); max-height: 260px; overflow-y: auto; z-index: 110; display: none; padding: 4px; }
+    .custom-dropdown-list.open { display: block; }
+    .custom-dropdown-item { padding: 0.5rem 0.7rem; font-size: 0.88rem; color: #c4c4cc; border-radius: 5px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: background 0.15s; }
+    .custom-dropdown-item:hover { background: rgba(6,182,212,0.1); color: #e4e4e7; }
+    .custom-dropdown-item.selected { background: rgba(6,182,212,0.15); color: var(--accent); font-weight: 600; }
+    .custom-dropdown-item .dd-tier { font-size: 0.7rem; padding: 1px 5px; border-radius: 3px; margin-left: 0.4rem; }
+    .custom-dropdown-item .dd-tier-basic { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+    .custom-dropdown-item .dd-tier-pro { background: rgba(139,92,246,0.15); color: #c4b5fd; }
+    .custom-dropdown-item .dd-speed { font-size: 0.75rem; margin-left: 0.3rem; }
     .plan-modal-hint { font-size: 0.75rem; color: #71717a; margin-top: 0.3rem; }
     .plan-modal-actions { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
     .plan-modal-btn-confirm { flex: 1; padding: 0.6rem 1rem; font-weight: 600; }
@@ -1019,7 +1037,14 @@
         </div>
         <div class="plan-modal-field">
           <label class="plan-modal-label">AI 模型</label>
-          <select id="modalPlanModelSelect" class="plan-modal-select"></select>
+          <div id="modalPlanModelDropdown" class="custom-dropdown">
+            <div id="modalPlanModelToggle" class="custom-dropdown-toggle" tabindex="0">
+              <span id="modalPlanModelLabel">选择模型</span>
+              <span class="dd-arrow">&#9660;</span>
+            </div>
+            <div id="modalPlanModelList" class="custom-dropdown-list"></div>
+          </div>
+          <input type="hidden" id="modalPlanModelSelect" value="" />
           <div class="plan-modal-hint">&#9889; basic 速度快成本低 · pro 质量高但较慢</div>
         </div>
         <div class="plan-modal-actions">
@@ -2838,16 +2863,48 @@
     }
 
     function _renderModelSelect() {
-      var sel = document.getElementById('modalPlanModelSelect');
-      if (!sel) return;
+      var hiddenInput = document.getElementById('modalPlanModelSelect');
+      var listEl = document.getElementById('modalPlanModelList');
+      var toggleEl = document.getElementById('modalPlanModelToggle');
+      var labelEl = document.getElementById('modalPlanModelLabel');
+      if (!listEl || !hiddenInput) return;
       var saved = '';
       try { saved = localStorage.getItem('nurture_last_model') || ''; } catch(e) {}
       var pick = saved || nurtureDefaultModel;
-      sel.innerHTML = nurtureModelsCache.map(function(m) {
-        var label = m.name + (m.tier === 'pro' ? ' [Pro]' : '') + (m.speed === 'fast' ? ' \u26A1' : '');
-        var selected = m.id === pick ? ' selected' : '';
-        return '<option value="' + escapeHtml(m.id) + '"' + selected + '>' + escapeHtml(label) + '</option>';
+      var found = nurtureModelsCache.some(function(m) { return m.id === pick; });
+      if (!found && nurtureModelsCache.length) pick = nurtureModelsCache[0].id;
+      hiddenInput.value = pick;
+      listEl.innerHTML = nurtureModelsCache.map(function(m) {
+        var tierCls = m.tier === 'pro' ? 'dd-tier-pro' : 'dd-tier-basic';
+        var tierLabel = m.tier === 'pro' ? 'Pro' : 'Basic';
+        var speedIcon = m.speed === 'fast' ? '<span class="dd-speed">\u26A1</span>' : '';
+        var selCls = m.id === pick ? ' selected' : '';
+        return '<div class="custom-dropdown-item' + selCls + '" data-value="' + escapeHtml(m.id) + '">' +
+          '<span>' + escapeHtml(m.name) + speedIcon + '</span>' +
+          '<span class="dd-tier ' + tierCls + '">' + tierLabel + '</span>' +
+          '</div>';
       }).join('');
+      var pickModel = nurtureModelsCache.find(function(m) { return m.id === pick; });
+      if (labelEl) labelEl.textContent = pickModel ? pickModel.name : pick;
+      listEl.querySelectorAll('.custom-dropdown-item').forEach(function(item) {
+        item.addEventListener('click', function() {
+          var val = item.getAttribute('data-value');
+          hiddenInput.value = val;
+          listEl.querySelectorAll('.custom-dropdown-item').forEach(function(x) { x.classList.remove('selected'); });
+          item.classList.add('selected');
+          var m = nurtureModelsCache.find(function(x) { return x.id === val; });
+          if (labelEl) labelEl.textContent = m ? m.name : val;
+          listEl.classList.remove('open');
+          if (toggleEl) toggleEl.classList.remove('open');
+        });
+      });
+      if (toggleEl) {
+        toggleEl.onclick = function() {
+          var isOpen = listEl.classList.contains('open');
+          if (isOpen) { listEl.classList.remove('open'); toggleEl.classList.remove('open'); }
+          else { listEl.classList.add('open'); toggleEl.classList.add('open'); }
+        };
+      }
     }
 
     var _pendingPlanDeviceId = null;
@@ -3773,6 +3830,16 @@
         if (e.target === modalCreatePlan) modalCreatePlan.classList.remove('visible');
       });
     }
+    document.addEventListener('click', function(e) {
+      var dd = document.getElementById('modalPlanModelDropdown');
+      if (!dd) return;
+      if (!dd.contains(e.target)) {
+        var list = document.getElementById('modalPlanModelList');
+        var toggle = document.getElementById('modalPlanModelToggle');
+        if (list) list.classList.remove('open');
+        if (toggle) toggle.classList.remove('open');
+      }
+    });
     var modalCreatePlanConfirm = document.getElementById('modalCreatePlanConfirm');
     if (modalCreatePlanConfirm) {
       modalCreatePlanConfirm.addEventListener('click', _doCreatePlan);
