@@ -2945,6 +2945,7 @@
     var nurtureProgressPage = 1;
     var nurtureProgressPageSize = 10;
     var selectedNurtureBindingId = null;
+    var selectedNurturePlanId = null;
 
     function loadNurtureBindings() {
       return fetch(API_BASE + '/group-control/nurture/bindings', { headers: authHeaders() })
@@ -3012,7 +3013,7 @@
           ' · ' + (m.total || 0) + '项(成功' + (m.success || 0) + '/失败' + (m.failed || 0) + '/执行中' + (m.running || 0) + '/待执行' + (m.scheduled || 0) + ')' +
           ' · phase:' + (r.phase || '-') +
           ' · karma:' + (r.current_karma || 0) + '/' + (r.target_karma || 0);
-        var selected = (selectedNurtureBindingId && selectedNurtureBindingId === r.binding_id) ? ' style="border-color:var(--accent);"' : '';
+        var selected = (selectedNurturePlanId && selectedNurturePlanId === r.plan_id) ? ' style="border-color:var(--accent);"' : '';
         var actions = '';
         if (r.plan_status === 'draft') {
           actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-start" data-plan-id="' + r.plan_id + '" data-device-id="' + (r.device_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">开始执行</button> ';
@@ -3045,8 +3046,9 @@
           if (e.target && (e.target.classList.contains('btn-nurture-start') || e.target.classList.contains('btn-nurture-pause') || e.target.classList.contains('btn-nurture-delete-plan'))) return;
           var bid = parseInt(String(itemEl.getAttribute('data-binding-id') || '').trim(), 10);
           var pid = parseInt(String(itemEl.getAttribute('data-plan-id') || '').trim(), 10);
-          if (!isNaN(bid) && bid > 0) {
-            selectedNurtureBindingId = bid;
+          if (!isNaN(pid) && pid > 0) {
+            selectedNurturePlanId = pid;
+            selectedNurtureBindingId = isNaN(bid) ? selectedNurtureBindingId : bid;
             renderNurtureProgressPage();
             loadNurtureSchedule(bid);
           }
