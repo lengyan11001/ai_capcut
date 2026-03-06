@@ -49,6 +49,7 @@ _REDACT_PATTERNS = [
 _REDACT_TERMS = ("速推", "fyshark", "ts-api.fyshark.com", "sutui_account", "account_id")
 _IMAGE_INTENT_RE = re.compile(r"(生成|画|做).{0,8}(图|图片|海报|头像|插画)|文生图|出图|做一张图", re.I)
 _IMAGE_UNAVAILABLE_RE = re.compile(r"(无法|不能|暂时).*?(生成|出).*?(图|图片)|没有可用.*?(图像|图片).*?能力", re.I)
+_IMAGE_MODEL_QUERY_INTENT_RE = re.compile(r"(哪些|什么|可用|支持|列表|查询|看看|有哪).{0,12}(模型|model).{0,8}(生成|出).{0,8}(图|图片)", re.I)
 _SUTUI_CREDIT_INTENT_RE = re.compile(r"(速推|sutui).{0,8}(积分|余额|点数|剩余)|查询.{0,8}(速推|sutui).{0,8}(积分|余额|点数)", re.I)
 
 
@@ -81,6 +82,9 @@ def _sanitize_reply(text: str) -> str:
 
 def _is_image_intent(text: str) -> bool:
     t = (text or "").strip()
+    # “查询有哪些图片模型”属于咨询/查询意图，不应被当成“立即生成图片”。
+    if t and _IMAGE_MODEL_QUERY_INTENT_RE.search(t):
+        return False
     return bool(t and _IMAGE_INTENT_RE.search(t))
 
 
