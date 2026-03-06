@@ -46,31 +46,57 @@ def _iso(x: Optional[datetime]) -> Optional[str]:
 
 def _build_fallback_plan(days: int) -> dict[str, Any]:
     schedule: list[dict[str, Any]] = []
-    # 每天两次低风险养号动作；前 30 天不进入主题发帖。
     for day in range(1, max(days, 1) + 1):
         stage = "warmup" if day <= 7 else ("steady" if day <= 20 else "engage")
-        for seq, hour in ((1, 10), (2, 20)):
-            action = "browse" if day <= 5 else ("search" if seq == 2 else "browse")
-            schedule.append(
-                {
-                    "day_no": day,
-                    "seq_no": seq,
-                    "hour": hour,
-                    "minute": 0,
-                    "stage": stage,
-                    "title": f"nurture-day{day:02d}-s{seq}",
-                    "payload": {
-                        "action": action,
-                        "duration_min": 8 if day <= 7 else 12,
-                        "max_actions": 18 if day <= 7 else 28,
-                        "upvote_ratio": 0.0 if day <= 5 else (0.03 if day <= 14 else 0.06),
-                        "comment_ratio": 0.0,
-                    },
-                }
-            )
+        seq = 0
+
+        # Morning: profile_check (every day)
+        seq += 1
+        schedule.append({
+            "day_no": day, "seq_no": seq, "hour": 9, "minute": 0,
+            "stage": stage, "title": f"day{day:02d}-profile-check",
+            "payload": {"action": "profile_check"},
+        })
+
+        # Mid-morning: browse or search
+        seq += 1
+        action = "browse" if day <= 5 else "search"
+        p: dict[str, Any] = {"action": action, "duration_min": 8 if day <= 7 else 12}
+        if action == "search":
+            p["keyword"] = "trending"
+        schedule.append({
+            "day_no": day, "seq_no": seq, "hour": 10, "minute": 30,
+            "stage": stage, "title": f"day{day:02d}-{action}",
+            "payload": p,
+        })
+
+        # Afternoon: upvote (steady+) or subscribe (steady+)
+        if day > 7:
+            seq += 1
+            if day % 3 == 0:
+                schedule.append({
+                    "day_no": day, "seq_no": seq, "hour": 15, "minute": 0,
+                    "stage": stage, "title": f"day{day:02d}-subscribe",
+                    "payload": {"action": "subscribe"},
+                })
+            else:
+                schedule.append({
+                    "day_no": day, "seq_no": seq, "hour": 15, "minute": 0,
+                    "stage": stage, "title": f"day{day:02d}-upvote",
+                    "payload": {"action": "upvote", "duration_min": 10, "max_actions": 15, "upvote_ratio": 0.04},
+                })
+
+        # Evening: browse
+        seq += 1
+        schedule.append({
+            "day_no": day, "seq_no": seq, "hour": 20, "minute": 0,
+            "stage": stage, "title": f"day{day:02d}-browse-evening",
+            "payload": {"action": "browse", "duration_min": 8},
+        })
+
     return {
         "plan_version": "v1",
-        "summary": f"auto-generated {days} days nurture plan",
+        "summary": f"auto-generated {days}-day nurture plan (6 actions: browse/search/upvote/subscribe/comment/profile_check)",
         "plan_horizon_days": days,
         "next_review_in_days": 1,
         "schedule": schedule,
@@ -101,11 +127,24 @@ def _call_openclaw_for_plan(
     if not base or not token:
         return None
     prompt = (
-        "你是 Reddit 养号计划器。输出严格 JSON，不要 markdown。"
-        "目标：生成仅养号（不发帖）计划，字段必须包含 plan_version, summary, plan_horizon_days, next_review_in_days, schedule。"
-        "schedule 每项字段必须包含 day_no, seq_no, hour, minute, stage, title, payload。"
-        "payload 仅允许 action/keyword/duration_min/max_actions/upvote_ratio/comment_ratio。"
-        "约束：plan_horizon_days 取 14-60 的整数，next_review_in_days 取 1-3。"
+        "你是 Reddit 养号计划器。输出严格 JSON，不要 markdown。\n"
+        "目标：生成仅养号（不发帖）计划，字段必须包含 plan_version, summary, plan_horizon_days, next_review_in_days, schedule。\n"
+        "schedule 每项字段必须包含 day_no, seq_no, hour, minute, stage, title, payload。\n"
+        "payload 必须包含 action 字段，以及该 action 对应的参数。\n\n"
+        "=== 可用动作目录（只能从以下 action 中选择）===\n"
+        "- browse: 滑动浏览首页/热门 Feed | 可选参数: duration_min, max_scrolls | 适用阶段: warmup,steady,engage,post_ready | 风险: low\n"
+        "- search: 搜索关键词并浏览结果 | 必选参数: keyword | 可选: duration_min, max_scrolls | 适用阶段: warmup,steady,engage,post_ready | 风险: low\n"
+        "- upvote: 浏览 Feed 过程中按概率随机点赞 | 可选参数: duration_min, max_actions, upvote_ratio(0-1) | 适用阶段: steady,engage,post_ready | 风险: medium\n"
+        "- subscribe: 进入指定/推荐 Subreddit 并 Join | 可选参数: subreddit_name | 适用阶段: steady,engage,post_ready | 风险: low\n"
+        "- comment: 打开帖子发表简短评论 | 可选参数: max_actions, comment_templates(字符串数组) | 适用阶段: engage,post_ready | 风险: high\n"
+        "- profile_check: 进入 Profile 页读取 karma 和账号状态 | 无参数 | 适用阶段: 所有 | 风险: low\n\n"
+        "=== 编排约束 ===\n"
+        "1. warmup 阶段(前7天)只允许 browse/search/profile_check\n"
+        "2. steady 阶段(8-20天)可增加 upvote/subscribe，upvote_ratio 不超过 0.05\n"
+        "3. engage 阶段(21天+)可增加 comment，每天最多 2 条评论\n"
+        "4. 每天至少安排 1 次 profile_check\n"
+        "5. 单次 session 持续时间 duration_min 建议 5-15 分钟\n"
+        "6. plan_horizon_days 取 14-60 的整数，next_review_in_days 取 1-3\n\n"
         f"参数：objective={objective}, risk_preference={risk_preference}, current_phase={binding.phase}, "
         f"current_karma={binding.current_karma}, target_karma={binding.target_karma}, "
         f"account_health={binding.account_health}, mode={binding.automation_mode}。"

@@ -1,65 +1,44 @@
+"""Reddit flow driver -- routes incoming task payloads to the
+appropriate action module via the action catalog."""
+
 from __future__ import annotations
 
 from typing import Any
 
-from .adb_utils import launch_reddit_via_adb
+from .actions.base import RedditSession
+from .actions.catalog import get_action_handler
 
 
 def run_reddit_flow(
     device_serial: str,
+    device_label: str,
     appium_server_url: str,
     payload: dict[str, Any],
 ) -> tuple[bool, str, list[dict[str, Any]]]:
-    """
-    Reddit POC 流程（一期）：
-    - 通过 ADB 拉起 Reddit
-    - 尝试用 Appium 建立会话并做最基础探测
-    """
-    logs: list[dict[str, Any]] = []
-    logs.append({"level": "info", "message": f"start reddit flow on {device_serial}"})
-    launch_reddit_via_adb(device_serial)
-    logs.append({"level": "info", "message": "reddit app launch requested via adb"})
+    action_name = str(payload.get("action") or "browse").strip()
+    device_ref = (
+        f"{device_label}({device_serial})"
+        if device_label and device_label != device_serial
+        else device_serial
+    )
 
+    handler = get_action_handler(action_name)
+    if handler is None:
+        return False, "unknown_action", [
+            {"level": "error", "message": f"unknown action '{action_name}' on {device_ref}"}
+        ]
+
+    session = RedditSession(device_serial, appium_server_url)
     try:
-        from appium import webdriver
-        from appium.options.android import UiAutomator2Options
+        session.log("info", f"start reddit action '{action_name}' on {device_ref}")
+        session.start()
+        ok, error_code, logs = handler(session, payload)
+        # Merge session-level logs with action logs (action may return session.logs directly)
+        if logs is not session.logs:
+            session.logs.extend(logs)
+        return ok, error_code, session.logs
     except Exception as e:
-        logs.append({"level": "error", "message": f"appium client import failed: {e}"})
-        return False, "appium_import_error", logs
-
-    options = UiAutomator2Options()
-    options.set_capability("platformName", "Android")
-    options.set_capability("automationName", "UiAutomator2")
-    options.set_capability("udid", device_serial)
-    options.set_capability("appPackage", "com.reddit.frontpage")
-    options.set_capability("noReset", True)
-    options.set_capability("newCommandTimeout", 120)
-
-    driver = None
-    try:
-        driver = webdriver.Remote(appium_server_url, options=options)
-        logs.append({"level": "info", "message": "appium session created"})
-        current_package = ""
-        try:
-            current_package = driver.current_package or ""
-        except Exception:
-            pass
-        logs.append({"level": "info", "message": f"current_package={current_package}"})
-
-        # 参数化动作（仅预留，一期先跑通）
-        keyword = str(payload.get("keyword") or "").strip()
-        action = str(payload.get("action") or "browse").strip()
-        if keyword:
-            logs.append({"level": "info", "message": f"keyword={keyword}"})
-        logs.append({"level": "info", "message": f"action={action}"})
-        return True, "", logs
-    except Exception as e:
-        logs.append({"level": "error", "message": f"reddit flow failed: {e}"})
-        return False, "reddit_flow_failed", logs
+        session.log("error", f"action '{action_name}' failed: {e}")
+        return False, "action_exception", session.logs
     finally:
-        if driver is not None:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-
+        session.stop()

@@ -339,7 +339,7 @@
     .nav-left-item.active { color: var(--accent); background: rgba(6, 182, 212, 0.12); font-weight: 500; }
     .nav-left-sub { margin-left: 0.75rem; margin-top: 0.25rem; display: flex; flex-direction: column; gap: 0.15rem; }
     .nav-left-sub .nav-left-item { font-size: 0.85rem; }
-    /* 群控界面布局优化（避免拥挤） */
+    /* 群控界面布局优化 */
     .group-control-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
@@ -347,27 +347,32 @@
       margin-top: 1rem;
     }
     .group-control-form .dispatch-actions {
-      display: flex;
-      gap: 0.5rem;
-      margin-top: 0.35rem;
-      flex-wrap: wrap;
-      align-items: center;
+      display: flex; gap: 0.5rem; margin-top: 0.35rem; flex-wrap: wrap; align-items: center;
     }
-    .group-control-form .dispatch-actions input {
-      min-width: 220px;
-      flex: 1 1 260px;
-    }
-    .group-control-form .dispatch-actions .btn {
-      flex: 0 0 auto;
-    }
+    .group-control-form .dispatch-actions input { min-width: 220px; flex: 1 1 260px; }
+    .group-control-form .dispatch-actions .btn { flex: 0 0 auto; }
     .group-control-form .device-filter-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 0.5rem;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.5rem;
     }
-    .group-control-form select[multiple] {
-      min-height: 140px;
+    .group-control-form select[multiple] { min-height: 140px; }
+    /* 群控 3-Tab + FAB */
+    .gc-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+    .gc-header h3 { margin: 0; }
+    .gc-header-right { display: flex; align-items: center; gap: 0.5rem; }
+    .gc-fab {
+      width: 36px; height: 36px; border-radius: 50%; border: none;
+      background: var(--accent); color: #0a0a0f; font-size: 1.4rem; font-weight: 700;
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+      line-height: 1; transition: background 0.2s;
     }
+    .gc-fab:hover { background: var(--accent-hover); }
+    .gc-tabs { display: flex; gap: 0.25rem; margin-top: 0.75rem; padding: 4px; background: rgba(255,255,255,0.04); border-radius: var(--radius-sm); }
+    .gc-tabs button { padding: 0.5rem 1rem; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: color 0.2s, background 0.2s; }
+    .gc-tabs button:hover { color: var(--text); }
+    .gc-tabs button.active { background: rgba(255,255,255,0.08); color: var(--text); }
+    .gc-panel { display: none; margin-top: 1rem; }
+    .gc-panel.visible { display: block; }
+    .modal-task-detail { max-width: 700px; max-height: 85vh; overflow-y: auto; }
     /* 右上角用户下拉 */
     .header-dropdown { position: relative; }
     .header-dropdown-btn {
@@ -569,19 +574,22 @@
           </div>
           <div id="content-group-control" class="content-block">
             <div class="card">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-                <h3 style="margin:0;">群控管理面板（一期）</h3>
-                <button type="button" id="refreshControlBtn" class="btn btn-ghost btn-sm">刷新</button>
-              </div>
-              <p style="font-size:0.85rem;color:var(--text-muted);margin-top:0.5rem;">查看设备在线状态，创建并追踪 Reddit 任务执行情况。</p>
-            </div>
-            <div class="group-control-grid">
-              <div class="card">
-                <div class="card-label">创建任务</div>
-                <div style="margin-top:0.75rem;">
-                  <button type="button" id="openControlTaskModalBtn" class="btn btn-primary btn-sm">手动新增任务</button>
+              <div class="gc-header">
+                <h3>群控管理</h3>
+                <div class="gc-header-right">
+                  <button type="button" id="refreshControlBtn" class="btn btn-ghost btn-sm">刷新</button>
+                  <button type="button" id="gcAddTaskBtn" class="gc-fab" title="新建任务">+</button>
                 </div>
-                <form id="controlTaskForm" class="group-control-form" style="margin-top:0.75rem;display:none;">
+              </div>
+              <div class="gc-tabs">
+                <button type="button" class="active" data-gc-tab="devices">手机列表</button>
+                <button type="button" data-gc-tab="tasks">任务列表</button>
+                <button type="button" data-gc-tab="plans">计划列表</button>
+              </div>
+            </div>
+            <!-- hidden original form for dispatch group management (kept for JS references) -->
+            <div style="display:none;">
+              <form id="controlTaskForm" class="group-control-form">
                   <label>任务标题</label>
                   <input type="text" name="title" required placeholder="例如：Reddit 关键词浏览任务">
                   <label>设备</label>
@@ -609,9 +617,12 @@
                   <input type="text" name="keyword" placeholder="例如：ai automation">
                   <label>动作</label>
                   <select name="action">
-                    <option value="browse">browse</option>
-                    <option value="search">search</option>
-                    <option value="upvote">upvote</option>
+                    <option value="browse">browse - 浏览Feed</option>
+                    <option value="search">search - 搜索关键词</option>
+                    <option value="upvote">upvote - 随机点赞</option>
+                    <option value="subscribe">subscribe - 加入Subreddit</option>
+                    <option value="comment">comment - 发表评论</option>
+                    <option value="profile_check">profile_check - 采集账号状态</option>
                   </select>
                   <label>其他参数（JSON，可选）</label>
                   <textarea name="payload_extra_json" rows="4" placeholder='例如：{"duration_min":12,"max_actions":25,"upvote_ratio":0.05}'></textarea>
@@ -619,41 +630,54 @@
                 </form>
                 <div id="controlTaskMsg" class="msg" style="margin-top:0.5rem;"></div>
               </div>
+            </div>
+            <!-- Tab1: 手机列表 -->
+            <div id="gcPanelDevices" class="gc-panel visible">
               <div class="card">
-                <div class="card-label">设备状态</div>
-                <div id="controlDevicesList" style="margin-top:0.75rem;"></div>
+                <div id="controlDevicesList"></div>
                 <div id="controlDevicesPager" style="margin-top:0.5rem;display:flex;gap:0.4rem;align-items:center;justify-content:flex-end;"></div>
               </div>
             </div>
-            <div class="card" style="margin-top:1rem;">
-              <div class="card-label">AI 能力</div>
-              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
-                <button type="button" id="btnAnalyzeRisk" class="btn btn-ghost btn-sm">风控分析</button>
-                <button type="button" id="btnGenerateStrategy" class="btn btn-ghost btn-sm">策略生成</button>
+            <!-- Tab2: 任务列表 -->
+            <div id="gcPanelTasks" class="gc-panel">
+              <div class="card">
+                <div id="controlTasksList"></div>
               </div>
-              <div id="controlAiMsg" class="msg" style="margin-top:0.5rem;"></div>
-            </div>
-            <div class="card" style="margin-top:1rem;">
-              <div class="card-label">任务列表</div>
-              <div id="controlTasksList" style="margin-top:0.75rem;"></div>
-            </div>
-            <div class="card" style="margin-top:1rem;">
-              <div class="card-label">任务详情日志</div>
-              <div id="controlTaskDetail" style="margin-top:0.75rem;color:var(--text-muted);">点击任务「详情」查看日志</div>
-            </div>
-            <div class="card" style="margin-top:1rem;">
-              <div class="card-label">云端养号计划（按设备自动）</div>
-              <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;justify-content:space-between;flex-wrap:wrap;">
-                <div class="meta">在设备列表点击“创建养号计划”，服务器会自动解析账号并制定周期与目标。</div>
-                <button type="button" id="nurtureRefreshBtn" class="btn btn-ghost btn-sm">刷新</button>
+              <div class="card" style="margin-top:0.75rem;">
+                <div class="card-label">AI 能力</div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
+                  <button type="button" id="btnAnalyzeRisk" class="btn btn-ghost btn-sm">风控分析</button>
+                  <button type="button" id="btnGenerateStrategy" class="btn btn-ghost btn-sm">策略生成</button>
+                </div>
+                <div id="controlAiMsg" class="msg" style="margin-top:0.5rem;"></div>
               </div>
-              <div id="nurtureMsg" class="msg" style="margin-top:0.5rem;"></div>
-              <div id="nurtureStrategySummary" class="meta" style="margin-top:0.4rem;"></div>
-              <div style="margin-top:0.6rem;" class="meta">计划确认后自动定时执行；下方可查看每个任务的计划时间、实际执行时间和结果。</div>
-              <div class="card-label" style="margin-top:0.75rem;">养号进度</div>
-              <div id="nurtureProgressList" style="margin-top:0.35rem;"></div>
-              <div class="card-label" style="margin-top:0.75rem;">执行明细</div>
-              <div id="nurtureScheduleList" style="margin-top:0.35rem;max-height:260px;overflow:auto;"></div>
+            </div>
+            <!-- Tab3: 计划列表 -->
+            <div id="gcPanelPlans" class="gc-panel">
+              <div class="card">
+                <div style="display:flex;gap:0.5rem;align-items:center;justify-content:space-between;flex-wrap:wrap;">
+                  <div class="card-label" style="margin:0;">养号计划与进度</div>
+                  <button type="button" id="nurtureRefreshBtn" class="btn btn-ghost btn-sm">刷新</button>
+                </div>
+                <div id="nurtureMsg" class="msg" style="margin-top:0.5rem;"></div>
+                <div id="nurtureStrategySummary" class="meta" style="margin-top:0.4rem;"></div>
+                <div class="card-label" style="margin-top:0.75rem;">养号进度</div>
+                <div id="nurtureProgressList" style="margin-top:0.35rem;"></div>
+              </div>
+              <div class="card" style="margin-top:0.75rem;">
+                <div class="card-label">执行明细</div>
+                <div id="nurtureScheduleList" style="margin-top:0.35rem;max-height:420px;overflow:auto;"></div>
+              </div>
+            </div>
+            <!-- 任务详情 Modal -->
+            <div id="modalTaskDetail" class="modal-mask">
+              <div class="modal modal-task-detail">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <h4 id="taskDetailTitle" style="margin:0;">任务详情</h4>
+                  <button type="button" id="closeTaskDetailBtn" class="btn btn-ghost btn-sm">关闭</button>
+                </div>
+                <div id="controlTaskDetail" style="margin-top:0.75rem;color:var(--text-muted);max-height:60vh;overflow:auto;">点击任务「详情」查看日志</div>
+              </div>
             </div>
           </div>
           <div id="content-admin-console" class="content-block">
@@ -927,9 +951,12 @@
           <input type="text" name="keyword" placeholder="例如：ai automation">
           <label>动作</label>
           <select name="action">
-            <option value="browse">browse</option>
-            <option value="search">search</option>
-            <option value="upvote">upvote</option>
+            <option value="browse">browse - 浏览Feed</option>
+            <option value="search">search - 搜索关键词</option>
+            <option value="upvote">upvote - 随机点赞</option>
+            <option value="subscribe">subscribe - 加入Subreddit</option>
+            <option value="comment">comment - 发表评论</option>
+            <option value="profile_check">profile_check - 采集账号状态</option>
           </select>
           <label>其他参数（JSON，可选）</label>
           <textarea name="payload_extra_json" rows="4" placeholder='例如：{"duration_min":12,"max_actions":25,"upvote_ratio":0.05}'></textarea>
@@ -2839,6 +2866,8 @@
             btn.addEventListener('click', function() {
               var id = parseInt(btn.closest('.list-item').dataset.taskId, 10);
               loadControlTaskDetail(id);
+              var m = document.getElementById('modalTaskDetail');
+              if (m) m.classList.add('visible');
             });
           });
           el.querySelectorAll('.btn-task-cancel').forEach(function(btn) {
@@ -3436,6 +3465,39 @@
     var refreshControlBtn = document.getElementById('refreshControlBtn');
     if (refreshControlBtn) {
       refreshControlBtn.addEventListener('click', function() { loadGroupControl(); });
+    }
+    // --- GC Tab switching ---
+    (function() {
+      var tabBtns = document.querySelectorAll('.gc-tabs button[data-gc-tab]');
+      var panelMap = { devices: 'gcPanelDevices', tasks: 'gcPanelTasks', plans: 'gcPanelPlans' };
+      tabBtns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          tabBtns.forEach(function(b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          Object.keys(panelMap).forEach(function(k) {
+            var p = document.getElementById(panelMap[k]);
+            if (p) p.classList.toggle('visible', k === btn.dataset.gcTab);
+          });
+          if (btn.dataset.gcTab === 'tasks') loadControlTasks();
+          if (btn.dataset.gcTab === 'plans') loadNurturePanel();
+        });
+      });
+    })();
+    // --- GC FAB "+" opens create-task modal ---
+    var gcAddTaskBtn = document.getElementById('gcAddTaskBtn');
+    if (gcAddTaskBtn) {
+      gcAddTaskBtn.addEventListener('click', function() {
+        var modal = document.getElementById('modalControlTask');
+        if (modal) modal.classList.add('visible');
+      });
+    }
+    // --- Task detail modal ---
+    var closeTaskDetailBtn = document.getElementById('closeTaskDetailBtn');
+    if (closeTaskDetailBtn) {
+      closeTaskDetailBtn.addEventListener('click', function() {
+        var m = document.getElementById('modalTaskDetail');
+        if (m) m.classList.remove('visible');
+      });
     }
     var openControlTaskModalBtn = document.getElementById('openControlTaskModalBtn');
     if (openControlTaskModalBtn) {
