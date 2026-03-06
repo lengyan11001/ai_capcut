@@ -3232,28 +3232,50 @@ def get_nurture_running(
     for i in items:
         items_by_plan.setdefault(i.plan_id, []).append(i)
 
+    def _serialize_item(si):
+        return {
+            "id": si.id, "day_no": si.day_no, "seq_no": si.seq_no,
+            "action": (si.payload or {}).get("action", "?") if isinstance(si.payload, dict) else "?",
+            "title": si.title, "status": si.status, "stage": si.stage,
+            "scheduled_at": si.scheduled_at.isoformat() if si.scheduled_at else "",
+            "started_at": si.started_at.isoformat() if si.started_at else "",
+            "finished_at": si.finished_at.isoformat() if si.finished_at else "",
+            "error": si.last_error_message or "",
+        }
+
     out = []
     for p in plans:
         b = b_map.get(p.binding_id)
         dev = d_map.get(b.device_id) if b else None
         p_items = items_by_plan.get(p.id, [])
-        out.append({
-            "plan_id": p.id, "plan_name": p.name, "plan_status": p.status,
-            "device_label": _device_label_from_row(dev) if dev else None,
-            "device_id": b.device_id if b else None,
-            "objective": getattr(p, "objective", "") or "",
-            "items": [
-                {
-                    "id": si.id, "day_no": si.day_no, "seq_no": si.seq_no,
-                    "action": (si.payload or {}).get("action", "?") if isinstance(si.payload, dict) else "?",
-                    "title": si.title, "status": si.status, "stage": si.stage,
-                    "scheduled_at": si.scheduled_at.isoformat() if si.scheduled_at else "",
-                    "started_at": si.started_at.isoformat() if si.started_at else "",
-                    "finished_at": si.finished_at.isoformat() if si.finished_at else "",
-                    "error": si.last_error_message or "",
-                }
-                for si in p_items
-            ],
-        })
+        if not p_items:
+            out.append({
+                "plan_id": p.id, "plan_name": p.name, "plan_status": p.status,
+                "device_label": _device_label_from_row(dev) if dev else None,
+                "device_id": b.device_id if b else None,
+                "objective": getattr(p, "objective", "") or "",
+                "round": 1, "items": [],
+            })
+            continue
+        rounds: dict[str, list] = {}
+        for si in p_items:
+            key = si.created_at.strftime("%Y%m%d%H%M%S") if si.created_at else "0"
+            rounds.setdefault(key, []).append(si)
+        sorted_keys = sorted(rounds.keys(), reverse=True)
+        for idx, key in enumerate(sorted_keys):
+            round_items = rounds[key]
+            is_current = (idx == 0)
+            all_cancelled = all(si.status == "cancelled" for si in round_items)
+            round_status = p.status if is_current else ("cancelled" if all_cancelled else "历史")
+            out.append({
+                "plan_id": p.id, "plan_name": p.name, "plan_status": round_status,
+                "device_label": _device_label_from_row(dev) if dev else None,
+                "device_id": b.device_id if b else None,
+                "objective": getattr(p, "objective", "") or "",
+                "round": len(sorted_keys) - idx,
+                "round_total": len(sorted_keys),
+                "is_current_round": is_current,
+                "items": [_serialize_item(si) for si in round_items],
+            })
     return out
 
