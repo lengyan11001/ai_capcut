@@ -1297,6 +1297,22 @@ def approve_nurture_plan(
     row = db.query(NurturePlan).filter(NurturePlan.id == plan_id, NurturePlan.user_id == current_user.id).first()
     if not row:
         raise HTTPException(status_code=404, detail="plan not found")
+    binding = db.query(NurtureBinding).filter(NurtureBinding.id == row.binding_id).first()
+    if binding:
+        active_plan = (
+            db.query(NurturePlan)
+            .filter(
+                NurturePlan.binding_id == binding.id,
+                NurturePlan.id != plan_id,
+                NurturePlan.status.in_({"approved", "active"}),
+            )
+            .first()
+        )
+        if active_plan:
+            raise HTTPException(
+                status_code=409,
+                detail=f"该设备已有执行中的计划(计划#{active_plan.id})，请先暂停或删除后再开始新计划",
+            )
     row.status = "approved"
     row.requires_reconfirm = False
     row.approved_by = current_user.id
@@ -1462,75 +1478,66 @@ def nurture_progress(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    bindings = (
-        db.query(NurtureBinding)
-        .filter(NurtureBinding.user_id == current_user.id)
-        .order_by(NurtureBinding.created_at.desc())
-        .all()
-    )
-    if not bindings:
-        return []
-    device_ids = sorted({b.device_id for b in bindings})
-    account_ids = sorted({b.reddit_account_id for b in bindings})
-    binding_ids = sorted({b.id for b in bindings})
-    d_map: dict[int, MobileDevice] = {}
-    a_map: dict[int, RedditAccountAsset] = {}
-    for d in db.query(MobileDevice).filter(MobileDevice.id.in_(device_ids)).all():
-        d_map[d.id] = d
-    for a in db.query(RedditAccountAsset).filter(RedditAccountAsset.id.in_(account_ids)).all():
-        a_map[a.id] = a
-    latest_plan_map: dict[int, NurturePlan] = {}
     plans = (
         db.query(NurturePlan)
-        .filter(NurturePlan.binding_id.in_(binding_ids))
-        .order_by(NurturePlan.id.desc())
+        .filter(NurturePlan.user_id == current_user.id)
+        .order_by(NurturePlan.created_at.desc())
         .all()
     )
-    for p in plans:
-        if p.binding_id not in latest_plan_map:
-            latest_plan_map[p.binding_id] = p
-    plan_ids = [p.id for p in latest_plan_map.values()]
+    if not plans:
+        return []
+    binding_ids = sorted({p.binding_id for p in plans})
+    plan_ids = [p.id for p in plans]
+    b_map: dict[int, NurtureBinding] = {}
+    for b in db.query(NurtureBinding).filter(NurtureBinding.id.in_(binding_ids)).all():
+        b_map[b.id] = b
+    device_ids = sorted({b.device_id for b in b_map.values()})
+    account_ids = sorted({b.reddit_account_id for b in b_map.values()})
+    d_map: dict[int, MobileDevice] = {}
+    a_map: dict[int, RedditAccountAsset] = {}
+    if device_ids:
+        for d in db.query(MobileDevice).filter(MobileDevice.id.in_(device_ids)).all():
+            d_map[d.id] = d
+    if account_ids:
+        for a in db.query(RedditAccountAsset).filter(RedditAccountAsset.id.in_(account_ids)).all():
+            a_map[a.id] = a
     agg: dict[int, dict[str, int]] = {pid: {"total": 0, "success": 0, "failed": 0, "running": 0, "scheduled": 0} for pid in plan_ids}
-    if plan_ids:
-        for s in db.query(NurtureScheduleItem).filter(NurtureScheduleItem.plan_id.in_(plan_ids)).all():
-            x = agg.setdefault(s.plan_id, {"total": 0, "success": 0, "failed": 0, "running": 0, "scheduled": 0})
-            x["total"] += 1
-            if s.status == "success":
-                x["success"] += 1
-            elif s.status == "failed":
-                x["failed"] += 1
-            elif s.status in {"running", "dispatched"}:
-                x["running"] += 1
-            else:
-                x["scheduled"] += 1
+    for s in db.query(NurtureScheduleItem).filter(NurtureScheduleItem.plan_id.in_(plan_ids)).all():
+        x = agg.setdefault(s.plan_id, {"total": 0, "success": 0, "failed": 0, "running": 0, "scheduled": 0})
+        x["total"] += 1
+        if s.status == "success":
+            x["success"] += 1
+        elif s.status == "failed":
+            x["failed"] += 1
+        elif s.status in {"running", "dispatched"}:
+            x["running"] += 1
+        else:
+            x["scheduled"] += 1
     out: list[dict[str, Any]] = []
-    for b in bindings:
-        p = latest_plan_map.get(b.id)
-        stat = agg.get(p.id, {"total": 0, "success": 0, "failed": 0, "running": 0, "scheduled": 0}) if p else {"total": 0, "success": 0, "failed": 0, "running": 0, "scheduled": 0}
+    for p in plans:
+        b = b_map.get(p.binding_id)
+        stat = agg.get(p.id, {"total": 0, "success": 0, "failed": 0, "running": 0, "scheduled": 0})
         out.append(
             {
-                "binding_id": b.id,
-                "device_id": b.device_id,
-                "device_label": _device_label_from_row(d_map.get(b.device_id)),
-                "reddit_account_id": b.reddit_account_id,
-                "reddit_username": (a_map.get(b.reddit_account_id).username if a_map.get(b.reddit_account_id) else None),
-                "phase": b.phase,
-                "status": b.status,
-                "account_health": b.account_health,
-                "automation_mode": b.automation_mode,
-                "risk_score": b.risk_score,
-                "current_karma": b.current_karma,
-                "target_karma": b.target_karma,
-                "eligible_for_posting": bool(b.eligible_for_posting),
-                "plan_id": p.id if p else None,
-                "plan_status": p.status if p else None,
-                "plan_horizon_days": (getattr(p, "plan_horizon_days", None) if p else None),
-                "plan_requires_reconfirm": (bool(getattr(p, "requires_reconfirm", False)) if p else False),
-                "plan_updated_at": _iso(p.updated_at) if p else None,
+                "plan_id": p.id,
+                "plan_name": p.name,
+                "plan_status": p.status,
+                "plan_horizon_days": getattr(p, "plan_horizon_days", 30),
+                "plan_requires_reconfirm": bool(getattr(p, "requires_reconfirm", False)),
+                "plan_summary": p.summary,
+                "plan_created_at": _iso(p.created_at),
+                "plan_updated_at": _iso(p.updated_at),
+                "binding_id": p.binding_id,
+                "device_id": b.device_id if b else None,
+                "device_label": _device_label_from_row(d_map.get(b.device_id)) if b else None,
+                "reddit_account_id": b.reddit_account_id if b else None,
+                "reddit_username": (a_map.get(b.reddit_account_id).username if b and a_map.get(b.reddit_account_id) else None),
+                "phase": b.phase if b else None,
+                "account_health": b.account_health if b else None,
+                "current_karma": b.current_karma if b else 0,
+                "target_karma": b.target_karma if b else 0,
                 "metrics": stat,
-                "next_action_at": _iso(b.next_action_at),
-                "created_at": _iso(b.created_at),
-                "updated_at": _iso(b.updated_at),
+                "created_at": _iso(p.created_at),
             }
         )
     return out

@@ -2987,7 +2987,7 @@
       var pagerEl = document.getElementById('nurtureProgressPager');
       if (!el) return;
       if (!list.length) {
-        el.innerHTML = '<p class="meta">暂无绑定进度</p>';
+        el.innerHTML = '<p class="meta">暂无养号计划，请在手机列表点击"创建养号计划"</p>';
         if (pagerEl) pagerEl.innerHTML = '';
         return;
       }
@@ -3000,21 +3000,32 @@
 
       el.innerHTML = rows.map(function(r, localIdx) {
         var globalIdx = total - (start + localIdx);
-        var title = '#' + globalIdx + ' ' + (r.device_label || ('设备#' + (r.device_id || '-'))) + ' · ' + (r.reddit_username || ('账号#' + (r.reddit_account_id || '-')));
-        var createdStr = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
+        var statusMap = { draft: '草稿', approved: '已批准', active: '执行中', paused: '已暂停', completed: '已完成' };
+        var statusText = statusMap[r.plan_status] || r.plan_status || '-';
+        var statusColor = (r.plan_status === 'active' || r.plan_status === 'approved') ? '#16a34a' : (r.plan_status === 'paused' ? '#d97706' : '');
+        var title = '计划#' + (r.plan_id || '-') + ' ' + (r.device_label || ('设备#' + (r.device_id || '-')));
+        var createdStr = r.plan_created_at ? new Date(r.plan_created_at).toLocaleString() : (r.created_at ? new Date(r.created_at).toLocaleString() : '-');
+        var m = r.metrics || {};
         var meta = '创建:' + createdStr +
-          ' · phase:' + (r.phase || '-') +
-          ' · health:' + (r.account_health || '-') +
-          ' · risk:' + (r.risk_score == null ? '-' : r.risk_score) +
-          ' · karma:' + (r.current_karma || 0) + '/' + (r.target_karma || 0) +
-          ' · plan:' + (r.plan_status || 'none') +
+          ' · 状态:' + statusText +
           (r.plan_requires_reconfirm ? ' (待重确认)' : '') +
-          ' · next:' + (r.next_action_at ? new Date(r.next_action_at).toLocaleString() : '-');
-        var active = (selectedNurtureBindingId && selectedNurtureBindingId === r.binding_id) ? ' style="border-color:var(--accent);"' : '';
-        var actions = '<button type="button" class="btn btn-ghost btn-sm btn-nurture-start" data-plan-id="' + (r.plan_id || '') + '" data-device-id="' + (r.device_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">开始执行</button>' +
-          ' <button type="button" class="btn btn-ghost btn-sm btn-nurture-pause" data-plan-id="' + (r.plan_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">暂停</button>' +
-          (r.plan_id ? ' <button type="button" class="btn btn-ghost btn-sm btn-nurture-delete-plan" data-plan-id="' + r.plan_id + '" style="color:#b91c1c;">删除计划</button>' : '');
-        return '<div class="list-item nurture-progress-item" data-binding-id="' + (r.binding_id || '') + '" data-plan-id="' + (r.plan_id || '') + '"' + active + '><div><div class="title">' + escapeHtml(title) + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts">' + actions + '</div></div>';
+          ' · ' + (m.total || 0) + '项(成功' + (m.success || 0) + '/失败' + (m.failed || 0) + '/执行中' + (m.running || 0) + '/待执行' + (m.scheduled || 0) + ')' +
+          ' · phase:' + (r.phase || '-') +
+          ' · karma:' + (r.current_karma || 0) + '/' + (r.target_karma || 0);
+        var selected = (selectedNurtureBindingId && selectedNurtureBindingId === r.binding_id) ? ' style="border-color:var(--accent);"' : '';
+        var actions = '';
+        if (r.plan_status === 'draft') {
+          actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-start" data-plan-id="' + r.plan_id + '" data-device-id="' + (r.device_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">开始执行</button> ';
+        }
+        if (r.plan_status === 'approved' || r.plan_status === 'active') {
+          actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-pause" data-plan-id="' + r.plan_id + '" data-binding-id="' + (r.binding_id || '') + '">暂停</button> ';
+        }
+        if (r.plan_status === 'paused') {
+          actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-start" data-plan-id="' + r.plan_id + '" data-device-id="' + (r.device_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">恢复执行</button> ';
+        }
+        actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-delete-plan" data-plan-id="' + r.plan_id + '" style="color:#b91c1c;">删除</button>';
+        var titleStyle = statusColor ? ' style="color:' + statusColor + ';"' : '';
+        return '<div class="list-item nurture-progress-item" data-binding-id="' + (r.binding_id || '') + '" data-plan-id="' + (r.plan_id || '') + '"' + selected + '><div><div class="title"' + titleStyle + '>' + escapeHtml(title) + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts">' + actions + '</div></div>';
       }).join('');
 
       if (pagerEl) {
@@ -3033,6 +3044,7 @@
         itemEl.addEventListener('click', function(e) {
           if (e.target && (e.target.classList.contains('btn-nurture-start') || e.target.classList.contains('btn-nurture-pause') || e.target.classList.contains('btn-nurture-delete-plan'))) return;
           var bid = parseInt(String(itemEl.getAttribute('data-binding-id') || '').trim(), 10);
+          var pid = parseInt(String(itemEl.getAttribute('data-plan-id') || '').trim(), 10);
           if (!isNaN(bid) && bid > 0) {
             selectedNurtureBindingId = bid;
             renderNurtureProgressPage();
