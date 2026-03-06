@@ -100,6 +100,17 @@ LLM_MODELS: Dict[str, LLMModelConfig] = {
         output_price_per_m=0.42,
         margin_factor=1.5,
     ),
+    # ePhone · DeepSeek Chat（通过 ephone.chat 代理）
+    "ephone:deepseek-chat": LLMModelConfig(
+        id="ephone:deepseek-chat",
+        provider="ephone",
+        model="deepseek-chat",
+        display_name="ePhone · DeepSeek Chat",
+        currency="USD",
+        input_price_per_m=0.28,
+        output_price_per_m=0.42,
+        margin_factor=1.5,
+    ),
 }
 
 

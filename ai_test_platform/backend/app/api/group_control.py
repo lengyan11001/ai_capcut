@@ -103,30 +103,12 @@ def _build_fallback_plan(days: int) -> dict[str, Any]:
     }
 
 
-def _call_openclaw_for_plan(
-    user: User,
+def _build_nurture_prompt(
     binding: NurtureBinding,
     objective: str,
     risk_preference: str,
-) -> Optional[dict[str, Any]]:
-    # 优先使用云端 OpenClaw 生成计划；失败时返回 None，由 fallback 接管。
-    from .chat import _resolve_openclaw_target
-    from ..db import SessionLocal
-
-    db2 = SessionLocal()
-    try:
-        base, token, agent_id = _resolve_openclaw_target(db2, user)
-    except Exception:
-        db2.close()
-        return None
-    finally:
-        try:
-            db2.close()
-        except Exception:
-            pass
-    if not base or not token:
-        return None
-    prompt = (
+) -> str:
+    return (
         "你是 Reddit 养号计划器。输出严格 JSON，不要 markdown。\n"
         "目标：生成仅养号（不发帖）计划，字段必须包含 plan_version, summary, plan_horizon_days, next_review_in_days, schedule。\n"
         "schedule 每项字段必须包含 day_no, seq_no, hour, minute, stage, title, payload。\n"
@@ -149,6 +131,98 @@ def _call_openclaw_for_plan(
         f"current_karma={binding.current_karma}, target_karma={binding.target_karma}, "
         f"account_health={binding.account_health}, mode={binding.automation_mode}。"
     )
+
+
+def _parse_llm_plan_response(content: str) -> Optional[dict[str, Any]]:
+    """从 LLM 返回的文本中解析出 plan JSON。"""
+    raw = content.strip()
+    if not raw:
+        return None
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z]*", "", raw).strip()
+        raw = raw[:-3].strip() if raw.endswith("```") else raw
+    try:
+        plan = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(plan, dict):
+        return None
+    if not isinstance(plan.get("schedule"), list):
+        return None
+    return plan
+
+
+def _call_direct_llm_for_plan(
+    binding: NurtureBinding,
+    objective: str,
+    risk_preference: str,
+) -> Optional[dict[str, Any]]:
+    """直接调用 OpenAI 兼容端点（如 ephone.chat）生成计划，不经过 OpenClaw。"""
+    base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
+    api_key = (settings.nurture_llm_api_key or "").strip()
+    model = (settings.nurture_llm_model or "deepseek-chat").strip()
+    if not base_url or not api_key:
+        return None
+    prompt = _build_nurture_prompt(binding, objective, risk_preference)
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(f"{base_url}/chat/completions", headers=headers, json=body)
+            if resp.status_code >= 300:
+                logger.warning("direct LLM returned %s: %s", resp.status_code, resp.text[:200])
+                return None
+            data = resp.json() if resp.content else {}
+            choices = data.get("choices") or []
+            content = ""
+            if choices and isinstance(choices[0], dict):
+                msg = choices[0].get("message") or {}
+                content = str(msg.get("content") or "")
+            return _parse_llm_plan_response(content)
+    except Exception as exc:
+        logger.warning("direct LLM call failed: %s", exc)
+        return None
+
+
+def _call_openclaw_for_plan(
+    user: User,
+    binding: NurtureBinding,
+    objective: str,
+    risk_preference: str,
+) -> Optional[dict[str, Any]]:
+    """
+    生成养号计划：优先走直接 LLM 端点（ephone.chat 等），
+    失败再走 OpenClaw 网关，最终由上层 fallback 兜底。
+    """
+    plan = _call_direct_llm_for_plan(binding, objective, risk_preference)
+    if plan:
+        logger.info("nurture plan generated via direct LLM")
+        return plan
+
+    from .chat import _resolve_openclaw_target
+    from ..db import SessionLocal
+
+    db2 = SessionLocal()
+    try:
+        base, token, agent_id = _resolve_openclaw_target(db2, user)
+    except Exception:
+        db2.close()
+        return None
+    finally:
+        try:
+            db2.close()
+        except Exception:
+            pass
+    if not base or not token:
+        return None
+    prompt = _build_nurture_prompt(binding, objective, risk_preference)
     body = {
         "model": "openclaw",
         "messages": [{"role": "user", "content": prompt}],
@@ -170,18 +244,7 @@ def _call_openclaw_for_plan(
             if choices and isinstance(choices[0], dict):
                 msg = choices[0].get("message") or {}
                 content = str(msg.get("content") or "")
-            if not content.strip():
-                return None
-            raw = content.strip()
-            if raw.startswith("```"):
-                raw = re.sub(r"^```[a-zA-Z]*", "", raw).strip()
-                raw = raw[:-3].strip() if raw.endswith("```") else raw
-            plan = json.loads(raw)
-            if not isinstance(plan, dict):
-                return None
-            if not isinstance(plan.get("schedule"), list):
-                return None
-            return plan
+            return _parse_llm_plan_response(content)
     except Exception:
         return None
 

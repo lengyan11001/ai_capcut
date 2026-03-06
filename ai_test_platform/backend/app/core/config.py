@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     capability_allowlist: str | None = None
     capability_catalog_path: str | None = None
     capability_upstream_urls_json: str | None = None
+    # 养号计划 LLM（直接调用 OpenAI 兼容端点，不经 OpenClaw；优先级高于 OpenClaw）
+    nurture_llm_base_url: str | None = None  # 如 https://api.ephone.chat/v1
+    nurture_llm_api_key: str | None = None
+    nurture_llm_model: str = "deepseek-chat"  # 发给端点的 model 名
     # 群控控制面配置
     control_agent_secret: str | None = None  # 本地 Agent 注册/拉任务鉴权密钥
     control_task_lease_seconds: int = 120
