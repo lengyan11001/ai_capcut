@@ -1793,11 +1793,14 @@ def approve_nurture_plan(
         hour = int(matched[0].get("hour", 10)) if matched else 10
         minute = int(matched[0].get("minute", 0)) if matched else 0
         si.scheduled_at = new_start_utc + timedelta(days=day_off, hours=hour, minutes=minute)
-        if si.status == "skipped":
+        if si.status in ("skipped", "failed", "dispatched", "running"):
             si.status = "scheduled"
             si.last_error_code = None
             si.last_error_message = None
             si.finished_at = None
+            si.started_at = None
+            si.dispatched_at = None
+            si.control_task_id = None
         db.add(si)
 
     row.status = "approved"
