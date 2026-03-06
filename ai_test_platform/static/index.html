@@ -517,6 +517,7 @@
     .plan-modal-btn-confirm { flex: 1; padding: 0.6rem 1rem; font-weight: 600; }
     .plan-modal-btn-cancel { padding: 0.6rem 1rem; }
     .plan-modal .tag-objective { display: inline-block; font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 4px; background: rgba(139,92,246,0.15); color: #c4b5fd; border: 1px solid rgba(139,92,246,0.25); }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
   </style>
 </head>
 <body>
@@ -2950,7 +2951,7 @@
       }
       try { localStorage.setItem('nurture_last_model', model); } catch(e) {}
       if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '创建中...'; }
-      if (msgEl) { msgEl.className = 'msg'; msgEl.textContent = '正在调用 AI 生成计划，请耐心等待...'; }
+      if (msgEl) { msgEl.className = 'msg'; msgEl.textContent = ''; }
       fetch(API_BASE + '/group-control/nurture/plans/generate-by-device', {
         method: 'POST',
         headers: authHeaders(),
@@ -2960,11 +2961,11 @@
         .then(function(x) {
           if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '确认创建'; }
           if (x.ok) {
-            if (msgEl) { msgEl.className = 'msg ok'; msgEl.textContent = '创建成功 计划#' + (x.data && x.data.id) + ' (模型:' + model + ')'; }
+            var modal = document.getElementById('modalCreatePlan');
+            if (modal) modal.classList.remove('visible');
             var inlineMsg = document.querySelector('[data-device-msg="' + deviceId + '"]');
-            if (inlineMsg) { inlineMsg.style.color = '#16a34a'; inlineMsg.textContent = '计划#' + (x.data && x.data.id); }
+            if (inlineMsg) { inlineMsg.style.color = '#f59e0b'; inlineMsg.textContent = '计划#' + (x.data && x.data.id) + ' 生成中'; }
             loadNurturePanel();
-            setTimeout(function() { var m = document.getElementById('modalCreatePlan'); if (m) m.classList.remove('visible'); }, 1500);
           } else {
             var detail = (x.data && x.data.detail) || '创建失败';
             if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = detail; }
@@ -3181,32 +3182,51 @@
       var start = (nurtureProgressPage - 1) * nurtureProgressPageSize;
       var rows = list.slice(start, start + nurtureProgressPageSize);
 
+      var hasGenerating = false;
       el.innerHTML = rows.map(function(r, localIdx) {
         var globalIdx = total - (start + localIdx);
-        var statusMap = { draft: '草稿', approved: '已批准', active: '执行中', paused: '已暂停', completed: '已完成' };
+        var statusMap = { draft: '草稿', approved: '已批准', active: '执行中', paused: '已暂停', completed: '已完成', generating: 'AI 生成中…', gen_failed: '生成失败' };
         var statusText = statusMap[r.plan_status] || r.plan_status || '-';
-        var statusColor = (r.plan_status === 'active' || r.plan_status === 'approved') ? '#16a34a' : (r.plan_status === 'paused' ? '#d97706' : '');
+        var statusColor = r.plan_status === 'generating' ? '#f59e0b'
+          : r.plan_status === 'gen_failed' ? '#ef4444'
+          : (r.plan_status === 'active' || r.plan_status === 'approved') ? '#16a34a'
+          : (r.plan_status === 'paused' ? '#d97706' : '');
+        if (r.plan_status === 'generating') hasGenerating = true;
         var title = '计划#' + (r.plan_id || '-') + ' ' + (r.device_label || ('设备#' + (r.device_id || '-')));
         var createdStr = r.plan_created_at ? new Date(r.plan_created_at).toLocaleString() : (r.created_at ? new Date(r.created_at).toLocaleString() : '-');
         var m = r.metrics || {};
-        var sourceLabel = r.plan_source === 'direct_llm' ? ('AI:' + (r.plan_model || '?'))
-          : r.plan_source === 'openclaw' ? ('OpenClaw:' + (r.plan_model || '?'))
-          : r.plan_source === 'fallback' ? '静态兜底'
-          : '未知';
-        var sourceColor = r.plan_source === 'direct_llm' ? '#7c3aed'
-          : r.plan_source === 'openclaw' ? '#2563eb'
-          : r.plan_source === 'fallback' ? '#9ca3af' : '#6b7280';
+        var sourceTag = '';
+        if (r.plan_status === 'generating') {
+          sourceTag = '<span style="background:#f59e0b;color:#000;padding:1px 6px;border-radius:3px;font-size:11px;animation:pulse 1.5s infinite;">&#9889; ' + escapeHtml(r.plan_model || 'AI') + ' 生成中</span>';
+        } else if (r.plan_status === 'gen_failed') {
+          sourceTag = '<span style="background:#ef4444;color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;">&#10060; 生成失败</span>';
+        } else {
+          var sourceLabel = r.plan_source === 'direct_llm' ? ('AI:' + (r.plan_model || '?'))
+            : r.plan_source === 'openclaw' ? ('OpenClaw:' + (r.plan_model || '?'))
+            : r.plan_source === 'fallback' ? '静态兜底' : '未知';
+          var sourceColor = r.plan_source === 'direct_llm' ? '#7c3aed'
+            : r.plan_source === 'openclaw' ? '#2563eb'
+            : r.plan_source === 'fallback' ? '#9ca3af' : '#6b7280';
+          sourceTag = '<span style="background:' + sourceColor + ';color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;">' + escapeHtml(sourceLabel) + '</span>';
+        }
         var objTag = r.plan_objective ? ' <span style="background:rgba(139,92,246,0.15);color:#c4b5fd;padding:1px 6px;border-radius:3px;font-size:11px;border:1px solid rgba(139,92,246,0.25);">' + escapeHtml(r.plan_objective) + '</span>' : '';
-        var meta = '<span style="background:' + sourceColor + ';color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;">' + escapeHtml(sourceLabel) + '</span>' + objTag + ' ' +
-          '创建:' + createdStr +
-          ' · 状态:' + statusText +
-          (r.plan_requires_reconfirm ? ' (待重确认)' : '') +
-          ' · ' + (m.total || 0) + '项(成功' + (m.success || 0) + '/失败' + (m.failed || 0) + '/执行中' + (m.running || 0) + '/待执行' + (m.scheduled || 0) + ')' +
-          ' · phase:' + (r.phase || '-') +
-          ' · karma:' + (r.current_karma || 0) + '/' + (r.target_karma || 0);
+        var meta = sourceTag + objTag + ' ' +
+          '创建:' + createdStr + ' · 状态:<b style="color:' + (statusColor || 'inherit') + ';">' + statusText + '</b>' +
+          (r.plan_requires_reconfirm ? ' (待重确认)' : '');
+        if (r.plan_status === 'gen_failed') {
+          meta += ' · <span style="color:#f87171;font-size:0.8rem;">' + escapeHtml(r.plan_summary || '') + '</span>';
+        } else if (r.plan_status !== 'generating') {
+          meta += ' · ' + (m.total || 0) + '项(成功' + (m.success || 0) + '/失败' + (m.failed || 0) + '/执行中' + (m.running || 0) + '/待执行' + (m.scheduled || 0) + ')' +
+            ' · phase:' + (r.phase || '-') +
+            ' · karma:' + (r.current_karma || 0) + '/' + (r.target_karma || 0);
+        }
         var selected = (selectedNurturePlanId && selectedNurturePlanId === r.plan_id) ? ' style="border-color:var(--accent);"' : '';
         var actions = '';
-        if (r.plan_status === 'draft') {
+        if (r.plan_status === 'generating') {
+          actions += '<span class="meta" style="color:#f59e0b;">等待中…</span>';
+        } else if (r.plan_status === 'gen_failed') {
+          actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-retry" data-plan-id="' + r.plan_id + '" data-device-id="' + (r.device_id || '') + '" data-binding-id="' + (r.binding_id || '') + '" style="color:#f59e0b;">重试</button> ';
+        } else if (r.plan_status === 'draft') {
           actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-start" data-plan-id="' + r.plan_id + '" data-device-id="' + (r.device_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">开始执行</button> ';
         }
         if (r.plan_status === 'approved' || r.plan_status === 'active') {
@@ -3215,10 +3235,15 @@
         if (r.plan_status === 'paused') {
           actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-start" data-plan-id="' + r.plan_id + '" data-device-id="' + (r.device_id || '') + '" data-binding-id="' + (r.binding_id || '') + '">恢复执行</button> ';
         }
-        actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-delete-plan" data-plan-id="' + r.plan_id + '" style="color:#b91c1c;">删除</button>';
+        if (r.plan_status !== 'generating') {
+          actions += '<button type="button" class="btn btn-ghost btn-sm btn-nurture-delete-plan" data-plan-id="' + r.plan_id + '" style="color:#b91c1c;">删除</button>';
+        }
         var titleStyle = statusColor ? ' style="color:' + statusColor + ';"' : '';
         return '<div class="list-item nurture-progress-item" data-binding-id="' + (r.binding_id || '') + '" data-plan-id="' + (r.plan_id || '') + '"' + selected + '><div><div class="title"' + titleStyle + '>' + escapeHtml(title) + '</div><div class="meta">' + meta + '</div></div><div class="acts">' + actions + '</div></div>';
       }).join('');
+      if (hasGenerating) {
+        setTimeout(function() { loadNurtureProgress(); }, 5000);
+      }
 
       if (pagerEl) {
         pagerEl.innerHTML = '<button type="button" class="btn btn-ghost btn-sm" id="nurtureProgressPrevBtn">上一页</button>' +
@@ -3325,6 +3350,14 @@
             .catch(function(err) {
               if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = '网络错误: ' + (err.message || ''); }
             });
+        });
+      });
+      el.querySelectorAll('.btn-nurture-retry').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var deviceId = parseInt(String(btn.getAttribute('data-device-id') || '').trim(), 10);
+          if (!deviceId) return;
+          openCreatePlanModal(deviceId, null);
         });
       });
     }

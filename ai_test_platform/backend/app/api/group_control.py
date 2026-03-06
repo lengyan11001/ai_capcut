@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
 import httpx
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
@@ -211,12 +212,17 @@ def _call_direct_llm_for_plan(
         "Content-Type": "application/json",
     }
     try:
-        with httpx.Client(timeout=120.0) as client:
+        timeout = httpx.Timeout(connect=30.0, read=600.0, write=30.0, pool=30.0)
+        with httpx.Client(timeout=timeout) as client:
             resp = client.post(f"{base_url}/chat/completions", headers=headers, json=body)
             if resp.status_code >= 300:
-                logger.warning("direct LLM returned %s: %s", resp.status_code, resp.text[:200])
-                return None
+                error_text = resp.text[:300] if resp.text else str(resp.status_code)
+                logger.warning("direct LLM returned %s: %s", resp.status_code, error_text)
+                return {"_error": True, "_error_msg": f"模型返回错误 ({resp.status_code}): {error_text[:120]}"}
             data = resp.json() if resp.content else {}
+            if data.get("error"):
+                err_msg = str(data["error"].get("message", "unknown error"))[:120]
+                return {"_error": True, "_error_msg": f"模型错误: {err_msg}"}
             choices = data.get("choices") or []
             content = ""
             if choices and isinstance(choices[0], dict):
@@ -247,6 +253,8 @@ def _call_openclaw_for_plan(
     """
     plan = _call_direct_llm_for_plan(binding, objective, risk_preference, model_override=model_override)
     if plan:
+        if plan.get("_error"):
+            return plan
         logger.info("nurture plan generated via direct LLM (%s)", plan.get("_model"))
         return plan
 
@@ -1217,6 +1225,7 @@ def _generate_nurture_plan_for_binding(
     name: Optional[str],
     model: Optional[str] = None,
 ) -> dict[str, Any]:
+    """创建 generating 状态的计划占位行，然后在后台线程中调用 LLM 填充。"""
     model = model or NURTURE_DEFAULT_MODEL
     binding = (
         db.query(NurtureBinding)
@@ -1225,81 +1234,41 @@ def _generate_nurture_plan_for_binding(
     )
     if not binding:
         raise HTTPException(status_code=404, detail="binding not found")
-    plan_json = _call_openclaw_for_plan(
-        current_user,
-        binding,
-        objective=objective,
-        risk_preference=risk_preference,
-        model_override=model,
-    )
-    if not isinstance(plan_json, dict):
-        raise HTTPException(
-            status_code=502,
-            detail=f"AI 模型 ({model}) 生成计划失败，请稍后重试或更换模型",
-        )
-    days = int(plan_json.get("plan_horizon_days") or 30)
-    if days < 1:
-        days = 30
-    if days > 180:
-        days = 180
-    schedule = plan_json.get("schedule") if isinstance(plan_json, dict) else None
-    if not isinstance(schedule, list) or not schedule:
-        raise HTTPException(status_code=400, detail="invalid plan schedule")
+    if start_date:
+        try:
+            datetime.strptime(start_date.strip(), "%Y-%m-%d")
+        except Exception:
+            raise HTTPException(status_code=400, detail="start_date format must be YYYY-MM-DD")
+
     plan_name = (name or f"nurture-plan-binding-{binding.id}").strip() or f"nurture-plan-binding-{binding.id}"
     row = NurturePlan(
         user_id=current_user.id,
         binding_id=binding.id,
         name=plan_name,
-        status="draft",
-        plan_version=str(plan_json.get("plan_version") or "v1"),
+        status="generating",
+        plan_version="v1",
         approval_mode="plan_once_then_auto",
-        plan_horizon_days=days,
+        plan_horizon_days=14,
         requires_reconfirm=False,
-        summary=str(plan_json.get("summary") or ""),
+        summary="AI 正在生成计划…",
         objective=objective,
         last_review_at=datetime.utcnow(),
-        next_review_at=datetime.utcnow() + timedelta(days=max(1, min(3, int(plan_json.get("next_review_in_days") or 1)))),
-        plan_json=plan_json,
+        next_review_at=datetime.utcnow() + timedelta(days=1),
+        plan_json={"_status": "generating", "_model": model},
     )
     db.add(row)
-    db.flush()
-    # 先清理该计划残留条目（理论首次无残留）
-    db.query(NurtureScheduleItem).filter(NurtureScheduleItem.plan_id == row.id).delete()
-    start_dt = None
-    if start_date:
-        try:
-            start_dt = datetime.strptime(start_date.strip(), "%Y-%m-%d")
-        except Exception:
-            raise HTTPException(status_code=400, detail="start_date format must be YYYY-MM-DD")
-    if not start_dt:
-        now = datetime.utcnow()
-        start_dt = datetime(now.year, now.month, now.day)
-    created = 0
-    for item in schedule:
-        if not isinstance(item, dict):
-            continue
-        day_no = int(item.get("day_no") or 1)
-        seq_no = int(item.get("seq_no") or 1)
-        hour = int(item.get("hour") or 10)
-        minute = int(item.get("minute") or 0)
-        when = start_dt + timedelta(days=max(day_no - 1, 0), hours=hour, minutes=minute)
-        db.add(
-            NurtureScheduleItem(
-                user_id=current_user.id,
-                binding_id=binding.id,
-                plan_id=row.id,
-                day_no=day_no,
-                seq_no=seq_no,
-                stage=str(item.get("stage") or binding.phase or "warmup"),
-                title=str(item.get("title") or f"nurture-day{day_no:02d}-s{seq_no}"),
-                scheduled_at=when,
-                status="scheduled",
-                payload=item.get("payload") if isinstance(item.get("payload"), dict) else {},
-            )
-        )
-        created += 1
     db.commit()
     db.refresh(row)
+
+    plan_id = row.id
+    user_id = current_user.id
+    t = threading.Thread(
+        target=_bg_generate_plan,
+        args=(plan_id, user_id, binding_id, objective, risk_preference, start_date, model),
+        daemon=True,
+    )
+    t.start()
+
     return {
         "id": row.id,
         "binding_id": row.binding_id,
@@ -1307,8 +1276,121 @@ def _generate_nurture_plan_for_binding(
         "approval_mode": row.approval_mode,
         "plan_horizon_days": row.plan_horizon_days,
         "summary": row.summary,
-        "created_schedule_count": created,
+        "created_schedule_count": 0,
     }
+
+
+def _bg_generate_plan(
+    plan_id: int,
+    user_id: int,
+    binding_id: int,
+    objective: str,
+    risk_preference: str,
+    start_date: Optional[str],
+    model: str,
+):
+    """后台线程：调用 LLM 生成计划内容，更新数据库行。"""
+    from ..db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        binding = db.query(NurtureBinding).filter(NurtureBinding.id == binding_id).first()
+        plan_row = db.query(NurturePlan).filter(NurturePlan.id == plan_id).first()
+        if not user or not binding or not plan_row:
+            logger.error("bg_generate_plan: missing records for plan=%s", plan_id)
+            return
+        if plan_row.status != "generating":
+            return
+
+        plan_json = _call_openclaw_for_plan(
+            user, binding,
+            objective=objective,
+            risk_preference=risk_preference,
+            model_override=model,
+        )
+
+        if isinstance(plan_json, dict) and plan_json.get("_error"):
+            plan_row.status = "gen_failed"
+            plan_row.summary = plan_json.get("_error_msg", "模型返回错误")
+            plan_row.plan_json = {"_status": "gen_failed", "_model": model, "_error_msg": plan_json.get("_error_msg", "")}
+            db.commit()
+            logger.warning("bg_generate_plan: model error for plan=%s: %s", plan_id, plan_json.get("_error_msg"))
+            return
+
+        if not isinstance(plan_json, dict) or not plan_json.get("schedule"):
+            plan_row.status = "gen_failed"
+            plan_row.summary = "AI 返回数据格式无效，请重试"
+            plan_row.plan_json = {"_status": "gen_failed", "_model": model, "_error_msg": "invalid response format"}
+            db.commit()
+            logger.warning("bg_generate_plan: invalid response for plan=%s", plan_id)
+            return
+
+        days = int(plan_json.get("plan_horizon_days") or 14)
+        if days < 1:
+            days = 14
+        if days > 180:
+            days = 180
+        schedule = plan_json.get("schedule", [])
+        if not isinstance(schedule, list):
+            schedule = []
+
+        plan_row.status = "draft"
+        plan_row.plan_version = str(plan_json.get("plan_version") or "v1")
+        plan_row.plan_horizon_days = days
+        plan_row.summary = str(plan_json.get("summary") or "")
+        plan_row.plan_json = plan_json
+        plan_row.next_review_at = datetime.utcnow() + timedelta(days=max(1, min(3, int(plan_json.get("next_review_in_days") or 1))))
+        plan_row.updated_at = datetime.utcnow()
+
+        db.query(NurtureScheduleItem).filter(NurtureScheduleItem.plan_id == plan_id).delete()
+
+        start_dt = None
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date.strip(), "%Y-%m-%d")
+            except Exception:
+                pass
+        if not start_dt:
+            now = datetime.utcnow()
+            start_dt = datetime(now.year, now.month, now.day)
+        for item in schedule:
+            if not isinstance(item, dict):
+                continue
+            day_no = int(item.get("day_no") or 1)
+            seq_no = int(item.get("seq_no") or 1)
+            hour = int(item.get("hour") or 10)
+            minute = int(item.get("minute") or 0)
+            when = start_dt + timedelta(days=max(day_no - 1, 0), hours=hour, minutes=minute)
+            db.add(
+                NurtureScheduleItem(
+                    user_id=user.id,
+                    binding_id=binding_id,
+                    plan_id=plan_id,
+                    day_no=day_no,
+                    seq_no=seq_no,
+                    stage=str(item.get("stage") or binding.phase or "warmup"),
+                    title=str(item.get("title") or f"nurture-day{day_no:02d}-s{seq_no}"),
+                    scheduled_at=when,
+                    status="scheduled",
+                    payload=item.get("payload") if isinstance(item.get("payload"), dict) else {},
+                )
+            )
+        db.commit()
+        logger.info("bg_generate_plan: plan=%s completed (%s items)", plan_id, len(schedule))
+    except Exception as exc:
+        logger.exception("bg_generate_plan: unexpected error for plan=%s: %s", plan_id, exc)
+        try:
+            plan_row = db.query(NurturePlan).filter(NurturePlan.id == plan_id).first()
+            if plan_row and plan_row.status == "generating":
+                plan_row.status = "gen_failed"
+                plan_row.summary = f"生成异常: {str(exc)[:100]}"
+                plan_row.plan_json = {"_status": "gen_failed", "_model": model, "_error_msg": str(exc)[:200]}
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
 
 
 @router.post("/nurture/plans/generate-by-device", summary="按设备直接创建养号计划（用户态）")
