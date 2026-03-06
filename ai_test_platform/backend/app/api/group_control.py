@@ -1207,6 +1207,7 @@ def generate_nurture_plan_by_device(
     binding_id = int(bind_ret.get("id") or 0)
     if not binding_id:
         raise HTTPException(status_code=500, detail="failed to ensure binding")
+    binding_is_new = bind_ret.get("detail") == "created"
     result = _generate_nurture_plan_for_binding(
         db=db,
         current_user=current_user,
@@ -1216,6 +1217,10 @@ def generate_nurture_plan_by_device(
         start_date=payload.start_date,
         name=payload.name,
     )
+    result["device_id"] = payload.device_id
+    result["binding_is_new"] = binding_is_new
+    total_bindings = db.query(NurtureBinding).filter(NurtureBinding.user_id == current_user.id).count()
+    result["total_bindings"] = total_bindings
     if payload.auto_approve and result.get("id"):
         _ = approve_nurture_plan(plan_id=int(result["id"]), db=db, current_user=current_user)
         result["status"] = "approved"

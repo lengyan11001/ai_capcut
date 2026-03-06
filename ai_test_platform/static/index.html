@@ -2778,7 +2778,7 @@
               btn.disabled = false;
               btn.textContent = '创建养号计划';
               if (x.ok) {
-                if (inlineMsg) { inlineMsg.style.color = '#16a34a'; inlineMsg.textContent = '已创建 计划#' + (x.data && x.data.id); }
+                if (inlineMsg) { inlineMsg.style.color = '#16a34a'; inlineMsg.textContent = '计划#' + (x.data && x.data.id) + ' 绑定#' + (x.data && x.data.binding_id) + (x.data && x.data.binding_is_new ? '(新)' : '(已有)') + ' 总进度:' + (x.data && x.data.total_bindings); }
                 loadNurturePanel();
               } else {
                 var detail = (x.data && x.data.detail) || '创建失败';
