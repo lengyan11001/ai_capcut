@@ -512,3 +512,30 @@ class RiskAnalysisReport(Base):
     findings: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
+
+class RedditPolicySnapshot(Base):
+    __tablename__ = "reddit_policy_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    crawled_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    source_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    raw_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    key_changes: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    severity: Mapped[str] = mapped_column(String(16), default="low", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class DailyReport(Base):
+    __tablename__ = "daily_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    report_date: Mapped[date] = mapped_column(Date, nullable=False, index=True, unique=True)
+    overall_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    execution_analysis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    policy_analysis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recommendations: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    severity: Mapped[str] = mapped_column(String(16), default="low", nullable=False)
+    raw_stats: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+

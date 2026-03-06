@@ -620,9 +620,11 @@
                 </div>
               </div>
               <div class="gc-tabs">
-                <button type="button" class="active" data-gc-tab="devices">手机列表</button>
-                <button type="button" data-gc-tab="tasks">任务列表</button>
-                <button type="button" data-gc-tab="plans">计划列表</button>
+                <button type="button" class="active" data-gc-tab="stats">统计</button>
+                <button type="button" data-gc-tab="devices">手机列表</button>
+                <button type="button" data-gc-tab="plans">计划</button>
+                <button type="button" data-gc-tab="running">执行列表</button>
+                <button type="button" data-gc-tab="tasks">任务</button>
               </div>
             </div>
             <!-- hidden original form for dispatch group management (kept for JS references) -->
@@ -669,21 +671,62 @@
                 <div id="controlTaskMsg" class="msg" style="margin-top:0.5rem;"></div>
               </div>
             </div>
+            <!-- Tab0: 统计 -->
+            <div id="gcPanelStats" class="gc-panel visible">
+              <div id="statsCards" style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.6rem;margin-bottom:1rem;"></div>
+              <div class="card" style="margin-bottom:1rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+                  <div class="card-label" style="margin:0;">AI 每日综合报告</div>
+                  <button type="button" id="statsReportRefreshBtn" class="btn btn-ghost btn-sm">刷新报告</button>
+                </div>
+                <div id="statsReportContent" class="meta">加载中…</div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                <div class="card">
+                  <div class="card-label">按动作统计</div>
+                  <div id="statsByAction"></div>
+                </div>
+                <div class="card">
+                  <div class="card-label">按设备统计</div>
+                  <div id="statsByDevice" style="max-height:260px;overflow-y:auto;"></div>
+                </div>
+              </div>
+            </div>
             <!-- Tab1: 手机列表 -->
-            <div id="gcPanelDevices" class="gc-panel visible">
+            <div id="gcPanelDevices" class="gc-panel">
               <div class="card">
-                <div style="display:flex;gap:0.5rem;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
+                <div style="display:flex;gap:0.5rem;align-items:center;justify-content:space-between;margin-bottom:0.5rem;flex-wrap:wrap;">
                   <div class="card-label" style="margin:0;">设备列表</div>
-                  <button type="button" id="batchCreatePlansBtn" class="btn btn-ghost btn-sm">批量创建养号计划</button>
+                  <div style="display:flex;gap:0.5rem;align-items:center;">
+                    <input type="text" id="devicesSearchInput" placeholder="搜索设备…" style="width:150px;padding:0.25rem 0.5rem;font-size:0.82rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);color:var(--text);">
+                    <button type="button" id="batchCreatePlansBtn" class="btn btn-ghost btn-sm">批量创建养号计划</button>
+                  </div>
                 </div>
                 <div id="batchCreateMsg" class="meta" style="margin-bottom:0.35rem;"></div>
                 <div id="controlDevicesList"></div>
                 <div id="controlDevicesPager" style="margin-top:0.5rem;display:flex;gap:0.4rem;align-items:center;justify-content:flex-end;"></div>
               </div>
             </div>
-            <!-- Tab2: 任务列表 -->
+            <!-- Tab-Running: 执行列表 -->
+            <div id="gcPanelRunning" class="gc-panel">
+              <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                  <div class="card-label" style="margin:0;">执行中计划实时状态</div>
+                  <div style="display:flex;gap:0.5rem;align-items:center;">
+                    <input type="text" id="runningSearchInput" placeholder="搜索设备 / 计划…" style="width:180px;padding:0.25rem 0.5rem;font-size:0.82rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);color:var(--text);">
+                    <button type="button" id="runningRefreshBtn" class="btn btn-ghost btn-sm">刷新</button>
+                  </div>
+                </div>
+                <div id="runningList"></div>
+              </div>
+            </div>
+            <!-- Tab-Tasks: 任务列表 -->
             <div id="gcPanelTasks" class="gc-panel">
               <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                  <div class="card-label" style="margin:0;">任务列表</div>
+                  <input type="text" id="tasksSearchInput" placeholder="搜索任务…" style="width:180px;padding:0.25rem 0.5rem;font-size:0.82rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);color:var(--text);">
+                </div>
                 <div id="controlTasksList"></div>
               </div>
               <div class="card" style="margin-top:0.75rem;">
@@ -700,7 +743,10 @@
               <div class="card">
                 <div style="display:flex;gap:0.5rem;align-items:center;justify-content:space-between;flex-wrap:wrap;">
                   <div class="card-label" style="margin:0;">养号计划与进度</div>
-                  <button type="button" id="nurtureRefreshBtn" class="btn btn-ghost btn-sm">刷新</button>
+                  <div style="display:flex;gap:0.5rem;align-items:center;">
+                    <input type="text" id="plansSearchInput" placeholder="搜索计划 / 设备…" style="width:180px;padding:0.25rem 0.5rem;font-size:0.82rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);color:var(--text);">
+                    <button type="button" id="nurtureRefreshBtn" class="btn btn-ghost btn-sm">刷新</button>
+                  </div>
                 </div>
                 <div id="nurtureMsg" class="msg" style="margin-top:0.5rem;"></div>
                 <div id="nurtureStrategySummary" class="meta" style="margin-top:0.4rem;"></div>
@@ -2810,8 +2856,13 @@
       var el = document.getElementById('controlDevicesList');
       var pagerEl = document.getElementById('controlDevicesPager');
       if (!el) return;
+      var q = (document.getElementById('devicesSearchInput') || {}).value || '';
+      q = q.toLowerCase().trim();
+      if (q) list = list.filter(function(d) {
+        return (d.device_label || '').toLowerCase().indexOf(q) >= 0 || (d.alias || '').toLowerCase().indexOf(q) >= 0 || String(d.id).indexOf(q) >= 0;
+      });
       if (!list.length) {
-        el.innerHTML = '<p class="meta">暂无在线设备，先启动本地 Agent 心跳。</p>';
+        el.innerHTML = '<p class="meta">' + (q ? '未找到匹配设备' : '暂无在线设备，先启动本地 Agent 心跳。') + '</p>';
         if (pagerEl) pagerEl.innerHTML = '';
         return;
       }
@@ -2830,7 +2881,11 @@
           if (Array.isArray(attrs.tags) && attrs.tags.length) meta += ' tags:' + attrs.tags.join('/');
         }
         if (d.model || d.brand) meta += ' · ' + [d.brand, d.model].filter(Boolean).join(' ');
-        return '<div class="list-item"><div><div class="title">' + escapeHtml(deviceLabel || '') + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts"><button type="button" class="btn btn-ghost btn-sm btn-device-nurture-plan" data-device-id="' + d.id + '">创建养号计划</button><span class="meta device-plan-msg" data-device-msg="' + d.id + '" style="margin-left:0.4rem;"></span></div></div>';
+        var runBadge = '';
+        if (d.running_task_count > 0) {
+          runBadge = '<span style="display:inline-block;margin-left:0.4rem;padding:1px 6px;border-radius:4px;font-size:0.7rem;background:#facc15;color:#000;font-weight:600;">' + d.running_task_count + ' 运行中</span>';
+        }
+        return '<div class="list-item"><div><div class="title">' + escapeHtml(deviceLabel || '') + runBadge + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts"><button type="button" class="btn btn-ghost btn-sm btn-device-nurture-plan" data-device-id="' + d.id + '">创建养号计划</button><span class="meta device-plan-msg" data-device-msg="' + d.id + '" style="margin-left:0.4rem;"></span></div></div>';
       }).join('');
       if (pagerEl) {
         pagerEl.innerHTML = '<button type="button" class="btn btn-ghost btn-sm" id="controlDevicesPrevBtn">上一页</button>' +
@@ -3036,9 +3091,14 @@
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(x) {
           var list = x.ok && Array.isArray(x.data) ? x.data : [];
+          var q = (document.getElementById('tasksSearchInput') || {}).value || '';
+          q = q.toLowerCase().trim();
+          if (q) list = list.filter(function(t) {
+            return (t.title || '').toLowerCase().indexOf(q) >= 0 || String(t.id).indexOf(q) >= 0 || (t.status || '').toLowerCase().indexOf(q) >= 0 || (t.assigned_device_label || '').toLowerCase().indexOf(q) >= 0;
+          });
           var el = document.getElementById('controlTasksList');
           if (!el) return;
-          if (!list.length) { el.innerHTML = '<p class="meta">暂无任务</p>'; return; }
+          if (!list.length) { el.innerHTML = '<p class="meta">' + (q ? '未找到匹配任务' : '暂无任务') + '</p>'; return; }
           el.innerHTML = list.map(function(t) {
             var extra = [];
             if (t.target_device_id) extra.push('设备#' + t.target_device_id);
@@ -3117,7 +3177,7 @@
     function loadGroupControl() {
       Promise.all([loadControlDevices(), loadNurtureModels()])
         .then(function() {
-          return Promise.all([loadDispatchGroups(), loadControlTasks(), loadNurturePanel()]);
+          return Promise.all([loadDispatchGroups(), loadControlTasks(), loadNurturePanel(), loadStatsPanel()]);
         })
         .catch(function() {});
     }
@@ -3167,11 +3227,16 @@
 
     function renderNurtureProgressPage() {
       var list = nurtureProgressCache || [];
+      var q = (document.getElementById('plansSearchInput') || {}).value || '';
+      q = q.toLowerCase().trim();
+      if (q) list = list.filter(function(r) {
+        return (r.device_label || '').toLowerCase().indexOf(q) >= 0 || (r.plan_name || '').toLowerCase().indexOf(q) >= 0 || (r.objective || '').toLowerCase().indexOf(q) >= 0 || String(r.plan_id || '').indexOf(q) >= 0;
+      });
       var el = document.getElementById('nurtureProgressList');
       var pagerEl = document.getElementById('nurtureProgressPager');
       if (!el) return;
       if (!list.length) {
-        el.innerHTML = '<p class="meta">暂无养号计划，请在手机列表点击"创建养号计划"</p>';
+        el.innerHTML = '<p class="meta">' + (q ? '未找到匹配计划' : '暂无养号计划，请在手机列表点击"创建养号计划"') + '</p>';
         if (pagerEl) pagerEl.innerHTML = '';
         return;
       }
@@ -3875,7 +3940,7 @@
     // --- GC Tab switching ---
     (function() {
       var tabBtns = document.querySelectorAll('.gc-tabs button[data-gc-tab]');
-      var panelMap = { devices: 'gcPanelDevices', tasks: 'gcPanelTasks', plans: 'gcPanelPlans' };
+      var panelMap = { stats: 'gcPanelStats', devices: 'gcPanelDevices', plans: 'gcPanelPlans', running: 'gcPanelRunning', tasks: 'gcPanelTasks' };
       tabBtns.forEach(function(btn) {
         btn.addEventListener('click', function() {
           tabBtns.forEach(function(b) { b.classList.remove('active'); });
@@ -3884,8 +3949,10 @@
             var p = document.getElementById(panelMap[k]);
             if (p) p.classList.toggle('visible', k === btn.dataset.gcTab);
           });
+          if (btn.dataset.gcTab === 'stats') loadStatsPanel();
           if (btn.dataset.gcTab === 'tasks') loadControlTasks();
           if (btn.dataset.gcTab === 'plans') loadNurturePanel();
+          if (btn.dataset.gcTab === 'running') loadRunningPanel();
         });
       });
     })();
@@ -4526,6 +4593,156 @@
     function escapeHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
     function escapeAttr(s) { return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
     function truncate(s, len) { s = (s || '').trim(); return s.length <= len ? s : s.slice(0, len) + '…'; }
+
+    // ── Stats Panel ──
+    function loadStatsPanel() {
+      loadStatsDaily();
+      loadStatsReport();
+    }
+    function loadStatsDaily() {
+      fetch(API_BASE + '/group-control/stats/daily', { headers: authHeaders() })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { renderStatsCards(d); renderStatsByAction(d.by_action || {}); renderStatsByDevice(d.by_device || []); })
+        .catch(function() {});
+    }
+    function renderStatsCards(d) {
+      var el = document.getElementById('statsCards');
+      if (!el) return;
+      var rate = d.success_rate != null ? Math.round(d.success_rate * 100) : 0;
+      var rateColor = rate >= 80 ? '#4ade80' : rate >= 50 ? '#facc15' : '#f87171';
+      el.innerHTML = [
+        _statCard('总任务', d.total || 0, '#93c5fd'),
+        _statCard('成功', d.success || 0, '#4ade80'),
+        _statCard('失败', d.failed || 0, '#f87171'),
+        _statCard('执行中', d.running || 0, '#facc15'),
+        _statCard('成功率', rate + '%', rateColor),
+      ].join('');
+    }
+    function _statCard(label, value, color) {
+      return '<div style="background:rgba(255,255,255,0.04);border-radius:var(--radius-sm);padding:0.75rem 1rem;text-align:center;">'
+        + '<div style="font-size:1.6rem;font-weight:700;color:' + color + ';">' + value + '</div>'
+        + '<div class="meta" style="margin-top:0.15rem;">' + label + '</div></div>';
+    }
+    function renderStatsByAction(byAction) {
+      var el = document.getElementById('statsByAction');
+      if (!el) return;
+      var keys = Object.keys(byAction);
+      if (!keys.length) { el.innerHTML = '<div class="meta">暂无数据</div>'; return; }
+      var maxV = Math.max.apply(null, keys.map(function(k) { return byAction[k].total; }));
+      el.innerHTML = keys.map(function(k) {
+        var o = byAction[k]; var pct = maxV ? Math.round(o.total / maxV * 100) : 0;
+        return '<div style="margin-bottom:0.5rem;">'
+          + '<div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:2px;"><span>' + escapeHtml(k) + '</span><span>' + o.total + ' (成功 ' + o.success + ' / 失败 ' + o.failed + ')</span></div>'
+          + '<div style="background:rgba(255,255,255,0.06);border-radius:3px;height:10px;overflow:hidden;">'
+          + '<div style="width:' + pct + '%;height:100%;background:linear-gradient(90deg,#60a5fa,' + (o.failed > o.success ? '#f87171' : '#4ade80') + ');border-radius:3px;"></div></div></div>';
+      }).join('');
+    }
+    function renderStatsByDevice(list) {
+      var el = document.getElementById('statsByDevice');
+      if (!el) return;
+      if (!list.length) { el.innerHTML = '<div class="meta">暂无数据</div>'; return; }
+      el.innerHTML = '<table style="width:100%;font-size:0.82rem;border-collapse:collapse;">'
+        + '<tr style="border-bottom:1px solid rgba(255,255,255,0.1);"><th style="text-align:left;padding:4px 6px;">设备</th><th>总数</th><th>成功</th><th>失败</th></tr>'
+        + list.map(function(d) {
+          return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'
+            + '<td style="padding:3px 6px;">' + escapeHtml(d.device_label) + '</td>'
+            + '<td style="text-align:center;">' + d.total + '</td>'
+            + '<td style="text-align:center;color:#4ade80;">' + d.success + '</td>'
+            + '<td style="text-align:center;color:#f87171;">' + d.failed + '</td></tr>';
+        }).join('') + '</table>';
+    }
+    function loadStatsReport() {
+      var el = document.getElementById('statsReportContent');
+      if (!el) return;
+      el.innerHTML = '<span class="meta">加载中…</span>';
+      fetch(API_BASE + '/group-control/stats/report', { headers: authHeaders() })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.exists) { el.innerHTML = '<div class="meta">暂无报告。点击「刷新报告」生成。</div>'; return; }
+          var sevColor = d.severity === 'high' ? '#f87171' : d.severity === 'medium' ? '#facc15' : '#4ade80';
+          var scoreColor = d.overall_score >= 80 ? '#4ade80' : d.overall_score >= 50 ? '#facc15' : '#f87171';
+          var html = '<div style="display:flex;gap:1rem;align-items:center;margin-bottom:0.75rem;">'
+            + '<div style="font-size:2rem;font-weight:700;color:' + scoreColor + ';">' + d.overall_score + '<span style="font-size:0.8rem;color:var(--text-muted);">/100</span></div>'
+            + '<div><span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;color:#fff;background:' + sevColor + ';">风险: ' + escapeHtml(d.severity) + '</span>'
+            + '<div class="meta" style="margin-top:2px;">日期: ' + escapeHtml(d.report_date || '') + '</div></div></div>';
+          html += '<div style="margin-bottom:0.6rem;"><strong style="font-size:0.85rem;">执行分析</strong><div style="font-size:0.82rem;line-height:1.5;margin-top:2px;">' + escapeHtml(d.execution_analysis) + '</div></div>';
+          html += '<div style="margin-bottom:0.6rem;"><strong style="font-size:0.85rem;">政策分析</strong><div style="font-size:0.82rem;line-height:1.5;margin-top:2px;">' + escapeHtml(d.policy_analysis) + '</div></div>';
+          if (d.recommendations && d.recommendations.length) {
+            html += '<div><strong style="font-size:0.85rem;">建议</strong><ul style="margin:4px 0 0 1.2rem;font-size:0.82rem;">';
+            d.recommendations.forEach(function(r) { html += '<li>' + escapeHtml(r) + '</li>'; });
+            html += '</ul></div>';
+          }
+          el.innerHTML = html;
+        })
+        .catch(function() { el.innerHTML = '<div class="meta" style="color:#f87171;">加载失败</div>'; });
+    }
+    (function() {
+      var btn = document.getElementById('statsReportRefreshBtn');
+      if (btn) btn.addEventListener('click', function() {
+        btn.disabled = true; btn.textContent = '生成中…';
+        fetch(API_BASE + '/group-control/stats/report-refresh', { method: 'POST', headers: authHeaders() })
+          .then(function(r) { return r.json(); })
+          .then(function() { loadStatsReport(); btn.disabled = false; btn.textContent = '刷新报告'; })
+          .catch(function() { btn.disabled = false; btn.textContent = '刷新报告'; });
+      });
+    })();
+
+    // ── Running Panel ──
+    var runningCache = [];
+    function loadRunningPanel() {
+      fetch(API_BASE + '/group-control/nurture/running', { headers: authHeaders() })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { runningCache = Array.isArray(d) ? d : []; renderRunningList(); })
+        .catch(function() {});
+    }
+    function renderRunningList() {
+      var el = document.getElementById('runningList');
+      if (!el) return;
+      var q = (document.getElementById('runningSearchInput') || {}).value || '';
+      q = q.toLowerCase().trim();
+      var list = runningCache;
+      if (q) list = list.filter(function(p) {
+        return (p.device_label || '').toLowerCase().indexOf(q) >= 0 || (p.plan_name || '').toLowerCase().indexOf(q) >= 0 || (p.objective || '').toLowerCase().indexOf(q) >= 0;
+      });
+      if (!list.length) { el.innerHTML = '<div class="meta">暂无执行中的计划</div>'; return; }
+      el.innerHTML = list.map(function(p) {
+        var statusColor = p.plan_status === 'active' ? '#4ade80' : '#facc15';
+        var header = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">'
+          + '<div><span style="font-weight:600;">' + escapeHtml(p.device_label || '?') + '</span> <span class="meta">计划#' + p.plan_id + '</span>'
+          + (p.objective ? ' <span style="font-size:0.75rem;color:#93c5fd;">(' + escapeHtml(p.objective) + ')</span>' : '') + '</div>'
+          + '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.72rem;color:#fff;background:' + statusColor + ';">' + escapeHtml(p.plan_status) + '</span></div>';
+        var rows = (p.items || []).map(function(i) {
+          var ic = i.status === 'success' ? '#4ade80' : i.status === 'failed' ? '#f87171' : i.status === 'running' || i.status === 'dispatched' ? '#facc15' : '#888';
+          return '<tr style="border-bottom:1px solid rgba(255,255,255,0.03);font-size:0.78rem;">'
+            + '<td style="padding:2px 4px;">' + i.day_no + '-' + i.seq_no + '</td>'
+            + '<td>' + escapeHtml(i.action) + '</td>'
+            + '<td>' + escapeHtml(i.title || '') + '</td>'
+            + '<td><span style="color:' + ic + ';">' + escapeHtml(i.status) + '</span></td>'
+            + '<td>' + escapeHtml(i.scheduled_at ? i.scheduled_at.split('T').pop().substring(0,5) : '') + '</td>'
+            + '<td style="color:#f87171;font-size:0.72rem;">' + escapeHtml(truncate(i.error,40)) + '</td></tr>';
+        }).join('');
+        var table = rows ? '<table style="width:100%;border-collapse:collapse;margin-top:0.2rem;"><tr style="border-bottom:1px solid rgba(255,255,255,0.08);font-size:0.75rem;color:var(--text-muted);">'
+          + '<th style="text-align:left;padding:2px 4px;">D-S</th><th style="text-align:left;">动作</th><th style="text-align:left;">标题</th><th>状态</th><th>时间</th><th>错误</th></tr>'
+          + rows + '</table>' : '<div class="meta">暂无近期调度项</div>';
+        return '<div style="background:rgba(255,255,255,0.03);border-radius:var(--radius-sm);padding:0.6rem 0.75rem;margin-bottom:0.5rem;">' + header + table + '</div>';
+      }).join('');
+    }
+    (function() {
+      var si = document.getElementById('runningSearchInput');
+      if (si) si.addEventListener('input', function() { renderRunningList(); });
+      var rb = document.getElementById('runningRefreshBtn');
+      if (rb) rb.addEventListener('click', function() { loadRunningPanel(); });
+    })();
+
+    // ── Search handlers for devices/tasks/plans ──
+    (function() {
+      var devSearch = document.getElementById('devicesSearchInput');
+      if (devSearch) devSearch.addEventListener('input', function() { renderDeviceList(); });
+      var taskSearch = document.getElementById('tasksSearchInput');
+      if (taskSearch) taskSearch.addEventListener('input', function() { loadControlTasks(); });
+      var planSearch = document.getElementById('plansSearchInput');
+      if (planSearch) planSearch.addEventListener('input', function() { renderNurtureProgressPage(); });
+    })();
 
     window.addEventListener('beforeunload', function() {
       if (typeof saveCurrentSessionToStore === 'function') saveCurrentSessionToStore();

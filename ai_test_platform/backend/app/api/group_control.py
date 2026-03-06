@@ -20,8 +20,10 @@ from ..models import (
     ControlDispatchGroup,
     ControlAgent,
     ControlTask,
+    DailyReport,
     MobileDevice,
     RedditAccountAsset,
+    RedditPolicySnapshot,
     RedditStrategyConfig,
     RiskAnalysisReport,
     NurtureBinding,
@@ -933,6 +935,17 @@ def list_devices(
             -int((r.updated_at or datetime.min).timestamp()),
         ),
     )
+    device_ids = [r.id for r in rows]
+    running_tasks_q = (
+        db.query(ControlTask.target_device_id, func.count(ControlTask.id), func.min(ControlTask.title))
+        .filter(ControlTask.target_device_id.in_(device_ids), ControlTask.status.in_(["pending", "running"]))
+        .group_by(ControlTask.target_device_id)
+        .all()
+    ) if device_ids else []
+    running_map: dict[int, tuple[int, str]] = {}
+    for did, cnt, t in running_tasks_q:
+        running_map[did] = (cnt, t or "")
+
     return [
         {
             "id": r.id,
@@ -949,6 +962,8 @@ def list_devices(
             "model": (r.meta or {}).get("model") if isinstance(r.meta, dict) else None,
             "brand": (r.meta or {}).get("brand") if isinstance(r.meta, dict) else None,
             "device_uid": (r.meta or {}).get("device_uid") if isinstance(r.meta, dict) else None,
+            "running_task_count": running_map.get(r.id, (0, ""))[0],
+            "running_task_summary": running_map.get(r.id, (0, ""))[1],
             "last_seen_at": r.last_seen_at.isoformat() if r.last_seen_at else "",
             "updated_at": r.updated_at.isoformat() if r.updated_at else "",
         }
@@ -2714,4 +2729,388 @@ def list_risk_reports(
         }
         for r in rows
     ]
+
+
+# ────────────────────────────────────────────
+# 统计 / 每日报告 / 政策爬取 / 执行列表
+# ────────────────────────────────────────────
+
+def _collect_daily_stats(db: Session) -> dict[str, Any]:
+    since = datetime.utcnow() - timedelta(hours=24)
+    items = (
+        db.query(NurtureScheduleItem)
+        .filter(NurtureScheduleItem.dispatched_at.isnot(None), NurtureScheduleItem.dispatched_at >= since)
+        .all()
+    )
+    total = len(items)
+    success = sum(1 for i in items if i.status == "success")
+    failed = sum(1 for i in items if i.status == "failed")
+    running = sum(1 for i in items if i.status in ("running", "dispatched"))
+    skipped = sum(1 for i in items if i.status == "skipped")
+    scheduled = sum(1 for i in items if i.status == "scheduled")
+
+    by_action: dict[str, dict[str, int]] = {}
+    for i in items:
+        act = (i.payload or {}).get("action", "unknown") if isinstance(i.payload, dict) else "unknown"
+        if act not in by_action:
+            by_action[act] = {"total": 0, "success": 0, "failed": 0}
+        by_action[act]["total"] += 1
+        if i.status == "success":
+            by_action[act]["success"] += 1
+        elif i.status == "failed":
+            by_action[act]["failed"] += 1
+
+    bindings = {i.binding_id for i in items}
+    b_rows = db.query(NurtureBinding).filter(NurtureBinding.id.in_(bindings)).all() if bindings else []
+    b_map = {b.id: b for b in b_rows}
+    d_ids = {b.device_id for b in b_rows}
+    d_rows = db.query(MobileDevice).filter(MobileDevice.id.in_(d_ids)).all() if d_ids else []
+    d_map = {d.id: d for d in d_rows}
+
+    by_device: dict[int, dict[str, Any]] = {}
+    for i in items:
+        b = b_map.get(i.binding_id)
+        did = b.device_id if b else 0
+        if did not in by_device:
+            dev = d_map.get(did)
+            by_device[did] = {"device_id": did, "device_label": _device_label_from_row(dev) if dev else f"#{did}", "total": 0, "success": 0, "failed": 0}
+        by_device[did]["total"] += 1
+        if i.status == "success":
+            by_device[did]["success"] += 1
+        elif i.status == "failed":
+            by_device[did]["failed"] += 1
+
+    return {
+        "period": "24h",
+        "total": total, "success": success, "failed": failed,
+        "running": running, "scheduled": scheduled, "skipped": skipped,
+        "success_rate": round(success / total, 3) if total else 0,
+        "by_action": by_action,
+        "by_device": sorted(by_device.values(), key=lambda x: x["total"], reverse=True),
+    }
+
+
+@router.get("/stats/daily", summary="昨日任务统计")
+def get_daily_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return _collect_daily_stats(db)
+
+
+def _crawl_reddit_policy() -> Optional[dict[str, Any]]:
+    urls = [
+        "https://www.redditinc.com/policies/content-policy",
+        "https://support.reddit.com/hc/en-us/articles/20451297193108",
+    ]
+    texts: list[str] = []
+    for url in urls:
+        try:
+            with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+                resp = client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                if resp.status_code < 300 and resp.text:
+                    import re as _re
+                    clean = _re.sub(r"<[^>]+>", " ", resp.text)
+                    clean = _re.sub(r"\s+", " ", clean).strip()
+                    texts.append(clean[:8000])
+        except Exception as exc:
+            logger.warning("policy crawl failed for %s: %s", url, exc)
+    if not texts:
+        return None
+    return {"source_urls": urls, "raw_texts": texts}
+
+
+def _summarize_policy_with_ai(raw_texts: list[str], prev_summary: str = "") -> Optional[dict]:
+    base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
+    api_key = (settings.nurture_llm_api_key or "").strip()
+    if not base_url or not api_key:
+        return None
+    combined = "\n---\n".join(raw_texts)[:12000]
+    prompt = (
+        "你是 Reddit 平台政策分析师。分析以下 Reddit 官方政策页面内容，输出严格 JSON。\n\n"
+        f"当前政策原文（截取）：\n{combined}\n\n"
+    )
+    if prev_summary:
+        prompt += f"上次摘要：\n{prev_summary}\n\n请对比变化。\n"
+    prompt += (
+        "输出格式：\n"
+        '{"ai_summary":"简要中文摘要(200字内)","key_changes":["变化1","变化2"],"severity":"low/medium/high"}\n'
+        "如果没有明显变化，severity 设为 low，key_changes 设为空数组。"
+    )
+    try:
+        timeout = httpx.Timeout(connect=20.0, read=120.0, write=20.0, pool=20.0)
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": settings.nurture_llm_model or "deepseek-chat", "messages": [{"role": "user", "content": prompt}], "temperature": 0.1},
+            )
+            if resp.status_code >= 300:
+                return None
+            data = resp.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            raw = content.strip()
+            if raw.startswith("```"):
+                raw = re.sub(r"^```[a-zA-Z]*", "", raw).strip()
+                raw = raw[:-3].strip() if raw.endswith("```") else raw
+            return json.loads(raw)
+    except Exception as exc:
+        logger.warning("policy AI summary failed: %s", exc)
+        return None
+
+
+def _ensure_daily_policy(db: Session) -> Optional[RedditPolicySnapshot]:
+    today = datetime.utcnow().date()
+    existing = (
+        db.query(RedditPolicySnapshot)
+        .filter(func.date(RedditPolicySnapshot.crawled_at) == today)
+        .order_by(RedditPolicySnapshot.id.desc())
+        .first()
+    )
+    if existing:
+        return existing
+    crawled = _crawl_reddit_policy()
+    if not crawled:
+        return None
+    prev = db.query(RedditPolicySnapshot).order_by(RedditPolicySnapshot.id.desc()).first()
+    prev_summary = prev.ai_summary if prev else ""
+    ai_result = _summarize_policy_with_ai(crawled["raw_texts"], prev_summary)
+    snap = RedditPolicySnapshot(
+        source_url=", ".join(crawled["source_urls"]),
+        raw_content="\n---\n".join(crawled["raw_texts"])[:20000],
+        ai_summary=ai_result.get("ai_summary", "") if ai_result else "爬取成功但 AI 摘要失败",
+        key_changes=ai_result.get("key_changes", []) if ai_result else [],
+        severity=ai_result.get("severity", "low") if ai_result else "unknown",
+    )
+    db.add(snap)
+    db.commit()
+    db.refresh(snap)
+    return snap
+
+
+@router.get("/stats/policy-latest", summary="最新 Reddit 政策快照")
+def get_policy_latest(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    snap = db.query(RedditPolicySnapshot).order_by(RedditPolicySnapshot.id.desc()).first()
+    if not snap:
+        return {"exists": False}
+    return {
+        "exists": True,
+        "id": snap.id,
+        "crawled_at": snap.crawled_at.isoformat() if snap.crawled_at else "",
+        "ai_summary": snap.ai_summary or "",
+        "key_changes": snap.key_changes or [],
+        "severity": snap.severity,
+    }
+
+
+@router.post("/stats/policy-refresh", summary="手动刷新 Reddit 政策")
+def refresh_policy(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    crawled = _crawl_reddit_policy()
+    if not crawled:
+        raise HTTPException(status_code=502, detail="无法抓取 Reddit 政策页面")
+    prev = db.query(RedditPolicySnapshot).order_by(RedditPolicySnapshot.id.desc()).first()
+    ai_result = _summarize_policy_with_ai(crawled["raw_texts"], prev.ai_summary if prev else "")
+    snap = RedditPolicySnapshot(
+        source_url=", ".join(crawled["source_urls"]),
+        raw_content="\n---\n".join(crawled["raw_texts"])[:20000],
+        ai_summary=ai_result.get("ai_summary", "") if ai_result else "AI 摘要失败",
+        key_changes=ai_result.get("key_changes", []) if ai_result else [],
+        severity=ai_result.get("severity", "low") if ai_result else "unknown",
+    )
+    db.add(snap)
+    db.commit()
+    db.refresh(snap)
+    return {"id": snap.id, "ai_summary": snap.ai_summary, "severity": snap.severity}
+
+
+def _generate_daily_report_data(db: Session) -> dict[str, Any]:
+    stats = _collect_daily_stats(db)
+    policy = _ensure_daily_policy(db)
+
+    active_plans = db.query(NurturePlan).filter(NurturePlan.status.in_(["approved", "active"])).all()
+    binding_ids = [p.binding_id for p in active_plans]
+    bindings = db.query(NurtureBinding).filter(NurtureBinding.id.in_(binding_ids)).all() if binding_ids else []
+    d_ids = {b.device_id for b in bindings}
+    devices = db.query(MobileDevice).filter(MobileDevice.id.in_(d_ids)).all() if d_ids else []
+    d_map = {d.id: d for d in devices}
+
+    account_context = []
+    for b in bindings:
+        dev = d_map.get(b.device_id)
+        account_context.append({
+            "device": _device_label_from_row(dev) if dev else f"#{b.device_id}",
+            "phase": b.phase, "karma": b.current_karma, "target_karma": b.target_karma,
+            "health": b.account_health,
+        })
+
+    base_url = (settings.nurture_llm_base_url or "").strip().rstrip("/")
+    api_key = (settings.nurture_llm_api_key or "").strip()
+    if not base_url or not api_key:
+        return {"overall_score": 0, "execution_analysis": "LLM 未配置", "policy_analysis": "", "recommendations": [], "severity": "unknown", "raw_stats": stats}
+
+    prompt = (
+        "你是 Reddit 养号运营分析师。根据以下数据生成每日运营报告，输出严格 JSON。\n\n"
+        f"=== 昨日执行统计 ===\n{json.dumps(stats, ensure_ascii=False)}\n\n"
+        f"=== 当前活跃账号状态 ===\n{json.dumps(account_context, ensure_ascii=False)}\n\n"
+        f"=== Reddit 平台政策摘要 ===\n{policy.ai_summary if policy else '暂无政策数据'}\n"
+        f"政策变化: {json.dumps(policy.key_changes if policy else [], ensure_ascii=False)}\n"
+        f"风险等级: {policy.severity if policy else 'unknown'}\n\n"
+        "=== 输出格式 ===\n"
+        "{\n"
+        '  "overall_score": <0-100 综合评分>,\n'
+        '  "execution_analysis": "<中文，昨日执行情况分析，200字内>",\n'
+        '  "policy_analysis": "<中文，平台政策风险分析，150字内>",\n'
+        '  "recommendations": ["建议1", "建议2", ...],\n'
+        '  "severity": "low/medium/high"\n'
+        "}\n"
+        "overall_score 综合考虑成功率、账号健康度、政策风险。"
+    )
+    try:
+        timeout = httpx.Timeout(connect=20.0, read=180.0, write=20.0, pool=20.0)
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": settings.nurture_llm_model or "deepseek-chat", "messages": [{"role": "user", "content": prompt}], "temperature": 0.15},
+            )
+            if resp.status_code >= 300:
+                return {"overall_score": 0, "execution_analysis": f"LLM 返回 {resp.status_code}", "policy_analysis": "", "recommendations": [], "severity": "unknown", "raw_stats": stats}
+            data = resp.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            raw = content.strip()
+            if raw.startswith("```"):
+                raw = re.sub(r"^```[a-zA-Z]*", "", raw).strip()
+                raw = raw[:-3].strip() if raw.endswith("```") else raw
+            result = json.loads(raw)
+            result["raw_stats"] = stats
+            return result
+    except Exception as exc:
+        logger.warning("daily report AI failed: %s", exc)
+        return {"overall_score": 0, "execution_analysis": f"AI 生成失败: {exc}", "policy_analysis": "", "recommendations": [], "severity": "unknown", "raw_stats": stats}
+
+
+@router.get("/stats/report", summary="最新每日综合报告")
+def get_daily_report(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    today = datetime.utcnow().date()
+    report = db.query(DailyReport).filter(DailyReport.report_date == today).first()
+    if not report:
+        yesterday = today - timedelta(days=1)
+        report = db.query(DailyReport).filter(DailyReport.report_date == yesterday).first()
+    if not report:
+        return {"exists": False}
+    return {
+        "exists": True,
+        "id": report.id,
+        "report_date": report.report_date.isoformat(),
+        "overall_score": report.overall_score,
+        "execution_analysis": report.execution_analysis or "",
+        "policy_analysis": report.policy_analysis or "",
+        "recommendations": report.recommendations or [],
+        "severity": report.severity,
+        "raw_stats": report.raw_stats,
+        "created_at": report.created_at.isoformat() if report.created_at else "",
+    }
+
+
+@router.post("/stats/report-refresh", summary="手动生成/刷新每日报告")
+def refresh_daily_report(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    data = _generate_daily_report_data(db)
+    today = datetime.utcnow().date()
+    report = db.query(DailyReport).filter(DailyReport.report_date == today).first()
+    if report:
+        report.overall_score = int(data.get("overall_score", 0))
+        report.execution_analysis = data.get("execution_analysis", "")
+        report.policy_analysis = data.get("policy_analysis", "")
+        report.recommendations = data.get("recommendations", [])
+        report.severity = data.get("severity", "low")
+        report.raw_stats = data.get("raw_stats")
+    else:
+        report = DailyReport(
+            report_date=today,
+            overall_score=int(data.get("overall_score", 0)),
+            execution_analysis=data.get("execution_analysis", ""),
+            policy_analysis=data.get("policy_analysis", ""),
+            recommendations=data.get("recommendations", []),
+            severity=data.get("severity", "low"),
+            raw_stats=data.get("raw_stats"),
+        )
+        db.add(report)
+    db.commit()
+    db.refresh(report)
+    return {
+        "id": report.id, "report_date": report.report_date.isoformat(),
+        "overall_score": report.overall_score, "severity": report.severity,
+    }
+
+
+@router.get("/nurture/running", summary="执行中的养号计划实时状态")
+def get_nurture_running(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    plans = (
+        db.query(NurturePlan)
+        .filter(NurturePlan.user_id == current_user.id, NurturePlan.status.in_(["approved", "active"]))
+        .order_by(NurturePlan.updated_at.desc())
+        .all()
+    )
+    if not plans:
+        return []
+    plan_ids = [p.id for p in plans]
+    binding_ids = [p.binding_id for p in plans]
+
+    since = datetime.utcnow() - timedelta(hours=48)
+    items = (
+        db.query(NurtureScheduleItem)
+        .filter(NurtureScheduleItem.plan_id.in_(plan_ids), NurtureScheduleItem.updated_at >= since)
+        .order_by(NurtureScheduleItem.scheduled_at.desc())
+        .all()
+    )
+
+    bindings = db.query(NurtureBinding).filter(NurtureBinding.id.in_(binding_ids)).all()
+    b_map = {b.id: b for b in bindings}
+    d_ids = {b.device_id for b in bindings}
+    d_rows = db.query(MobileDevice).filter(MobileDevice.id.in_(d_ids)).all() if d_ids else []
+    d_map = {d.id: d for d in d_rows}
+
+    items_by_plan: dict[int, list] = {}
+    for i in items:
+        items_by_plan.setdefault(i.plan_id, []).append(i)
+
+    out = []
+    for p in plans:
+        b = b_map.get(p.binding_id)
+        dev = d_map.get(b.device_id) if b else None
+        p_items = items_by_plan.get(p.id, [])[:20]
+        out.append({
+            "plan_id": p.id, "plan_name": p.name, "plan_status": p.status,
+            "device_label": _device_label_from_row(dev) if dev else None,
+            "device_id": b.device_id if b else None,
+            "objective": getattr(p, "objective", "") or "",
+            "items": [
+                {
+                    "id": si.id, "day_no": si.day_no, "seq_no": si.seq_no,
+                    "action": (si.payload or {}).get("action", "?") if isinstance(si.payload, dict) else "?",
+                    "title": si.title, "status": si.status, "stage": si.stage,
+                    "scheduled_at": si.scheduled_at.isoformat() if si.scheduled_at else "",
+                    "started_at": si.started_at.isoformat() if si.started_at else "",
+                    "finished_at": si.finished_at.isoformat() if si.finished_at else "",
+                    "error": si.last_error_message or "",
+                }
+                for si in p_items
+            ],
+        })
+    return out
 
