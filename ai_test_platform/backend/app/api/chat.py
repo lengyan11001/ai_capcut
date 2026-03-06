@@ -348,9 +348,9 @@ def _is_learn_allowlist_user(user: User) -> bool:
 def _resolve_openclaw_target(db: Session, user: User) -> tuple[str, str, str]:
     """
     返回 (base_url, token, agent_id)。
-    - 白名单用户 -> 学习实例 + user_<id>
+    - 白名单用户 -> 学习实例 + main
     - 已配置用户实例 -> 用户实例 + user_<id>
-    - 否则（未配用户实例）-> 学习实例 + user_<id>（向后兼容）
+    - 否则（未配用户实例）-> 学习实例 + main（向后兼容）
     """
     url_learn = (getattr(settings, "openclaw_gateway_url", None) or "").strip().rstrip("/")
     token_learn = (getattr(settings, "openclaw_gateway_token", None) or "").strip()
@@ -359,11 +359,11 @@ def _resolve_openclaw_target(db: Session, user: User) -> tuple[str, str, str]:
 
     if _is_learn_allowlist_user(user):
         if url_learn and token_learn:
-            return url_learn, token_learn, f"user_{user.id}"
+            return url_learn, token_learn, "main"
         # 白名单但学习实例未配， fallback 到用户实例（若存在）
         if url_users and token_users:
             return url_users, token_users, f"user_{user.id}"
-        return url_learn, token_learn, f"user_{user.id}"
+        return url_learn, token_learn, "main"
 
     # 优先按用户绑定实例池路由（注册后自动分配）
     binding = (
@@ -383,7 +383,7 @@ def _resolve_openclaw_target(db: Session, user: User) -> tuple[str, str, str]:
     if url_users and token_users:
         return url_users, token_users, f"user_{user.id}"
     # 未配用户实例：所有人走单一 Gateway（向后兼容）
-    return url_learn, token_learn, f"user_{user.id}"
+    return url_learn, token_learn, "main"
 
 
 def _openclaw_available(db: Session, user: Optional[User] = None) -> bool:

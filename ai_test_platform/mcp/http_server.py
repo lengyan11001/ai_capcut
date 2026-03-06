@@ -323,10 +323,7 @@ async def _runtime_catalog(token: Optional[str], request: Optional[Request] = No
             by_user_catalog = await _fetch_backend_capabilities_by_user_id(uid)
             if by_user_catalog is not None:
                 return by_user_catalog
-    # 无用户上下文时不再回退本地目录，避免误导能力列表。
-    if token is None:
-        return {}
-    # 有 token 但后端暂不可用时，回退到本地目录（向后兼容）
+    # 兜底回退本地目录，避免 tools/list 为空导致会话层完全不触发能力。
     out: Dict[str, Dict[str, Any]] = {}
     for cid in _enabled_capability_ids():
         out[cid] = CAPABILITY_CATALOG[cid]
