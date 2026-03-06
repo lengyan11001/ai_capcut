@@ -443,6 +443,7 @@ class NurturePlan(Base):
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     start_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     plan_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    objective: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

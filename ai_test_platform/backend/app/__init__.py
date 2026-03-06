@@ -324,6 +324,8 @@ def _ensure_nurture_plan_columns():
                     conn.execute(text("ALTER TABLE nurture_plans ADD COLUMN last_review_at DATETIME"))
                 if "next_review_at" not in columns:
                     conn.execute(text("ALTER TABLE nurture_plans ADD COLUMN next_review_at DATETIME"))
+                if "objective" not in columns:
+                    conn.execute(text("ALTER TABLE nurture_plans ADD COLUMN objective VARCHAR(256)"))
     except Exception:
         pass
 

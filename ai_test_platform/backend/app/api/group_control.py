@@ -1080,7 +1080,7 @@ class NurtureBindingUpsertIn(BaseModel):
 
 class NurturePlanGenerateIn(BaseModel):
     binding_id: int
-    objective: str = Field(default="safe_growth", max_length=64)
+    objective: str = Field(default="safe_growth", max_length=256)
     risk_preference: str = Field(default="conservative", max_length=32)
     start_date: Optional[str] = None
     name: Optional[str] = Field(default=None, max_length=128)
@@ -1089,7 +1089,7 @@ class NurturePlanGenerateIn(BaseModel):
 
 class NurturePlanGenerateByDeviceIn(BaseModel):
     device_id: int
-    objective: str = Field(default="safe_growth", max_length=64)
+    objective: str = Field(default="safe_growth", max_length=256)
     risk_preference: str = Field(default="conservative", max_length=32)
     start_date: Optional[str] = None
     name: Optional[str] = Field(default=None, max_length=128)
@@ -1256,6 +1256,7 @@ def _generate_nurture_plan_for_binding(
         plan_horizon_days=days,
         requires_reconfirm=False,
         summary=str(plan_json.get("summary") or ""),
+        objective=objective,
         last_review_at=datetime.utcnow(),
         next_review_at=datetime.utcnow() + timedelta(days=max(1, min(3, int(plan_json.get("next_review_in_days") or 1)))),
         plan_json=plan_json,
@@ -1650,6 +1651,7 @@ def nurture_progress(
                 "plan_horizon_days": getattr(p, "plan_horizon_days", 30),
                 "plan_requires_reconfirm": bool(getattr(p, "requires_reconfirm", False)),
                 "plan_summary": p.summary,
+                "plan_objective": getattr(p, "objective", None) or "",
                 "plan_source": (p.plan_json or {}).get("_source", "unknown") if isinstance(p.plan_json, dict) else "unknown",
                 "plan_model": (p.plan_json or {}).get("_model", "") if isinstance(p.plan_json, dict) else "",
                 "plan_created_at": _iso(p.created_at),
@@ -1668,6 +1670,33 @@ def nurture_progress(
             }
         )
     return out
+
+
+@router.get("/nurture/last-objective", summary="获取设备最近已执行计划的养号方向")
+def get_last_objective(
+    device_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    bindings = db.query(NurtureBinding).filter(
+        NurtureBinding.user_id == current_user.id,
+        NurtureBinding.device_id == device_id,
+    ).all()
+    if not bindings:
+        return {"objective": ""}
+    binding_ids = [b.id for b in bindings]
+    plan = (
+        db.query(NurturePlan)
+        .filter(
+            NurturePlan.binding_id.in_(binding_ids),
+            NurturePlan.status.in_(["active", "completed", "approved"]),
+            NurturePlan.objective.isnot(None),
+            NurturePlan.objective != "",
+        )
+        .order_by(NurturePlan.updated_at.desc())
+        .first()
+    )
+    return {"objective": (plan.objective if plan else "") or ""}
 
 
 @router.get("/nurture/models", summary="当前用户可用的养号模型列表")
