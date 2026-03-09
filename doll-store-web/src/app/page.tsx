@@ -7,8 +7,6 @@ import { resolveRegionContext } from "@/lib/request-context";
 import { getLangFromSearchParams, t } from "@/lib/i18n";
 import { getShippingProofs } from "@/lib/shipping-proof";
 
-const HERO_IMAGE = "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1200&q=80";
-
 export default async function HomePage({
   searchParams,
 }: {
@@ -25,37 +23,70 @@ export default async function HomePage({
   const categories = getCategories();
   const featured = await getFeaturedProducts({ region: ctx.region, debugAll: ctx.debugAll });
   const guides = getGuides().slice(0, 3);
-  const proofs = getShippingProofs().slice(0, 3);
+  const featuredCards = featured.slice(0, 6);
+  const featuredVisuals = featured
+    .map((p) => p.images?.[0])
+    .filter((url): url is string => Boolean(url));
+  const fallbackHero =
+    "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1200&q=80";
+  const heroImage = featuredVisuals[0] ?? fallbackHero;
+  const secondaryHeroImage = featuredVisuals[1] ?? featuredVisuals[0] ?? fallbackHero;
+  const proofs = getShippingProofs()
+    .slice(0, 3)
+    .map((proof, idx) => ({
+      ...proof,
+      image:
+        proof.image.includes("placehold.co")
+          ? featuredVisuals[idx % Math.max(featuredVisuals.length, 1)] ?? fallbackHero
+          : proof.image,
+    }));
 
   return (
     <div className="text-gray-100">
-      {/* Hero：占位图来自 Unsplash，上线前请替换为自有或供应商授权素材 */}
       <section className="relative overflow-hidden py-20 md:py-28">
         <div className="absolute inset-0 -z-10">
-          <Image src={HERO_IMAGE} alt="" fill className="object-cover" priority sizes="100vw" />
+          <Image src={heroImage} alt="" fill className="object-cover" priority sizes="100vw" unoptimized />
           <div className="absolute inset-0 bg-black/60" />
         </div>
-        <div className="mx-auto max-w-6xl px-4 text-center">
-          <p className="text-xs uppercase tracking-[0.22em] text-indigo-200/90">
-            {t(lang, "Premium Visual Collection", "高质视觉精选")}
-          </p>
-          <h1 className="mt-4 text-3xl font-bold tracking-tight text-white drop-shadow md:text-5xl">
-            {t(lang, "Premium Collectibles", "高端收藏级产品")}
-          </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-lg text-white/90 drop-shadow">
-            {t(
-              lang,
-              "Full body dolls and accessories. Discreet packaging, worldwide delivery.",
-              "全身娃娃与配件，隐私包装，全球配送。"
-            )}
-          </p>
-          <Link
-            href={`/guides?${queryString}`}
-            className="mt-8 inline-block rounded-full bg-white px-7 py-3 font-medium text-gray-900 hover:bg-gray-100"
-          >
-            {t(lang, "Start with Guides", "先看选购指南")}
-          </Link>
-          <p className="mt-3 text-xs text-white/80">{t(lang, "Current region view:", "当前地区视图:")} {ctx.region}</p>
+        <div className="mx-auto grid max-w-6xl gap-10 px-4 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+          <div>
+            <p className="text-xs uppercase tracking-[0.22em] text-indigo-200/90">
+              {t(lang, "Premium Visual Collection", "高质视觉精选")}
+            </p>
+            <h1 className="mt-4 text-3xl font-bold tracking-tight text-white drop-shadow md:text-5xl">
+              {t(lang, "Premium Collectibles", "高端收藏级产品")}
+            </h1>
+            <p className="mt-4 max-w-2xl text-lg text-white/90 drop-shadow">
+              {t(
+                lang,
+                "Curated visuals, discreet delivery, and transparent fulfillment updates for every order.",
+                "以精选视觉、隐私交付和透明履约为核心，打造更安心的购买体验。"
+              )}
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <Link
+                href={`/products?${queryString}`}
+                className="rounded-full bg-white px-7 py-3 font-medium text-gray-900 hover:bg-gray-100"
+              >
+                {t(lang, "Shop collection", "查看商品")}
+              </Link>
+              <Link
+                href={`/guides?${queryString}`}
+                className="rounded-full border border-white/50 bg-black/20 px-7 py-3 font-medium text-white hover:bg-black/35"
+              >
+                {t(lang, "Start with guides", "先看选购指南")}
+              </Link>
+            </div>
+            <p className="mt-4 text-xs text-white/80">
+              {t(lang, "Current region view:", "当前地区视图:")} {ctx.region}
+            </p>
+          </div>
+          <div className="relative hidden lg:block">
+            <div className="relative aspect-[4/5] overflow-hidden rounded-2xl border border-white/20 shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
+              <Image src={secondaryHeroImage} alt="" fill className="object-cover" unoptimized />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+            </div>
+          </div>
         </div>
       </section>
 
@@ -137,7 +168,7 @@ export default async function HomePage({
       <section className="mx-auto max-w-6xl px-4 py-12">
         <h2 className="text-xl font-semibold text-white">{t(lang, "Featured", "精选推荐")}</h2>
         <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {featured.map((product) => (
+          {featuredCards.map((product) => (
             <ProductCard key={product.id} product={product} lang={lang} queryString={queryString} />
           ))}
         </div>
