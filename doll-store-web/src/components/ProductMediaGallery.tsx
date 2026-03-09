@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
@@ -27,6 +27,14 @@ export function ProductMediaGallery({ name, images, videoUrl, lang = "en" }: Pro
   const [zooming, setZooming] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
   const active = mediaItems[activeIndex];
+  const activeImageUrl = active?.type === "image" ? active.url : "";
+
+  useEffect(() => {
+    if (!activeImageUrl) return;
+    const img = new window.Image();
+    img.decoding = "async";
+    img.src = activeImageUrl;
+  }, [activeImageUrl]);
 
   if (!active) return null;
 
@@ -97,7 +105,8 @@ export function ProductMediaGallery({ name, images, videoUrl, lang = "en" }: Pro
           fill
           className="object-cover transition duration-200"
           sizes="(max-width: 1024px) 100vw, 50vw"
-          priority
+          priority={activeIndex === 0}
+          quality={75}
           unoptimized={isPlaceholder || isProxyImage}
         />
         <div className="pointer-events-none absolute bottom-3 right-3 rounded bg-black/65 px-2 py-1 text-xs text-white">
@@ -108,12 +117,25 @@ export function ProductMediaGallery({ name, images, videoUrl, lang = "en" }: Pro
       {zooming && (
         <div
           className="pointer-events-none absolute left-[calc(100%+16px)] top-0 z-50 hidden h-[520px] w-[360px] rounded-lg border border-gray-200 bg-white shadow-2xl lg:block"
-          style={{
-            backgroundImage: `url("${active.url}")`,
-            backgroundSize: "320%",
-            backgroundPosition: `${zoomPos.x}% ${zoomPos.y}%`,
-          }}
-        />
+        >
+          <div className="relative h-full w-full overflow-hidden rounded-lg">
+            <Image
+              src={active.url}
+              alt={`${name} zoom`}
+              fill
+              sizes="360px"
+              quality={85}
+              priority={activeIndex === 0}
+              unoptimized={isPlaceholder || isProxyImage}
+              className="object-cover"
+              style={{
+                objectPosition: `${zoomPos.x}% ${zoomPos.y}%`,
+                transform: "scale(3.2)",
+                transformOrigin: "center",
+              }}
+            />
+          </div>
+        </div>
       )}
 
       {mediaItems.length > 1 && (
@@ -134,6 +156,9 @@ export function ProductMediaGallery({ name, images, videoUrl, lang = "en" }: Pro
                     alt={`${name} preview ${index + 1}`}
                     fill
                     className="object-cover"
+                    sizes="96px"
+                    loading="lazy"
+                    quality={60}
                     unoptimized={item.url.startsWith("https://placehold.co") || item.url.startsWith("/api/image-proxy")}
                   />
                 </div>

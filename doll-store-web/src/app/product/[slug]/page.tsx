@@ -7,6 +7,41 @@ import { resolveRegionContext } from "@/lib/request-context";
 import { ProductMediaGallery } from "@/components/ProductMediaGallery";
 import { getLangFromSearchParams, t } from "@/lib/i18n";
 
+const HIDDEN_SPEC_KEYS = new Set(["source_file"]);
+
+const SPEC_LABELS: Record<string, { en: string; zh: string }> = {
+  supplier: { en: "Supplier", zh: "供应商" },
+  supplier_name: { en: "Supplier Name", zh: "供应商名称" },
+  product_weight: { en: "Weight", zh: "重量" },
+  vaginal_size_cm: { en: "Vaginal Size (cm)", zh: "阴道尺寸（CM）" },
+  anal_size_cm: { en: "Anal Size (cm)", zh: "肛门尺寸（CM）" },
+  product_size: { en: "Product Size", zh: "产品尺寸" },
+  package_size_cm: { en: "Package Size (cm)", zh: "外包装尺寸（CM）" },
+  feature: { en: "Product Features", zh: "产品特点" },
+  supplier_code: { en: "Supplier Code", zh: "供应商编号" },
+  supplier_stock: { en: "Supplier Stock", zh: "供应商库存" },
+  gross_weight: { en: "Gross Weight", zh: "毛重" },
+  package_stats: { en: "Package Stats", zh: "包装信息" },
+  download_link: { en: "Download Link", zh: "下载链接" },
+};
+
+function formatSpecLabel(key: string, lang: "en" | "zh"): string {
+  const dict = SPEC_LABELS[key];
+  if (dict) return dict[lang];
+  if (lang === "zh") return key;
+  return key
+    .split("_")
+    .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+    .join(" ");
+}
+
+function formatSpecValue(value: string, lang: "en" | "zh"): string {
+  if (lang === "en" && ["无", "暂无", "没有", "不支持", "空"].includes(value.trim())) {
+    return "N/A";
+  }
+  return value;
+}
+
 export default async function ProductPage({
   params,
   searchParams,
@@ -30,6 +65,11 @@ export default async function ProductPage({
   const backHref = `/products?lang=${lang}${ctx.debugRegion ? `&debug_region=${ctx.debugRegion}` : ""}${
     ctx.debugAll ? "&debug_all=1" : ""
   }`;
+  const specEntries = Object.entries(product.specs ?? {}).filter(([key, value]) => {
+    if (HIDDEN_SPEC_KEYS.has(key)) return false;
+    if (value == null) return false;
+    return String(value).trim().length > 0;
+  });
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -102,14 +142,15 @@ export default async function ProductPage({
               </ul>
             </div>
           )}
-          {product.specs && Object.keys(product.specs).length > 0 && (
+          {specEntries.length > 0 && (
             <dl className="mt-6 border-t border-gray-200 pt-6">
               <dt className="font-medium text-gray-900">{t(lang, "Specifications", "规格参数")}</dt>
               <dd className="mt-2">
                 <ul className="space-y-1 text-sm text-gray-600">
-                  {Object.entries(product.specs).map(([k, v]) => (
-                    <li key={k}>
-                      <span className="font-medium">{k}:</span> {v}
+                  {specEntries.map(([key, value]) => (
+                    <li key={key}>
+                      <span className="font-medium">{formatSpecLabel(key, lang)}:</span>{" "}
+                      {formatSpecValue(String(value), lang)}
                     </li>
                   ))}
                 </ul>
