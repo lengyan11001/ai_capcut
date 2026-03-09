@@ -28,15 +28,16 @@ export function ProductCard({
   return (
     <Link
       href={href}
-      className="group block overflow-hidden rounded-lg border border-gray-200 bg-white transition hover:border-gray-300 hover:shadow-md"
+      className="group block overflow-hidden rounded-xl border border-white/10 bg-[#12182a] transition hover:border-indigo-400/50 hover:shadow-[0_20px_55px_rgba(0,0,0,0.4)]"
     >
-      <div className="relative aspect-[3/4] bg-gray-100">
+      <div className="relative aspect-[3/4] bg-[#0e1424]">
         <Image
           src={imageUrl}
           alt={product.name}
           fill
-          className="object-cover transition group-hover:scale-[1.02]"
+          className="object-cover transition duration-300 group-hover:scale-[1.035]"
           sizes="(max-width: 768px) 100vw, 33vw"
+          quality={70}
           unoptimized={isPlaceholder || isProxyImage}
         />
         {product.compareAtPrice != null && product.compareAtPrice > product.price && (
@@ -46,26 +47,26 @@ export function ProductCard({
         )}
       </div>
       <div className="p-4">
-        <h3 className="font-medium text-gray-900 group-hover:text-gray-700">
+        <h3 className="font-medium text-gray-100 group-hover:text-white">
           {product.name}
         </h3>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-gray-400">
           {product.material} ·{" "}
           {product.sourceType === "origin"
             ? t(lang, "Origin supply", "产地供应")
             : t(lang, "Warehouse supply", "海外仓供应")}
         </p>
         <div className="mt-2 flex items-center gap-2">
-          <span className="font-semibold text-gray-900">
+          <span className="font-semibold text-white">
             {formatMoney(displayPrice, displayCurrency)}
           </span>
           {product.compareAtPrice != null && product.compareAtPrice > displayPrice && (
-            <span className="text-sm text-gray-400 line-through">
+            <span className="text-sm text-gray-500 line-through">
               {formatMoney(product.compareAtPrice, displayCurrency)}
             </span>
           )}
         </div>
-        <p className="mt-1 text-xs text-gray-500">
+        <p className="mt-1 text-xs text-gray-400">
           {shippingText}
         </p>
       </div>

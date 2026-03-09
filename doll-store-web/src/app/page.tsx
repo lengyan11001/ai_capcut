@@ -28,18 +28,21 @@ export default async function HomePage({
   const proofs = getShippingProofs().slice(0, 3);
 
   return (
-    <div>
+    <div className="text-gray-100">
       {/* Hero：占位图来自 Unsplash，上线前请替换为自有或供应商授权素材 */}
-      <section className="relative py-16 md:py-24">
+      <section className="relative overflow-hidden py-20 md:py-28">
         <div className="absolute inset-0 -z-10">
           <Image src={HERO_IMAGE} alt="" fill className="object-cover" priority sizes="100vw" />
-          <div className="absolute inset-0 bg-black/40" />
+          <div className="absolute inset-0 bg-black/60" />
         </div>
         <div className="mx-auto max-w-6xl px-4 text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-white drop-shadow md:text-4xl">
+          <p className="text-xs uppercase tracking-[0.22em] text-indigo-200/90">
+            {t(lang, "Premium Visual Collection", "高质视觉精选")}
+          </p>
+          <h1 className="mt-4 text-3xl font-bold tracking-tight text-white drop-shadow md:text-5xl">
             {t(lang, "Premium Collectibles", "高端收藏级产品")}
           </h1>
-          <p className="mt-4 text-lg text-white/90 drop-shadow">
+          <p className="mx-auto mt-4 max-w-2xl text-lg text-white/90 drop-shadow">
             {t(
               lang,
               "Full body dolls and accessories. Discreet packaging, worldwide delivery.",
@@ -48,7 +51,7 @@ export default async function HomePage({
           </p>
           <Link
             href={`/guides?${queryString}`}
-            className="mt-6 inline-block rounded bg-white px-6 py-3 font-medium text-gray-900 hover:bg-gray-100"
+            className="mt-8 inline-block rounded-full bg-white px-7 py-3 font-medium text-gray-900 hover:bg-gray-100"
           >
             {t(lang, "Start with Guides", "先看选购指南")}
           </Link>
@@ -57,18 +60,18 @@ export default async function HomePage({
       </section>
 
       <section className="mx-auto max-w-6xl px-4 py-12">
-        <div className="rounded-2xl border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6 md:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+        <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#171d31] to-[#111727] p-6 md:p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-200/90">
             {t(lang, "Brand Story", "品牌故事")}
           </p>
-          <h2 className="mt-2 text-2xl font-semibold text-gray-900">
+          <h2 className="mt-2 text-2xl font-semibold text-white">
             {t(
               lang,
               "Designed for trust, privacy, and transparent delivery.",
               "以信任、隐私与透明履约为核心打造。"
             )}
           </h2>
-          <p className="mt-3 max-w-3xl text-sm text-gray-600">
+          <p className="mt-3 max-w-3xl text-sm text-gray-300">
             {t(
               lang,
               "We prioritize premium visual assets, discreet packaging, and visible fulfillment updates. Every featured product is curated to match our quality baseline before publication.",
@@ -81,8 +84,8 @@ export default async function HomePage({
       <section className="mx-auto max-w-6xl px-4 py-12">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">{t(lang, "Guides First", "内容先行")}</h2>
-            <p className="mt-1 text-sm text-gray-600">
+            <h2 className="text-xl font-semibold text-white">{t(lang, "Guides First", "内容先行")}</h2>
+            <p className="mt-1 text-sm text-gray-300">
               {t(
                 lang,
                 "Learn materials, use scenarios, and maintenance before choosing products.",
@@ -90,7 +93,7 @@ export default async function HomePage({
               )}
             </p>
           </div>
-          <Link href={`/guides?${queryString}`} className="text-sm text-gray-700 underline hover:text-gray-900">
+          <Link href={`/guides?${queryString}`} className="text-sm text-indigo-200 underline hover:text-indigo-100">
             {t(lang, "View all guides", "查看全部指南")}
           </Link>
         </div>
@@ -99,13 +102,13 @@ export default async function HomePage({
             <Link
               key={guide.id}
               href={`/guides/${guide.slug}?${queryString}`}
-              className="rounded-lg border border-gray-200 bg-white p-5 hover:border-gray-300 hover:shadow-sm"
+              className="rounded-lg border border-white/10 bg-[#12182a] p-5 hover:border-indigo-300/40 hover:shadow-[0_16px_45px_rgba(0,0,0,0.35)]"
             >
-              <p className="text-xs uppercase tracking-wide text-gray-500">
+              <p className="text-xs uppercase tracking-wide text-gray-400">
                 {guide.category} · {guide.readMinutes} min
               </p>
-              <h3 className="mt-2 font-semibold text-gray-900">{guide.title}</h3>
-              <p className="mt-2 text-sm text-gray-600">{guide.excerpt}</p>
+              <h3 className="mt-2 font-semibold text-gray-100">{guide.title}</h3>
+              <p className="mt-2 text-sm text-gray-300">{guide.excerpt}</p>
             </Link>
           ))}
         </div>
@@ -113,17 +116,17 @@ export default async function HomePage({
 
       {/* Category cards */}
       <section className="mx-auto max-w-6xl px-4 py-12">
-        <h2 className="text-xl font-semibold text-gray-900">{t(lang, "Shop by Category", "按品类选购")}</h2>
+        <h2 className="text-xl font-semibold text-white">{t(lang, "Shop by Category", "按品类选购")}</h2>
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {categories.map((cat) => (
             <Link
               key={cat.id}
               href={`/category/${cat.slug}?${queryString}`}
-              className="rounded-lg border border-gray-200 bg-white p-6 text-center transition hover:border-gray-300 hover:shadow"
+              className="rounded-xl border border-white/10 bg-[#12182a] p-6 text-center transition hover:border-indigo-300/40 hover:shadow-[0_16px_45px_rgba(0,0,0,0.35)]"
             >
-              <h3 className="font-medium text-gray-900">{cat.name}</h3>
+              <h3 className="font-medium text-gray-100">{cat.name}</h3>
               {cat.description && (
-                <p className="mt-2 text-sm text-gray-500">{cat.description}</p>
+                <p className="mt-2 text-sm text-gray-400">{cat.description}</p>
               )}
             </Link>
           ))}
@@ -132,7 +135,7 @@ export default async function HomePage({
 
       {/* Featured products */}
       <section className="mx-auto max-w-6xl px-4 py-12">
-        <h2 className="text-xl font-semibold text-gray-900">{t(lang, "Featured", "精选推荐")}</h2>
+        <h2 className="text-xl font-semibold text-white">{t(lang, "Featured", "精选推荐")}</h2>
         <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {featured.map((product) => (
             <ProductCard key={product.id} product={product} lang={lang} queryString={queryString} />
@@ -141,7 +144,7 @@ export default async function HomePage({
         <div className="mt-8 text-center">
           <Link
             href={`/products?${queryString}`}
-            className="text-gray-600 underline hover:text-gray-900"
+            className="text-indigo-200 underline hover:text-indigo-100"
           >
             {t(lang, "View all products", "查看全部商品")}
           </Link>
@@ -151,8 +154,8 @@ export default async function HomePage({
       <section className="mx-auto max-w-6xl px-4 py-12">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">{t(lang, "Shipping Proof", "发货实拍")}</h2>
-            <p className="mt-1 text-sm text-gray-600">
+            <h2 className="text-xl font-semibold text-white">{t(lang, "Shipping Proof", "发货实拍")}</h2>
+            <p className="mt-1 text-sm text-gray-300">
               {t(
                 lang,
                 "From warehouse packing to courier handover, review recent public fulfillment evidence.",
@@ -160,19 +163,19 @@ export default async function HomePage({
               )}
             </p>
           </div>
-          <Link href={`/shipping-proof?${queryString}`} className="text-sm text-gray-700 underline hover:text-gray-900">
+          <Link href={`/shipping-proof?${queryString}`} className="text-sm text-indigo-200 underline hover:text-indigo-100">
             {t(lang, "View all shipping proofs", "查看全部发货实拍")}
           </Link>
         </div>
         <div className="mt-6 grid gap-5 md:grid-cols-3">
           {proofs.map((proof) => (
-            <article key={proof.id} className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-              <div className="relative h-44 w-full bg-gray-100">
+            <article key={proof.id} className="overflow-hidden rounded-xl border border-white/10 bg-[#12182a]">
+              <div className="relative h-44 w-full bg-[#0e1424]">
                 <Image src={proof.image} alt={proof.title} fill className="object-cover" unoptimized />
               </div>
               <div className="p-4">
-                <h3 className="font-medium text-gray-900">{proof.title}</h3>
-                <p className="mt-1 text-xs text-gray-500">
+                <h3 className="font-medium text-gray-100">{proof.title}</h3>
+                <p className="mt-1 text-xs text-gray-400">
                   {proof.carrier ?? "-"} · {proof.route ?? "-"}
                 </p>
               </div>
@@ -182,12 +185,12 @@ export default async function HomePage({
       </section>
 
       {/* Trust bar */}
-      <section className="border-t border-gray-200 bg-gray-50 py-10">
+      <section className="border-t border-white/10 bg-[#0a1020] py-10">
         <div className="mx-auto max-w-6xl px-4">
           <div className="grid gap-8 text-center sm:grid-cols-3">
             <div>
-              <h3 className="font-semibold text-gray-900">{t(lang, "Discreet Packaging", "隐私包装")}</h3>
-              <p className="mt-1 text-sm text-gray-600">
+              <h3 className="font-semibold text-gray-100">{t(lang, "Discreet Packaging", "隐私包装")}</h3>
+              <p className="mt-1 text-sm text-gray-400">
                 {t(
                   lang,
                   "Plain packaging, no sensitive labels. Your privacy is our priority.",
@@ -196,8 +199,8 @@ export default async function HomePage({
               </p>
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">{t(lang, "Secure Checkout", "安全下单")}</h3>
-              <p className="mt-1 text-sm text-gray-600">
+              <h3 className="font-semibold text-gray-100">{t(lang, "Secure Checkout", "安全下单")}</h3>
+              <p className="mt-1 text-sm text-gray-400">
                 {t(
                   lang,
                   "We’ll contact you for secure payment after order confirmation.",
@@ -206,8 +209,8 @@ export default async function HomePage({
               </p>
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">{t(lang, "Support", "客服支持")}</h3>
-              <p className="mt-1 text-sm text-gray-600">
+              <h3 className="font-semibold text-gray-100">{t(lang, "Support", "客服支持")}</h3>
+              <p className="mt-1 text-sm text-gray-400">
                 {t(
                   lang,
                   "Questions? Contact us anytime. Returns policy available.",
