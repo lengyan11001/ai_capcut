@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { normalizeLang, t } from "@/lib/i18n";
+import { trackEvent } from "@/lib/analytics";
 
 function buildWhatsappUrl(input?: string) {
   if (!input) return "";
@@ -18,6 +19,13 @@ function buildTelegramUrl(input?: string) {
   return clean ? `https://t.me/${clean}` : "";
 }
 
+function buildInstagramUrl(input?: string) {
+  if (!input) return "";
+  if (input.startsWith("http://") || input.startsWith("https://")) return input;
+  const clean = input.replace(/^@/, "");
+  return clean ? `https://instagram.com/${clean}` : "";
+}
+
 export function SupportWidget() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -26,6 +34,7 @@ export function SupportWidget() {
 
   const whatsapp = buildWhatsappUrl(process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP);
   const telegram = buildTelegramUrl(process.env.NEXT_PUBLIC_SUPPORT_TELEGRAM);
+  const instagram = buildInstagramUrl(process.env.NEXT_PUBLIC_SUPPORT_INSTAGRAM);
   const email = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "";
   const emailHref = email ? `mailto:${email}` : "";
 
@@ -34,9 +43,10 @@ export function SupportWidget() {
       [
         whatsapp ? { key: "wa", label: "WhatsApp", href: whatsapp } : null,
         telegram ? { key: "tg", label: "Telegram", href: telegram } : null,
+        instagram ? { key: "ig", label: "Instagram", href: instagram } : null,
         emailHref ? { key: "mail", label: "Email", href: emailHref } : null,
       ].filter(Boolean) as Array<{ key: string; label: string; href: string }>,
-    [whatsapp, telegram, emailHref]
+    [whatsapp, telegram, instagram, emailHref]
   );
 
   if (pathname?.startsWith("/admin")) return null;
@@ -55,6 +65,7 @@ export function SupportWidget() {
                 target={link.href.startsWith("mailto:") ? undefined : "_blank"}
                 rel={link.href.startsWith("mailto:") ? undefined : "noreferrer"}
                 className="block rounded border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => trackEvent("click_private_domain_channel", { channel: link.key })}
               >
                 {link.label}
               </a>

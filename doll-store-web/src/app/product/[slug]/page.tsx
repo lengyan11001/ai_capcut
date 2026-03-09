@@ -66,6 +66,18 @@ export default async function ProductPage({
               {product.shippingNotice ?? shippingText}
             </p>
           )}
+          <div className="mt-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+            <p>
+              {t(
+                lang,
+                "See public packing and shipping evidence before ordering.",
+                "下单前可先查看公开打包与发货实拍。"
+              )}{" "}
+              <Link href={`/shipping-proof?lang=${lang}`} className="underline">
+                {t(lang, "Open shipping proof", "查看发货实拍")}
+              </Link>
+            </p>
+          </div>
           <div className="mt-6">
             <AddToCartButton
               productId={product.id}

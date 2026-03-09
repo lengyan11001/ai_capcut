@@ -5,6 +5,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { getGuides } from "@/lib/guides";
 import { resolveRegionContext } from "@/lib/request-context";
 import { getLangFromSearchParams, t } from "@/lib/i18n";
+import { getShippingProofs } from "@/lib/shipping-proof";
 
 const HERO_IMAGE = "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1200&q=80";
 
@@ -24,6 +25,7 @@ export default async function HomePage({
   const categories = getCategories();
   const featured = await getFeaturedProducts({ region: ctx.region, debugAll: ctx.debugAll });
   const guides = getGuides().slice(0, 3);
+  const proofs = getShippingProofs().slice(0, 3);
 
   return (
     <div>
@@ -51,6 +53,28 @@ export default async function HomePage({
             {t(lang, "Start with Guides", "先看选购指南")}
           </Link>
           <p className="mt-3 text-xs text-white/80">{t(lang, "Current region view:", "当前地区视图:")} {ctx.region}</p>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-4 py-12">
+        <div className="rounded-2xl border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6 md:p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+            {t(lang, "Brand Story", "品牌故事")}
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold text-gray-900">
+            {t(
+              lang,
+              "Designed for trust, privacy, and transparent delivery.",
+              "以信任、隐私与透明履约为核心打造。"
+            )}
+          </h2>
+          <p className="mt-3 max-w-3xl text-sm text-gray-600">
+            {t(
+              lang,
+              "We prioritize premium visual assets, discreet packaging, and visible fulfillment updates. Every featured product is curated to match our quality baseline before publication.",
+              "我们优先使用高品质视觉素材、隐私包装与可视化发货进度。所有精选商品都经过质量基线审核后才公开展示。"
+            )}
+          </p>
         </div>
       </section>
 
@@ -94,7 +118,7 @@ export default async function HomePage({
           {categories.map((cat) => (
             <Link
               key={cat.id}
-              href={`/category/${cat.slug}`}
+              href={`/category/${cat.slug}?${queryString}`}
               className="rounded-lg border border-gray-200 bg-white p-6 text-center transition hover:border-gray-300 hover:shadow"
             >
               <h3 className="font-medium text-gray-900">{cat.name}</h3>
@@ -121,6 +145,39 @@ export default async function HomePage({
           >
             {t(lang, "View all products", "查看全部商品")}
           </Link>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-4 py-12">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">{t(lang, "Shipping Proof", "发货实拍")}</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              {t(
+                lang,
+                "From warehouse packing to courier handover, review recent public fulfillment evidence.",
+                "从仓库打包到交运节点，公开查看最新履约实拍证据。"
+              )}
+            </p>
+          </div>
+          <Link href={`/shipping-proof?${queryString}`} className="text-sm text-gray-700 underline hover:text-gray-900">
+            {t(lang, "View all shipping proofs", "查看全部发货实拍")}
+          </Link>
+        </div>
+        <div className="mt-6 grid gap-5 md:grid-cols-3">
+          {proofs.map((proof) => (
+            <article key={proof.id} className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+              <div className="relative h-44 w-full bg-gray-100">
+                <Image src={proof.image} alt={proof.title} fill className="object-cover" unoptimized />
+              </div>
+              <div className="p-4">
+                <h3 className="font-medium text-gray-900">{proof.title}</h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  {proof.carrier ?? "-"} · {proof.route ?? "-"}
+                </p>
+              </div>
+            </article>
+          ))}
         </div>
       </section>
 

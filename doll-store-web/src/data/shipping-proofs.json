@@ -1,0 +1,32 @@
+[
+  {
+    "id": "proof-1",
+    "title": "Warehouse packing confirmation",
+    "summary": "Real packing snapshot with discreet outer box and protected inner structure.",
+    "image": "https://placehold.co/1200x800?text=Packing+Proof+1",
+    "videoUrl": "",
+    "carrier": "UPS",
+    "route": "US Local Warehouse",
+    "eventTime": "2026-03-08T10:20:00.000Z"
+  },
+  {
+    "id": "proof-2",
+    "title": "Handover to courier",
+    "summary": "Outbound handover process captured by warehouse team before final pickup.",
+    "image": "https://placehold.co/1200x800?text=Packing+Proof+2",
+    "videoUrl": "",
+    "carrier": "FedEx",
+    "route": "Origin -> North America",
+    "eventTime": "2026-03-07T14:40:00.000Z"
+  },
+  {
+    "id": "proof-3",
+    "title": "Final-mile ready",
+    "summary": "Label verification and final shipment check before leaving warehouse.",
+    "image": "https://placehold.co/1200x800?text=Packing+Proof+3",
+    "videoUrl": "",
+    "carrier": "USPS",
+    "route": "US Domestic",
+    "eventTime": "2026-03-06T09:15:00.000Z"
+  }
+]

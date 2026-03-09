@@ -55,6 +55,10 @@ export async function POST(request: NextRequest) {
       trackingNumber: orderItems.fulfillment?.trackingNumber ?? null,
       trackingUrl: orderItems.fulfillment?.trackingUrl ?? null,
       shippingCarrier: orderItems.fulfillment?.carrier ?? null,
+      proofImages: orderItems.fulfillment?.proofImages ?? [],
+      proofVideos: orderItems.fulfillment?.proofVideos ?? [],
+      shippedAt: orderItems.fulfillment?.shippedAt ?? null,
+      deliveredAt: orderItems.fulfillment?.deliveredAt ?? null,
     };
   });
 

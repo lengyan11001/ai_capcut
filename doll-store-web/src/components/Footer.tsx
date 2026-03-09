@@ -83,6 +83,11 @@ export function Footer() {
                   {t(lang, "Contact", "联系我们")}
                 </Link>
               </li>
+              <li>
+                <Link href={withLang("/shipping-proof")} className="text-gray-600 hover:text-gray-900">
+                  {t(lang, "Shipping Proof", "发货实拍")}
+                </Link>
+              </li>
             </ul>
           </div>
           <div>

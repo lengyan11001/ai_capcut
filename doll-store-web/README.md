@@ -17,9 +17,12 @@
   - `/admin/orders` 订单列表（支付方式、状态、物流号）
   - `/admin/orders/[id]` 订单详情编辑（状态、物流、tx hash、内部备注）
   - `/orders` 用户查单页（按下单邮箱查询订单状态与物流）
+- 发货实拍中心：`/shipping-proof` 公开展示打包/交运证据
 - 商品详情媒体区：缩略图切换 + 图片悬停放大预览（视频仅播放不放大）
 - 多语言切换：右上角支持 `EN / 中文`（通过 `lang` URL 参数切换）
 - 全局咨询入口：右下角浮动客服按钮（WhatsApp / Telegram / Email）
+- 合规控制：18+ 年龄门槛、大陆访问 403（支持 access_key 白名单放行）
+- 数据统计：GA4 + Clarity（经 Cookie 同意后加载）
 - 静态页：About、Shipping & Delivery、Privacy Policy、Contact
 
 支付：当前默认为「提交订单」后由站长联系客户完成支付，并支持可选「加密货币人工转账」入口（下单后在感谢页展示钱包信息）。真实自动收款可后续对接成人友好通道（如 CCBill、Epoch），参见仓库根目录下 `docs/doll-store/` 下的《Shopify从零到上线步骤》或《自建服务器独立站从零到上线》中的支付章节。
@@ -55,7 +58,25 @@ npm run dev
 
 - `NEXT_PUBLIC_SUPPORT_WHATSAPP`：支持手机号（可填纯数字或完整 `https://wa.me/...`）
 - `NEXT_PUBLIC_SUPPORT_TELEGRAM`：支持 `@handle` 或完整 `https://t.me/...`
+- `NEXT_PUBLIC_SUPPORT_INSTAGRAM`：支持 `@handle` 或完整 `https://instagram.com/...`
 - `NEXT_PUBLIC_SUPPORT_EMAIL`：客服邮箱（会渲染为 `mailto:`）
+
+### 统计与同意弹窗
+
+- `NEXT_PUBLIC_GA4_ID`：Google Analytics 4 Measurement ID（如 `G-XXXX`）
+- `NEXT_PUBLIC_CLARITY_ID`：Microsoft Clarity 项目 ID
+- 页面底部同意弹窗选择“同意”后才会加载统计脚本
+
+### 区域访问与年龄限制
+
+- `BLOCK_MAINLAND_CN=true`：启用中国大陆 IP 拦截（403）
+- `ACCESS_BYPASS_KEY=...`：你本人放行密钥（URL `?access_key=...`）
+- `NEXT_PUBLIC_ENABLE_AGE_GATE=true`：启用 18+ 年龄确认弹窗
+
+### 供应商优先展示（新供应商优先）
+
+- `NEXT_PUBLIC_CORE_SUPPLIERS=mxj`：前台仅展示核心供应商（可多值逗号分隔）
+- `NEXT_PUBLIC_ENABLE_CORE_SUPPLIER_FILTER=true`：开启核心供应商过滤
 
 ### Supabase 订单表
 
@@ -171,6 +192,7 @@ npm run migrate:supplier-assets
    - 加密支付 tx hash、到账金额
    - 内部备注
 3. 前台用户可在 `/orders` 输入下单邮箱（可选订单号）查询订单状态与物流信息
+4. 后台订单支持维护“打包实拍图片 URL / 仓库视频 URL”，前台查单页会同步展示
 
 ## 项目结构
 

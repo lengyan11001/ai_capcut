@@ -14,6 +14,8 @@ export type OrderFulfillmentMeta = {
   carrier?: string;
   trackingNumber?: string;
   trackingUrl?: string;
+  proofImages?: string[];
+  proofVideos?: string[];
   shippedAt?: string;
   deliveredAt?: string;
 };

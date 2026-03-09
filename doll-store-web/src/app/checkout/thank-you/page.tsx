@@ -13,6 +13,8 @@ export default async function ThankYouPage({
   const cryptoAddress = process.env.CRYPTO_PAY_ADDRESS;
   const cryptoNetwork = process.env.CRYPTO_PAY_NETWORK ?? "TRON (TRC20)";
   const cryptoCoin = process.env.CRYPTO_PAY_COIN ?? "USDT";
+  const supportWhatsapp = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP;
+  const supportTelegram = process.env.NEXT_PUBLIC_SUPPORT_TELEGRAM;
   const productsHref = `/products?lang=${lang}`;
 
   return (
@@ -59,6 +61,40 @@ export default async function ThankYouPage({
               )}
             </p>
           )}
+        </div>
+      )}
+      {(supportWhatsapp || supportTelegram) && (
+        <div className="mx-auto mt-6 max-w-xl rounded-lg border border-gray-200 bg-gray-50 p-4 text-left">
+          <p className="text-sm font-medium text-gray-900">{t(lang, "Private support channel", "私域客服通道")}</p>
+          <p className="mt-1 text-sm text-gray-600">
+            {t(
+              lang,
+              "Share your order reference for faster confirmation and shipping follow-up.",
+              "发送订单编号可更快完成支付确认和发货跟进。"
+            )}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {supportWhatsapp ? (
+              <a
+                href={supportWhatsapp.startsWith("http") ? supportWhatsapp : `https://wa.me/${supportWhatsapp}`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700"
+              >
+                WhatsApp
+              </a>
+            ) : null}
+            {supportTelegram ? (
+              <a
+                href={supportTelegram.startsWith("http") ? supportTelegram : `https://t.me/${supportTelegram.replace(/^@/, "")}`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700"
+              >
+                Telegram
+              </a>
+            ) : null}
+          </div>
         </div>
       )}
       <Link

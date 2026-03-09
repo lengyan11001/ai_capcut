@@ -6,6 +6,11 @@ import { unstable_cache } from "next/cache";
 
 const categories = categoriesData as Category[];
 const IMAGE_PROXY_PREFIX = "http://47.107.244.246:3000/uploads/";
+const CORE_SUPPLIERS = (process.env.NEXT_PUBLIC_CORE_SUPPLIERS ?? "mxj")
+  .split(",")
+  .map((v) => v.trim().toLowerCase())
+  .filter(Boolean);
+const ENABLE_CORE_SUPPLIER_FILTER = process.env.NEXT_PUBLIC_ENABLE_CORE_SUPPLIER_FILTER !== "false";
 
 function normalizeImageUrl(url: string): string {
   if (url.startsWith(IMAGE_PROXY_PREFIX)) {
@@ -58,6 +63,18 @@ function canShowByRegion(product: Product, region: RegionCode): boolean {
   if (product.sourceType === "overseas_us") return region === "US";
   if (product.sourceType === "overseas_eu") return region === "EU";
   return true;
+}
+
+function getSupplierKey(product: Product): string {
+  const raw = product.specs?.supplier;
+  return typeof raw === "string" ? raw.toLowerCase() : "";
+}
+
+function canShowBySupplier(product: Product): boolean {
+  if (!ENABLE_CORE_SUPPLIER_FILTER) return true;
+  if (CORE_SUPPLIERS.length === 0) return true;
+  const supplier = getSupplierKey(product);
+  return CORE_SUPPLIERS.includes(supplier);
 }
 
 type DbProductRow = {
@@ -146,7 +163,7 @@ export async function getProducts(
   const products = await loadProductsCached();
   const base = options?.debugAll
     ? products
-    : products.filter((p) => canShowByRegion(p, options?.region ?? "ROW"));
+    : products.filter((p) => canShowByRegion(p, options?.region ?? "ROW") && canShowBySupplier(p));
   const publishedOnly = base.filter((p) => (p.assetStatus ?? "published") === "published");
 
   if (!categorySlug) return publishedOnly;

@@ -11,6 +11,8 @@ type Props = {
   initialAdminNote: string;
   initialTxHash: string;
   initialPaidAmount: string;
+  initialProofImages: string[];
+  initialProofVideos: string[];
 };
 
 const STATUS_OPTIONS = [
@@ -36,6 +38,8 @@ export default function OrderEditorForm({
   initialAdminNote,
   initialTxHash,
   initialPaidAmount,
+  initialProofImages,
+  initialProofVideos,
 }: Props) {
   const [status, setStatus] = useState(initialStatus || "pending");
   const [shippingCarrier, setShippingCarrier] = useState(initialCarrier);
@@ -44,6 +48,8 @@ export default function OrderEditorForm({
   const [adminNote, setAdminNote] = useState(initialAdminNote);
   const [payTxHash, setPayTxHash] = useState(initialTxHash);
   const [paidAmount, setPaidAmount] = useState(initialPaidAmount);
+  const [proofImages, setProofImages] = useState((initialProofImages ?? []).join("\n"));
+  const [proofVideos, setProofVideos] = useState((initialProofVideos ?? []).join("\n"));
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -60,6 +66,14 @@ export default function OrderEditorForm({
         adminNote,
         payTxHash,
         paidAmount: paidAmount ? Number(paidAmount) : undefined,
+        proofImages: proofImages
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        proofVideos: proofVideos
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean),
       };
       const res = await fetch(`/api/admin/orders/${id}`, {
         method: "PATCH",
@@ -154,6 +168,27 @@ export default function OrderEditorForm({
           className="mt-1 min-h-24 w-full rounded border border-gray-300 px-3 py-2"
           placeholder="Internal notes only"
         />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Proof images (one URL per line)</label>
+          <textarea
+            value={proofImages}
+            onChange={(e) => setProofImages(e.target.value)}
+            className="mt-1 min-h-24 w-full rounded border border-gray-300 px-3 py-2"
+            placeholder="https://..."
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Proof videos (one URL per line)</label>
+          <textarea
+            value={proofVideos}
+            onChange={(e) => setProofVideos(e.target.value)}
+            className="mt-1 min-h-24 w-full rounded border border-gray-300 px-3 py-2"
+            placeholder="https://..."
+          />
+        </div>
       </div>
 
       <div className="flex items-center gap-3">

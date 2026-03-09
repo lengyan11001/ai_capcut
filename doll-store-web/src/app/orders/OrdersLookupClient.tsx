@@ -14,6 +14,10 @@ type LookupOrder = {
   trackingNumber: string | null;
   trackingUrl: string | null;
   shippingCarrier: string | null;
+  proofImages: string[];
+  proofVideos: string[];
+  shippedAt: string | null;
+  deliveredAt: string | null;
 };
 
 export default function OrdersLookupClient({ lang }: { lang: Lang }) {
@@ -116,6 +120,11 @@ export default function OrdersLookupClient({ lang }: { lang: Lang }) {
               <p className="mt-1 text-sm text-gray-700">
                 {t(lang, "Tracking:", "物流单号:")} {order.trackingNumber ?? t(lang, "Not shipped yet", "暂未发货")}
               </p>
+              {order.shippedAt ? (
+                <p className="text-sm text-gray-700">
+                  {t(lang, "Shipped at:", "发货时间:")} {new Date(order.shippedAt).toLocaleString()}
+                </p>
+              ) : null}
               {order.trackingUrl ? (
                 <a
                   href={order.trackingUrl}
@@ -125,6 +134,36 @@ export default function OrdersLookupClient({ lang }: { lang: Lang }) {
                 >
                   {t(lang, "Open tracking link", "打开物流链接")}
                 </a>
+              ) : null}
+              {order.proofImages?.length ? (
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  {order.proofImages.slice(0, 6).map((url) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded border border-gray-200 bg-white p-1 text-[11px] text-gray-600 hover:bg-gray-50"
+                    >
+                      {t(lang, "Packing photo", "打包实拍")}
+                    </a>
+                  ))}
+                </div>
+              ) : null}
+              {order.proofVideos?.length ? (
+                <div className="mt-2 space-y-1">
+                  {order.proofVideos.slice(0, 3).map((url) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block text-sm text-gray-700 underline"
+                    >
+                      {t(lang, "View warehouse video", "查看仓库视频")}
+                    </a>
+                  ))}
+                </div>
               ) : null}
             </div>
           ))

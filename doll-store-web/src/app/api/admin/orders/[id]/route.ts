@@ -11,6 +11,8 @@ type AdminOrderPatchPayload = {
   adminNote?: string;
   payTxHash?: string;
   paidAmount?: number;
+  proofImages?: string[];
+  proofVideos?: string[];
   markPaid?: boolean;
   markShipped?: boolean;
   markDelivered?: boolean;
@@ -80,6 +82,8 @@ export async function PATCH(
       ...(payload.shippingCarrier !== undefined ? { carrier: payload.shippingCarrier } : {}),
       ...(payload.trackingNumber !== undefined ? { trackingNumber: payload.trackingNumber } : {}),
       ...(payload.trackingUrl !== undefined ? { trackingUrl: payload.trackingUrl } : {}),
+      ...(payload.proofImages !== undefined ? { proofImages: payload.proofImages } : {}),
+      ...(payload.proofVideos !== undefined ? { proofVideos: payload.proofVideos } : {}),
       ...(payload.markShipped ? { shippedAt: now } : {}),
       ...(payload.markDelivered ? { deliveredAt: now } : {}),
     },

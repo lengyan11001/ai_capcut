@@ -46,6 +46,9 @@ export function Header() {
           <Link href={buildHref("/orders")} prefetch className="text-sm text-gray-600 hover:text-gray-900">
             {t(lang, "Track order", "订单查询")}
           </Link>
+          <Link href={buildHref("/shipping-proof")} prefetch className="text-sm text-gray-600 hover:text-gray-900">
+            {t(lang, "Shipping Proof", "发货实拍")}
+          </Link>
           <Link
             href={buildHref("/cart")}
             prefetch
@@ -126,6 +129,14 @@ export function Header() {
             onClick={() => setOpen(false)}
           >
             {t(lang, "Track order", "订单查询")}
+          </Link>
+          <Link
+            href={buildHref("/shipping-proof")}
+            prefetch
+            className="block py-2 text-gray-600"
+            onClick={() => setOpen(false)}
+          >
+            {t(lang, "Shipping Proof", "发货实拍")}
           </Link>
           <div className="mt-2 flex items-center gap-3 text-sm">
             <Link href={langSwitchHref("en")} className={lang === "en" ? "font-semibold text-gray-900" : "text-gray-500"}>

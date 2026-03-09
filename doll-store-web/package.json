@@ -10,13 +10,15 @@
     "import:products": "node --env-file=.env scripts/import-products-to-supabase.mjs",
     "migrate:supplier-assets": "node --env-file=.env scripts/migrate-supplier-assets-to-storage.mjs",
     "import:us-stock": "node --env-file=.env scripts/import-us-instock-from-supplier.mjs",
-    "normalize:us-copy": "node --env-file=.env scripts/normalize-us-copy-to-english.mjs"
+    "normalize:us-copy": "node --env-file=.env scripts/normalize-us-copy-to-english.mjs",
+    "import:mxj": "node --env-file=.env scripts/import-mxj-selection.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -109,6 +109,8 @@ export default async function AdminOrderDetailPage({
           initialAdminNote={details.notes?.admin ?? ""}
           initialTxHash={details.payment?.txHash ?? ""}
           initialPaidAmount={details.payment?.paidAmount?.toString() ?? ""}
+          initialProofImages={details.fulfillment?.proofImages ?? []}
+          initialProofVideos={details.fulfillment?.proofVideos ?? []}
         />
       </div>
 

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { formatMoney } from "@/lib/money";
 import { isCountrySupported } from "@/lib/shipping";
 import { normalizeLang, t, type Lang } from "@/lib/i18n";
+import { trackEvent } from "@/lib/analytics";
 
 export default function CheckoutPage() {
   const { items, subtotal, clearCart } = useCart();
@@ -44,6 +45,11 @@ export default function CheckoutPage() {
       return;
     }
     setLoading(true);
+    trackEvent("submit_order_attempt", {
+      payment_method: paymentMethod,
+      value: subtotal,
+      currency: summaryCurrency,
+    });
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
@@ -60,6 +66,11 @@ export default function CheckoutPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? t(lang, "Order failed", "订单提交失败"));
       clearCart();
+      trackEvent("submit_order_success", {
+        payment_method: paymentMethod,
+        value: subtotal,
+        currency: summaryCurrency,
+      });
       router.push(
         `/checkout/thank-you?orderId=${data.orderId ?? ""}&lang=${lang}&paymentMethod=${paymentMethod}`
       );
@@ -74,9 +85,13 @@ export default function CheckoutPage() {
     const timer = setTimeout(() => {
       setMounted(true);
       setLang(normalizeLang(new URLSearchParams(window.location.search).get("lang")));
+      trackEvent("begin_checkout", {
+        value: subtotal,
+        currency: summaryCurrency,
+      });
     }, 0);
     return () => clearTimeout(timer);
-  }, []);
+  }, [subtotal, summaryCurrency]);
   const withLang = (path: string) => `${path}?lang=${lang}`;
 
   if (!mounted) {
