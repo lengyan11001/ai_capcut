@@ -114,6 +114,8 @@
         var title = '计划#' + (r.plan_id || '-') + ' ' + (r.device_label || ('设备#' + (r.device_id || '-'))) + platTag;
         var createdStr = r.plan_created_at ? new Date(r.plan_created_at).toLocaleString() : (r.created_at ? new Date(r.created_at).toLocaleString() : '-');
         var m = r.metrics || {};
+        // 关联养号绑定的健康状态与风险分，方便快速判断该设备/账号是否被风控暂停。
+        var binding = (nurtureBindingsCache || []).find(function(b) { return b.id === r.binding_id; });
         var sourceTag = '';
         if (r.plan_status === 'generating') {
           var stageLabel = r.plan_gen_stage || '准备中';
@@ -141,9 +143,20 @@
             evalTag = ' <span style="background:' + scClr + ';color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;cursor:pointer;" class="eval-score-tag" data-plan-id="' + r.plan_id + '">AI评分:' + Math.round(sc) + ' (' + evalRounds.length + '轮)</span>';
           }
         }
+        var bindMeta = '';
+        if (binding) {
+          var ns = (binding.status || '-');
+          var ah = (binding.account_health || '-');
+          var rs = (binding.risk_score != null ? binding.risk_score : '-');
+          var na = binding.next_action_at ? (function() {
+            try { return new Date(binding.next_action_at).toLocaleString(); } catch(e) { return binding.next_action_at; }
+          })() : '';
+          bindMeta = ' · 绑定:' + ns + '/' + ah + ' · risk:' + rs + (na ? (' · next:' + na) : '');
+        }
         var meta = sourceTag + objTag + evalTag + ' ' +
           '创建:' + createdStr + ' · 状态:<b style="color:' + (statusColor || 'inherit') + ';">' + statusText + '</b>' +
-          (r.plan_requires_reconfirm ? ' (待重确认)' : '');
+          (r.plan_requires_reconfirm ? ' (待重确认)' : '') +
+          bindMeta;
         if (r.plan_status === 'gen_failed') {
           meta += ' · <span style="color:#f87171;font-size:0.8rem;">' + escapeHtml(r.plan_summary || '') + '</span>';
         } else if (r.plan_status === 'generating') {
