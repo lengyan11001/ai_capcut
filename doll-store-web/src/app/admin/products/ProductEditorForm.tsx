@@ -58,7 +58,7 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
     const videos = initialValue.videoUrl
       ? [{ id: `video-0-${initialValue.videoUrl}`, type: "video" as const, url: initialValue.videoUrl }]
       : [];
-    return [...images, ...videos];
+    return [...videos, ...images];
   });
   const [manualMediaUrl, setManualMediaUrl] = useState("");
   const [manualMediaType, setManualMediaType] = useState<"image" | "video">("image");
@@ -76,15 +76,33 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
   );
 
   const uploadFile = async (file: File) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    const res = await fetch("/api/admin/upload", {
+    const signedRes = await fetch("/api/admin/upload", {
       method: "POST",
-      body: fd,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: file.name,
+        contentType: file.type || "application/octet-stream",
+        folder: "products",
+      }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? "Upload failed");
-    return data.url as string;
+    const signedData = await signedRes.json();
+    if (!signedRes.ok) throw new Error(signedData.error ?? "Upload init failed");
+    const uploadRes = await fetch(signedData.signedUrl as string, {
+      method: "PUT",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    if (!uploadRes.ok) {
+      let reason = "Upload failed";
+      try {
+        const text = await uploadRes.text();
+        if (text) reason = text;
+      } catch {
+        // ignore body parse error
+      }
+      throw new Error(reason);
+    }
+    return signedData.url as string;
   };
 
   const appendMediaItem = (type: "image" | "video", url: string) => {
@@ -92,7 +110,7 @@ export function ProductEditorForm({ mode, productId, initialValue }: Props) {
     setMediaItems((prev) => {
       if (type === "video") {
         const noVideos = prev.filter((m) => m.type !== "video");
-        return [...noVideos, item];
+        return [item, ...noVideos];
       }
       return [...prev, item];
     });

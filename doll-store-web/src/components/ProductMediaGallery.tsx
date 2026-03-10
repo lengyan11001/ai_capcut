@@ -18,9 +18,9 @@ type MediaItem =
 
 export function ProductMediaGallery({ name, images, videoUrl, lang = "en" }: Props) {
   const mediaItems = useMemo<MediaItem[]>(() => {
-    const items: MediaItem[] = (images ?? []).map((url) => ({ type: "image", url }));
-    if (videoUrl) items.push({ type: "video", url: videoUrl });
-    return items;
+    const imageItems: MediaItem[] = (images ?? []).map((url) => ({ type: "image", url }));
+    if (!videoUrl) return imageItems;
+    return [{ type: "video", url: videoUrl }, ...imageItems];
   }, [images, videoUrl]);
 
   const [activeIndex, setActiveIndex] = useState(0);

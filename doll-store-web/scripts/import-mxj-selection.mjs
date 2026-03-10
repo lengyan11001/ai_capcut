@@ -32,6 +32,10 @@ const onlyList = onlyArg
   : [];
 const skipMedia = process.argv.includes("--skip-media");
 
+function toMb(bytes) {
+  return Math.round((bytes / 1024 / 1024) * 10) / 10;
+}
+
 const NAME_TO_ZIP = {
   "硅胶名器2号": "硅胶名器2号新视觉已修.zip",
   芷琳: "7.5斤硅胶胸模芷琳.zip",
@@ -111,6 +115,41 @@ function unzipToTemp(zipPath, productSlug) {
   return dir;
 }
 
+function compressVideoToLimit(videoPath, productSlug) {
+  const outputPath = resolve(tmpdir(), `mxj-${productSlug}-${Date.now()}-compressed.mp4`);
+  const rs = spawnSync(
+    "ffmpeg",
+    [
+      "-y",
+      "-i",
+      videoPath,
+      "-vf",
+      "scale='min(1280,iw)':-2",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "30",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "96k",
+      "-movflags",
+      "+faststart",
+      "-fs",
+      String(MAX_VIDEO_BYTES),
+      outputPath,
+    ],
+    { encoding: "utf-8" }
+  );
+  if (rs.status !== 0) {
+    rmSync(outputPath, { force: true });
+    throw new Error(`ffmpeg compress failed for ${productSlug}: ${rs.stderr || rs.stdout}`);
+  }
+  return outputPath;
+}
+
 async function uploadMediaForProduct(supabase, productName, productSlug) {
   if (skipMedia) return { images: [], videoUrl: null };
   const zipFilename = NAME_TO_ZIP[productName];
@@ -143,26 +182,39 @@ async function uploadMediaForProduct(supabase, productName, productSlug) {
 
     let videoUrl = null;
     if (videoPath) {
-      const stats = statSync(videoPath);
-      if (stats.size <= MAX_VIDEO_BYTES) {
-        const storagePath = `products/mxj/${productSlug}/${hashedName(videoPath)}`;
-        const body = await readFile(videoPath);
-        const { error } = await supabase.storage.from(assetBucket).upload(storagePath, body, {
-          upsert: true,
-          contentType: detectContentType(videoPath),
-        });
-        if (error) {
-          throw new Error(`upload video failed (${storagePath}): ${error.message}`);
-        }
-        const { data } = supabase.storage.from(assetBucket).getPublicUrl(storagePath);
-        videoUrl = data.publicUrl;
-      } else {
-        console.warn(
-          `Skip video for ${productSlug}: ${Math.round(stats.size / 1024 / 1024)}MB > ${Math.round(
-            MAX_VIDEO_BYTES / 1024 / 1024
-          )}MB limit`
+      const originalStats = statSync(videoPath);
+      let uploadPath = videoPath;
+      let removeAfterUpload = false;
+      if (originalStats.size > MAX_VIDEO_BYTES) {
+        console.log(
+          `Video too large for ${productSlug} (${toMb(originalStats.size)}MB), compressing to <= ${toMb(
+            MAX_VIDEO_BYTES
+          )}MB...`
+        );
+        uploadPath = compressVideoToLimit(videoPath, productSlug);
+        removeAfterUpload = true;
+      }
+      const uploadStats = statSync(uploadPath);
+      if (uploadStats.size > MAX_VIDEO_BYTES) {
+        if (removeAfterUpload) rmSync(uploadPath, { force: true });
+        throw new Error(
+          `video still too large after compress for ${productSlug}: ${toMb(uploadStats.size)}MB > ${toMb(
+            MAX_VIDEO_BYTES
+          )}MB`
         );
       }
+      const storagePath = `products/mxj/${productSlug}/${hashedName(uploadPath)}`;
+      const body = await readFile(uploadPath);
+      const { error } = await supabase.storage.from(assetBucket).upload(storagePath, body, {
+        upsert: true,
+        contentType: detectContentType(uploadPath),
+      });
+      if (removeAfterUpload) rmSync(uploadPath, { force: true });
+      if (error) {
+        throw new Error(`upload video failed (${storagePath}): ${error.message}`);
+      }
+      const { data } = supabase.storage.from(assetBucket).getPublicUrl(storagePath);
+      videoUrl = data.publicUrl;
     }
 
     return { images: imageUrls, videoUrl };
