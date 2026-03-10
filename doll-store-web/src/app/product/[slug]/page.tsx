@@ -6,6 +6,7 @@ import { formatMoney } from "@/lib/money";
 import { resolveRegionContext } from "@/lib/request-context";
 import { ProductMediaGallery } from "@/components/ProductMediaGallery";
 import { getLangFromSearchParams, t } from "@/lib/i18n";
+import { localizeDescription, localizeMaterial, localizeSpecValue } from "@/lib/product-copy";
 
 const HIDDEN_SPEC_KEYS = new Set(["source_file"]);
 
@@ -35,11 +36,12 @@ function formatSpecLabel(key: string, lang: "en" | "zh"): string {
     .join(" ");
 }
 
-function formatSpecValue(value: string, lang: "en" | "zh"): string {
+function formatSpecValue(key: string, value: string, lang: "en" | "zh"): string {
+  const localized = localizeSpecValue(key, value, lang);
   if (lang === "en" && ["无", "暂无", "没有", "不支持", "空"].includes(value.trim())) {
     return "N/A";
   }
-  return value;
+  return localized;
 }
 
 export default async function ProductPage({
@@ -89,7 +91,8 @@ export default async function ProductPage({
             {ctx.debugAll ? t(lang, " · debug_all enabled", " · 已开启debug_all") : ""}
           </p>
           <p className="mt-2 text-gray-500">
-            {product.material} · {product.sourceType === "origin" ? t(lang, "Origin supply", "产地供应") : t(lang, "Warehouse supply", "海外仓供应")}
+            {localizeMaterial(product.material, lang)} ·{" "}
+            {product.sourceType === "origin" ? t(lang, "Origin supply", "产地供应") : t(lang, "Warehouse supply", "海外仓供应")}
           </p>
           <div className="mt-4 flex items-center gap-3">
             <span className="text-2xl font-semibold text-gray-900">
@@ -129,7 +132,7 @@ export default async function ProductPage({
               lang={lang}
             />
           </div>
-          <p className="mt-6 text-gray-600">{product.description}</p>
+          <p className="mt-6 text-gray-600">{localizeDescription(product.description, lang)}</p>
           {product.addOnOptions && product.addOnOptions.length > 0 && (
             <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
               <h3 className="font-medium text-gray-900">
@@ -150,7 +153,7 @@ export default async function ProductPage({
                   {specEntries.map(([key, value]) => (
                     <li key={key}>
                       <span className="font-medium">{formatSpecLabel(key, lang)}:</span>{" "}
-                      {formatSpecValue(String(value), lang)}
+                      {formatSpecValue(key, String(value), lang)}
                     </li>
                   ))}
                 </ul>

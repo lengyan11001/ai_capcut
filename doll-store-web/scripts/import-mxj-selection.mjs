@@ -223,6 +223,22 @@ async function uploadMediaForProduct(supabase, productName, productSlug) {
   }
 }
 
+async function loadExistingMediaForSlug(supabase, slug) {
+  const { data, error } = await supabase
+    .from("products")
+    .select("images, video_url")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (error) {
+    console.warn(`Load existing media failed for ${slug}: ${error.message}`);
+    return { images: [], videoUrl: null };
+  }
+  return {
+    images: Array.isArray(data?.images) ? data.images : [],
+    videoUrl: data?.video_url ?? null,
+  };
+}
+
 function buildDescription(row) {
   const lines = [];
   const feature = String(row["产品特点"] ?? "").trim();
@@ -230,10 +246,27 @@ function buildDescription(row) {
   const packSize = String(row["外包装尺寸（CM）"] ?? "").replace(/\s+/g, " ").trim();
   const material = String(row["材质"] ?? "").trim();
 
-  if (feature) lines.push(feature);
-  if (material) lines.push(`Material: ${material}`);
-  if (size) lines.push(`Product size: ${size}`);
-  if (packSize) lines.push(`Packaging size: ${packSize}`);
+  let featureEn = feature
+    .replace(/接近真人比例硅胶肥臀/g, "realistic-proportion silicone peach hips")
+    .replace(/可前入、后入、侧入/g, "supports front, rear, and side entry")
+    .replace(/可前入后入侧入/g, "supports front, rear, and side entry")
+    .replace(/蜜桃臀设计撞击感更足/g, "peach-hip design with stronger thrust feedback")
+    .replace(/，/g, ", ");
+  let sizeEn = size
+    .replace(/长\s*(\d+(?:\.\d+)?)\s*宽\s*(\d+(?:\.\d+)?)\s*高\s*(\d+(?:\.\d+)?)/, "L$1 x W$2 x H$3 cm")
+    .replace(/腰围\s*(\d+(?:\.\d+)?)/, ", waist $1 cm")
+    .replace(/臀围\s*(\d+(?:\.\d+)?)\s*CM?/i, ", hips $1 cm")
+    .replace(/，/g, ", ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^,\s*/, "");
+  const packSizeEn = packSize.replace(/×/g, " x ").replace(/\s+/g, " ").trim();
+  const materialEn = material.replace(/硅胶/g, "Silicone");
+
+  if (featureEn) lines.push(featureEn);
+  if (materialEn) lines.push(`Material: ${materialEn}`);
+  if (sizeEn) lines.push(`Product size: ${sizeEn}`);
+  if (packSizeEn) lines.push(`Packaging size: ${packSizeEn}${/cm/i.test(packSizeEn) ? "" : " cm"}`);
   return lines.join(" ");
 }
 
@@ -264,7 +297,9 @@ async function main() {
 
     const saleUsd = Math.round((costCny / FX_RATE) * MARKUP);
     console.log(`Processing ${productName} (${slug}) ...`);
-    const media = await uploadMediaForProduct(supabase, productName, slug);
+    const media = skipMedia
+      ? await loadExistingMediaForSlug(supabase, slug)
+      : await uploadMediaForProduct(supabase, productName, slug);
 
     upsertRows.push({
       slug,

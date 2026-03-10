@@ -17,6 +17,10 @@ type MediaItem =
   | { type: "video"; url: string };
 
 export function ProductMediaGallery({ name, images, videoUrl, lang = "en" }: Props) {
+  const ZOOM_SCALE = 3.2;
+  const ZOOM_WIDTH = 360;
+  const ZOOM_HEIGHT = 520;
+
   const mediaItems = useMemo<MediaItem[]>(() => {
     const imageItems: MediaItem[] = (images ?? []).map((url) => ({ type: "image", url }));
     if (!videoUrl) return imageItems;
@@ -28,6 +32,21 @@ export function ProductMediaGallery({ name, images, videoUrl, lang = "en" }: Pro
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
   const active = mediaItems[activeIndex];
   const activeImageUrl = active?.type === "image" ? active.url : "";
+
+  const zoomStyle = useMemo(() => {
+    const scaledWidth = ZOOM_WIDTH * ZOOM_SCALE;
+    const scaledHeight = ZOOM_HEIGHT * ZOOM_SCALE;
+    const centerX = ZOOM_WIDTH / 2 - (zoomPos.x / 100) * scaledWidth;
+    const centerY = ZOOM_HEIGHT / 2 - (zoomPos.y / 100) * scaledHeight;
+    const minX = ZOOM_WIDTH - scaledWidth;
+    const minY = ZOOM_HEIGHT - scaledHeight;
+    const clampedX = Math.max(minX, Math.min(0, centerX));
+    const clampedY = Math.max(minY, Math.min(0, centerY));
+    return {
+      backgroundSize: `${ZOOM_SCALE * 100}% ${ZOOM_SCALE * 100}%`,
+      backgroundPosition: `${clampedX}px ${clampedY}px`,
+    };
+  }, [zoomPos.x, zoomPos.y]);
 
   useEffect(() => {
     if (!activeImageUrl) return;
@@ -68,9 +87,13 @@ export function ProductMediaGallery({ name, images, videoUrl, lang = "en" }: Pro
                     />
                   </div>
                 ) : (
-                  <div className="flex h-full items-center justify-center bg-gray-800 text-xs text-white">
-                    {t(lang, "Video", "视频")}
-                  </div>
+                  <video
+                    src={item.url}
+                    className="h-full w-full object-cover"
+                    preload="metadata"
+                    muted
+                    playsInline
+                  />
                 )}
               </button>
             ))}
@@ -118,22 +141,14 @@ export function ProductMediaGallery({ name, images, videoUrl, lang = "en" }: Pro
         <div
           className="pointer-events-none absolute left-[calc(100%+16px)] top-0 z-50 hidden h-[520px] w-[360px] rounded-lg border border-gray-200 bg-white shadow-2xl lg:block"
         >
-          <div className="relative h-full w-full overflow-hidden rounded-lg">
-            <Image
-              src={active.url}
-              alt={`${name} zoom`}
-              fill
-              sizes="360px"
-              quality={85}
-              priority={activeIndex === 0}
-              unoptimized={isPlaceholder || isProxyImage}
-              className="object-cover"
-              style={{
-                objectPosition: `${zoomPos.x}% ${zoomPos.y}%`,
-                transform: "scale(3.2)",
-                transformOrigin: "center",
-              }}
-            />
+          <div
+            className="h-full w-full overflow-hidden rounded-lg bg-no-repeat"
+            style={{
+              backgroundImage: `url("${active.url}")`,
+              ...zoomStyle,
+            }}
+          >
+            <span className="sr-only">{`${name} zoom`}</span>
           </div>
         </div>
       )}
@@ -163,9 +178,13 @@ export function ProductMediaGallery({ name, images, videoUrl, lang = "en" }: Pro
                   />
                 </div>
               ) : (
-                <div className="flex h-full items-center justify-center bg-gray-800 text-xs text-white">
-                  {t(lang, "Video", "视频")}
-                </div>
+                <video
+                  src={item.url}
+                  className="h-full w-full object-cover"
+                  preload="metadata"
+                  muted
+                  playsInline
+                />
               )}
             </button>
           ))}
