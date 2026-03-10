@@ -2006,8 +2006,6 @@ def approve_nurture_plan(
             )
     now_utc = datetime.utcnow()
     now_cn = now_utc + timedelta(hours=8)
-    tomorrow_cn = datetime(now_cn.year, now_cn.month, now_cn.day) + timedelta(days=1)
-    new_start_utc = tomorrow_cn - timedelta(hours=8)
 
     old_items = (
         db.query(NurtureScheduleItem)
@@ -2019,40 +2017,70 @@ def approve_nurture_plan(
         si.finished_at = now_utc
         db.add(si)
 
+    # 重新计算 schedule：以「当前点击时间」作为整体时间轴的起点，
+    # 按原计划中的相对结构生成时间，然后整体平移，使第一条任务尽快执行。
     schedule = []
     if isinstance(row.plan_json, dict):
         schedule = row.plan_json.get("schedule", [])
-    for item in schedule:
-        if not isinstance(item, dict):
-            continue
-        day_no = int(item.get("day_no") or 1)
-        seq_no = int(item.get("seq_no") or 1)
-        hour = int(item.get("hour") or 10)
-        minute = int(item.get("minute") or 0)
-        when = new_start_utc + timedelta(days=max(day_no - 1, 0), hours=hour, minutes=minute)
-        db.add(NurtureScheduleItem(
-            user_id=current_user.id,
-            binding_id=row.binding_id,
-            plan_id=plan_id,
-            day_no=day_no, seq_no=seq_no,
-            stage=str(item.get("stage") or "warmup"),
-            title=str(item.get("title") or f"nurture-day{day_no:02d}-s{seq_no}"),
-            scheduled_at=when,
-            status="scheduled",
-            payload=item.get("payload") if isinstance(item.get("payload"), dict) else {},
-        ))
+
+    items_with_time: list[tuple[dict[str, Any], datetime, int, int]] = []
+    if schedule:
+        # 以当天 00:00 为基准计算原始时间线（仅用于相对关系），之后整体平移到 now_utc 附近。
+        base_day_utc = datetime(now_utc.year, now_utc.month, now_utc.day)
+        for item in schedule:
+            if not isinstance(item, dict):
+                continue
+            day_no = int(item.get("day_no") or 1)
+            seq_no = int(item.get("seq_no") or 1)
+            hour = int(item.get("hour") or 10)
+            minute = int(item.get("minute") or 0)
+            orig_when = base_day_utc + timedelta(days=max(day_no - 1, 0), hours=hour, minutes=minute)
+            items_with_time.append((item, orig_when, day_no, seq_no))
+
+    if items_with_time:
+        # 找到原时间线上最早的一条，作为整体平移的参考点。
+        first_when = min(x[1] for x in items_with_time)
+        # 让第一条任务尽量「立即」执行，预留一个很小的缓冲。
+        target_first = now_utc + timedelta(seconds=5)
+        delta = target_first - first_when
+
+        for item, orig_when, day_no, seq_no in items_with_time:
+            new_when = orig_when + delta
+            # 保护：避免因为计算误差导致时间落在当前时间之前。
+            if new_when < now_utc:
+                new_when = now_utc
+            db.add(NurtureScheduleItem(
+                user_id=current_user.id,
+                binding_id=row.binding_id,
+                plan_id=plan_id,
+                day_no=day_no, seq_no=seq_no,
+                stage=str(item.get("stage") or "warmup"),
+                title=str(item.get("title") or f"nurture-day{day_no:02d}-s{seq_no}"),
+                scheduled_at=new_when,
+                status="scheduled",
+                payload=item.get("payload") if isinstance(item.get("payload"), dict) else {},
+            ))
 
     row.status = "approved"
     row.requires_reconfirm = False
     row.approved_by = current_user.id
     row.approved_at = now_utc
-    row.start_at = new_start_utc
+    # 使用平移后的首条任务时间作为计划 start_at，若无任务则退化为当前时间。
+    if items_with_time:
+        row.start_at = min(
+            base_day_utc + timedelta(days=max(int(i.get("day_no") or 1) - 1, 0),
+                                     hours=int(i.get("hour") or 10),
+                                     minutes=int(i.get("minute") or 0))
+            for i, _, _, _ in items_with_time
+        ) + delta
+    else:
+        row.start_at = now_utc
     row.last_review_at = now_utc
     row.next_review_at = now_utc + timedelta(days=1)
     db.add(row)
     db.commit()
     dispatched = _dispatch_due_nurture_items(db)
-    start_display = tomorrow_cn.strftime("%Y-%m-%d")
+    start_display = (row.start_at + timedelta(hours=8)).strftime("%Y-%m-%d") if row.start_at else now_cn.strftime("%Y-%m-%d")
     return {"detail": "approved", "plan_id": row.id, "dispatched_now": dispatched, "start_date": start_display}
 
 
