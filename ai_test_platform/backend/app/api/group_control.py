@@ -2323,6 +2323,7 @@ def nurture_progress(
     for p in plans:
         b = b_map.get(p.binding_id)
         stat = agg.get(p.id, {"total": 0, "success": 0, "failed": 0, "running": 0, "scheduled": 0})
+        dev = d_map.get(b.device_id) if b else None
         out.append(
             {
                 "plan_id": p.id,
@@ -2341,7 +2342,13 @@ def nurture_progress(
                 "plan_updated_at": _iso(p.updated_at),
                 "binding_id": p.binding_id,
                 "device_id": b.device_id if b else None,
-                "device_label": _device_label_from_row(d_map.get(b.device_id)) if b else None,
+                "device_label": _device_label_from_row(dev) if dev else None,
+                "device_platform": dev.platform if dev else None,
+                "task_platform": (
+                    "reddit_ios"
+                    if (dev and str(dev.platform or "").strip().lower() == "ios")
+                    else "reddit"
+                ),
                 "reddit_account_id": b.reddit_account_id if b else None,
                 "reddit_username": (a_map.get(b.reddit_account_id).username if b and a_map.get(b.reddit_account_id) else None),
                 "phase": b.phase if b else None,

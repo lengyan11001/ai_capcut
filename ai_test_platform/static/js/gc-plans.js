@@ -109,7 +109,9 @@
           : (r.plan_status === 'active' || r.plan_status === 'approved') ? '#16a34a'
           : (r.plan_status === 'paused' ? '#d97706' : '');
         if (r.plan_status === 'generating') hasGenerating = true;
-        var title = '计划#' + (r.plan_id || '-') + ' ' + (r.device_label || ('设备#' + (r.device_id || '-')));
+        var plat = r.device_platform || r.task_platform || '';
+        var platTag = plat ? (' [' + plat + ']') : '';
+        var title = '计划#' + (r.plan_id || '-') + ' ' + (r.device_label || ('设备#' + (r.device_id || '-'))) + platTag;
         var createdStr = r.plan_created_at ? new Date(r.plan_created_at).toLocaleString() : (r.created_at ? new Date(r.created_at).toLocaleString() : '-');
         var m = r.metrics || {};
         var sourceTag = '';
