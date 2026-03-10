@@ -143,20 +143,9 @@
             evalTag = ' <span style="background:' + scClr + ';color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;cursor:pointer;" class="eval-score-tag" data-plan-id="' + r.plan_id + '">AI评分:' + Math.round(sc) + ' (' + evalRounds.length + '轮)</span>';
           }
         }
-        var bindMeta = '';
-        if (binding) {
-          var ns = (binding.status || '-');
-          var ah = (binding.account_health || '-');
-          var rs = (binding.risk_score != null ? binding.risk_score : '-');
-          var na = binding.next_action_at ? (function() {
-            try { return new Date(binding.next_action_at).toLocaleString(); } catch(e) { return binding.next_action_at; }
-          })() : '';
-          bindMeta = ' · 绑定:' + ns + '/' + ah + ' · risk:' + rs + (na ? (' · next:' + na) : '');
-        }
         var meta = sourceTag + objTag + evalTag + ' ' +
           '创建:' + createdStr + ' · 状态:<b style="color:' + (statusColor || 'inherit') + ';">' + statusText + '</b>' +
-          (r.plan_requires_reconfirm ? ' (待重确认)' : '') +
-          bindMeta;
+          (r.plan_requires_reconfirm ? ' (待重确认)' : '');
         if (r.plan_status === 'gen_failed') {
           meta += ' · <span style="color:#f87171;font-size:0.8rem;">' + escapeHtml(r.plan_summary || '') + '</span>';
         } else if (r.plan_status === 'generating') {

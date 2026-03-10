@@ -26,6 +26,52 @@
       var sel = document.getElementById('statsModelSelect');
       return sel ? sel.value : '';
     }
+    function _setStatsRangeError(msg) {
+      var el = document.getElementById('statsRangeMsg');
+      if (!el) return;
+      if (msg) {
+        el.className = 'meta err';
+        el.textContent = msg;
+      } else {
+        el.className = 'meta';
+        el.textContent = '';
+      }
+    }
+    function _getStatsRange() {
+      var startEl = document.getElementById('statsStartDate');
+      var endEl = document.getElementById('statsEndDate');
+      var start = startEl && startEl.value ? startEl.value : '';
+      var end = endEl && endEl.value ? endEl.value : '';
+      if (!start && !end) {
+        _setStatsRangeError('');
+        return { ok: true, start: '', end: '' };
+      }
+      // 简单校验：开始不能晚于结束，最大区间 7 天。
+      if (start && end && start > end) {
+        _setStatsRangeError('开始日期不能晚于结束日期');
+        return { ok: false };
+      }
+      var sd = start ? new Date(start + 'T00:00:00Z') : null;
+      var ed = end ? new Date(end + 'T00:00:00Z') : null;
+      if (sd && ed) {
+        var diffMs = ed.getTime() - sd.getTime();
+        var maxMs = 7 * 24 * 60 * 60 * 1000;
+        if (diffMs > maxMs) {
+          _setStatsRangeError('时间区间不能超过 7 天');
+          return { ok: false };
+        }
+      }
+      _setStatsRangeError('');
+      return { ok: true, start: start, end: end };
+    }
+    function _buildStatsRangeQuery() {
+      var r = _getStatsRange();
+      if (!r.ok) return null;
+      var params = [];
+      if (r.start) params.push('start=' + encodeURIComponent(r.start));
+      if (r.end) params.push('end=' + encodeURIComponent(r.end));
+      return params.length ? ('?' + params.join('&')) : '';
+    }
     function loadStatsPanel() {
       _initStatsModelSelect();
       loadStatsDaily();
@@ -33,7 +79,9 @@
       loadStatsPolicyIntel();
     }
     function loadStatsDaily() {
-      fetch(API_BASE + '/group-control/stats/daily', { headers: authHeaders() })
+      var qs = _buildStatsRangeQuery();
+      if (qs === null) return; // 区间非法时不发请求
+      fetch(API_BASE + '/group-control/stats/daily' + qs, { headers: authHeaders() })
         .then(function(r) { return r.json(); })
         .then(function(d) { renderStatsCards(d); renderStatsByAction(d.by_action || {}); renderStatsByDevice(d.by_device || []); })
         .catch(function() {});
@@ -144,6 +192,19 @@
         .catch(function() { el.innerHTML = '<div class="meta" style="color:#f87171;">加载失败</div>'; });
     }
     (function() {
+      var applyBtn = document.getElementById('statsRangeApplyBtn');
+      var resetBtn = document.getElementById('statsRangeResetBtn');
+      if (applyBtn) applyBtn.addEventListener('click', function() {
+        loadStatsDaily();
+      });
+      if (resetBtn) resetBtn.addEventListener('click', function() {
+        var s = document.getElementById('statsStartDate');
+        var e = document.getElementById('statsEndDate');
+        if (s) s.value = '';
+        if (e) e.value = '';
+        _setStatsRangeError('');
+        loadStatsDaily();
+      });
       var btn = document.getElementById('statsReportRefreshBtn');
       if (btn) btn.addEventListener('click', function() {
         var m = _getStatsModel();

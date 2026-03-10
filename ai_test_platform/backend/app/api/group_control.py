@@ -1566,6 +1566,43 @@ def upsert_nurture_binding(
     return {"id": row.id, "detail": "updated"}
 
 
+@router.post("/nurture/bindings/{binding_id}/reset", summary="重置养号绑定状态（用户态）")
+def reset_nurture_binding(
+    binding_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(NurtureBinding)
+        .filter(NurtureBinding.id == binding_id, NurtureBinding.user_id == current_user.id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="binding not found")
+
+    # 手动恢复到「正常可执行」状态。
+    row.status = "active"
+    row.account_health = "healthy"
+    row.automation_mode = "normal"
+    row.risk_score = 0
+    row.last_incident_code = None
+    row.last_incident_at = None
+    row.next_action_at = None
+
+    db.commit()
+    db.refresh(row)
+
+    return {
+        "id": row.id,
+        "device_id": row.device_id,
+        "status": row.status,
+        "account_health": row.account_health,
+        "automation_mode": row.automation_mode,
+        "risk_score": row.risk_score,
+        "next_action_at": _iso(row.next_action_at),
+    }
+
+
 @router.post("/nurture/plans/generate", summary="生成养号计划草案（用户态，云端 OpenClaw）")
 def generate_nurture_plan(
     payload: NurturePlanGenerateIn,
@@ -3137,11 +3174,35 @@ def list_risk_reports(
 # 统计 / 每日报告 / 政策爬取 / 执行列表
 # ────────────────────────────────────────────
 
-def _collect_daily_stats(db: Session) -> dict[str, Any]:
-    since = datetime.utcnow() - timedelta(hours=24)
+def _parse_date_param(value: Optional[str]) -> Optional[date]:
+    """Parse YYYY-MM-DD date param safely."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except Exception:
+        return None
+
+
+def _collect_daily_stats(
+    db: Session,
+    start_utc: Optional[datetime] = None,
+    end_utc: Optional[datetime] = None,
+) -> dict[str, Any]:
+    # 默认统计最近 24 小时；如提供 start/end，则使用 [start, end] 间的数据。
+    now = datetime.utcnow()
+    if end_utc is None:
+        end_utc = now
+    if start_utc is None:
+        start_utc = end_utc - timedelta(hours=24)
+
     items = (
         db.query(NurtureScheduleItem)
-        .filter(NurtureScheduleItem.dispatched_at.isnot(None), NurtureScheduleItem.dispatched_at >= since)
+        .filter(
+            NurtureScheduleItem.dispatched_at.isnot(None),
+            NurtureScheduleItem.dispatched_at >= start_utc,
+            NurtureScheduleItem.dispatched_at < end_utc,
+        )
         .all()
     )
     total = len(items)
@@ -3192,12 +3253,43 @@ def _collect_daily_stats(db: Session) -> dict[str, Any]:
     }
 
 
-@router.get("/stats/daily", summary="昨日任务统计")
+@router.get("/stats/daily", summary="任务统计（可选时间区间）")
 def get_daily_stats(
+    start: Optional[str] = Query(default=None, description="统计起始日期 YYYY-MM-DD"),
+    end: Optional[str] = Query(default=None, description="统计结束日期 YYYY-MM-DD"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return _collect_daily_stats(db)
+    start_date = _parse_date_param(start)
+    end_date = _parse_date_param(end)
+
+    if start and not start_date:
+        raise HTTPException(status_code=400, detail="invalid start date")
+    if end and not end_date:
+        raise HTTPException(status_code=400, detail="invalid end date")
+
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="start date must be <= end date")
+
+    # 限制最大区间长度，避免一次性拉取过多历史数据。
+    max_days = 7
+    if start_date and end_date and (end_date - start_date).days > max_days:
+        raise HTTPException(status_code=400, detail=f"date range too large, max {max_days} days")
+
+    # 只填了一个日期时，按单日区间处理。
+    if start_date and not end_date:
+        end_date = start_date
+    if end_date and not start_date:
+        start_date = end_date
+
+    start_utc: Optional[datetime] = None
+    end_utc: Optional[datetime] = None
+    if start_date and end_date:
+        # [start_date 00:00, end_date 次日 00:00)
+        start_utc = datetime(start_date.year, start_date.month, start_date.day)
+        end_utc = datetime(end_date.year, end_date.month, end_date.day) + timedelta(days=1)
+
+    return _collect_daily_stats(db, start_utc=start_utc, end_utc=end_utc)
 
 
 _REDDIT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"

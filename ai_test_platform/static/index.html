@@ -169,6 +169,15 @@
             </div>
             <!-- Tab0: 统计 -->
             <div id="gcPanelStats" class="gc-panel visible">
+              <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap;">
+                <div class="card-label" style="margin:0;">任务统计区间</div>
+                <input type="date" id="statsStartDate" style="padding:0.2rem 0.35rem;font-size:0.8rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);border-radius:var(--radius-sm);color:var(--text);">
+                <span style="font-size:0.8rem;color:var(--text-muted);">至</span>
+                <input type="date" id="statsEndDate" style="padding:0.2rem 0.35rem;font-size:0.8rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);border-radius:var(--radius-sm);color:var(--text);">
+                <button type="button" id="statsRangeApplyBtn" class="btn btn-ghost btn-sm">应用</button>
+                <button type="button" id="statsRangeResetBtn" class="btn btn-ghost btn-sm">重置</button>
+                <span id="statsRangeMsg" class="meta" style="margin-left:0.25rem;"></span>
+              </div>
               <div id="statsCards" style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.6rem;margin-bottom:1rem;"></div>
               <div class="card" style="margin-bottom:1rem;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem;">

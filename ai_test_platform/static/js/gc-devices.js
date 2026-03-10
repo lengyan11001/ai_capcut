@@ -6,6 +6,7 @@ var controlDevicePageSize = 12;
 var nurtureModelsCache = [];
 var nurtureDefaultModel = 'deepseek-chat';
 var selectedDeviceIds = {};
+var nurtureBindingByDeviceId = {};
 
 function renderControlDevicesPage() {
   var list = controlDeviceListCache || [];
@@ -33,19 +34,39 @@ function renderControlDevicesPage() {
   var rows = list.slice(start, start + controlDevicePageSize);
   el.innerHTML = rows.map(function(d) {
     var deviceLabel = d.device_label || d.alias || d.serial;
-    var meta = deviceLabel + ' · ADB:' + (d.adb_status || '-') + ' · Appium:' + (d.appium_status || '-');
+    var meta = deviceLabel;
+    if (d.platform) meta += ' · 平台:' + d.platform;
+    if (d.online_status) meta += ' · 状态:' + (d.online_status === 'online' ? '在线' : '离线');
+    meta += ' · ADB:' + (d.adb_status || '-') + ' · Appium:' + (d.appium_status || '-');
     var attrs = d.account_attrs;
     if (attrs && typeof attrs === 'object') {
       meta += ' · ' + (attrs.niche ? 'niche:' + attrs.niche : '') + (attrs.phase ? ' phase:' + attrs.phase : '') + (attrs.karma != null ? ' karma:' + attrs.karma : '');
       if (Array.isArray(attrs.tags) && attrs.tags.length) meta += ' tags:' + attrs.tags.join('/');
     }
     if (d.model || d.brand) meta += ' · ' + [d.brand, d.model].filter(Boolean).join(' ');
+    var binding = nurtureBindingByDeviceId[d.id] || null;
+    if (binding) {
+      var statusMap = { active: '进行中', paused: '已暂停', disabled: '已禁用' };
+      var healthMap = { healthy: '健康', warning: '预警', restricted: '受限', locked: '锁定' };
+      var ns = statusMap[binding.status] || (binding.status || '-');
+      var ah = healthMap[binding.account_health] || (binding.account_health || '-');
+      var rs = (binding.risk_score != null ? binding.risk_score : '-');
+      var mode = binding.automation_mode && binding.automation_mode !== 'normal' ? binding.automation_mode : '';
+      var na = binding.next_action_at ? (function() {
+        try { return new Date(binding.next_action_at).toLocaleString(); } catch(e) { return binding.next_action_at; }
+      })() : '';
+      meta += ' · 绑定[' + ns + '/' + ah + ' · 风险:' + rs + (mode ? (' · 模式:' + mode) : '') + (na ? (' · 下次任务:' + na) : '') + ']';
+    }
     var runBadge = '';
     if (d.running_task_count > 0) {
       runBadge = '<span style="display:inline-block;margin-left:0.4rem;padding:1px 6px;border-radius:4px;font-size:0.7rem;background:#facc15;color:#000;font-weight:600;">' + d.running_task_count + ' 运行中</span>';
     }
     var ckd = selectedDeviceIds[d.id] ? ' checked' : '';
-    return '<div class="list-item" style="display:flex;align-items:center;gap:0.5rem;"><label style="display:flex;align-items:center;cursor:pointer;flex-shrink:0;"><input type="checkbox" class="device-select-cb" data-device-id="' + d.id + '"' + ckd + '></label><div style="flex:1;min-width:0;"><div class="title">' + escapeHtml(deviceLabel || '') + runBadge + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts"><button type="button" class="btn btn-ghost btn-sm btn-device-nurture-plan" data-device-id="' + d.id + '">创建养号计划</button><span class="meta device-plan-msg" data-device-msg="' + d.id + '" style="margin-left:0.4rem;"></span></div></div>';
+    var resetBtnHtml = '';
+    if (binding) {
+      resetBtnHtml = '<button type="button" class="btn btn-ghost btn-sm btn-binding-reset" data-binding-id="' + binding.id + '" style="margin-left:0.4rem;">重置状态</button>';
+    }
+    return '<div class="list-item" data-device-id="' + d.id + '" style="display:flex;align-items:center;gap:0.5rem;"><label style="display:flex;align-items:center;cursor:pointer;flex-shrink:0;"><input type="checkbox" class="device-select-cb" data-device-id="' + d.id + '"' + ckd + '></label><div style="flex:1;min-width:0;"><div class="title">' + escapeHtml(deviceLabel || '') + runBadge + '</div><div class="meta">' + escapeHtml(meta) + '</div></div><div class="acts"><button type="button" class="btn btn-ghost btn-sm btn-device-nurture-plan" data-device-id="' + d.id + '">创建养号计划</button>' + resetBtnHtml + '<span class="meta device-plan-msg" data-device-msg="' + d.id + '" style="margin-left:0.4rem;"></span></div></div>';
   }).join('');
   if (pagerEl) {
     pagerEl.innerHTML = '<button type="button" class="btn btn-ghost btn-sm" id="controlDevicesPrevBtn">上一页</button>' +
@@ -70,6 +91,34 @@ function renderControlDevicesPage() {
       var deviceId = parseInt(String(btn.getAttribute('data-device-id') || '').trim(), 10);
       if (!deviceId) return;
       openCreatePlanModal(deviceId, btn);
+    });
+  });
+  el.querySelectorAll('.btn-binding-reset').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var bindingId = parseInt(String(btn.getAttribute('data-binding-id') || '').trim(), 10);
+      if (!bindingId) return;
+      if (!confirm('确定要重置该设备的养号状态吗？')) return;
+      var rowEl = btn.closest('.list-item');
+      var did = rowEl ? parseInt(String(rowEl.getAttribute('data-device-id') || '').trim(), 10) : 0;
+      var msgEl = did ? document.querySelector('[data-device-msg="' + did + '"]') : null;
+      if (msgEl) { msgEl.style.color = '#f59e0b'; msgEl.textContent = '重置中…'; }
+      fetch(API_BASE + '/group-control/nurture/bindings/' + bindingId + '/reset', {
+        method: 'POST',
+        headers: authHeaders()
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(x) {
+          if (x.ok) {
+            if (msgEl) { msgEl.style.color = '#4ade80'; msgEl.textContent = '状态已重置'; }
+            loadDeviceBindings().then(function() { renderControlDevicesPage(); });
+          } else {
+            var detail = (x.data && x.data.detail) || '重置失败';
+            if (msgEl) { msgEl.style.color = '#f87171'; msgEl.textContent = detail; }
+          }
+        })
+        .catch(function(err) {
+          if (msgEl) { msgEl.style.color = '#f87171'; msgEl.textContent = '网络错误: ' + (err && err.message ? err.message : ''); }
+        });
     });
   });
 }
@@ -99,6 +148,23 @@ function loadNurtureModels() {
       _renderModelSelect();
     })
     .catch(function() {});
+}
+
+function loadDeviceBindings() {
+  return fetch(API_BASE + '/group-control/nurture/bindings', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(list) {
+      nurtureBindingByDeviceId = {};
+      if (Array.isArray(list)) {
+        list.forEach(function(b) {
+          if (b && b.device_id) nurtureBindingByDeviceId[b.device_id] = b;
+        });
+      }
+      return nurtureBindingByDeviceId;
+    })
+    .catch(function() {
+      nurtureBindingByDeviceId = {};
+    });
 }
 
 function _renderModelSelect() {
@@ -241,8 +307,10 @@ function loadControlDevices() {
         var label = deviceLabel + (d.model ? (' [' + d.model + ']') : '');
         return '<option value="' + d.id + '">' + escapeHtml(label) + '</option>';
       }).join('');
-      renderControlDevicesPage();
-      return list;
+      return loadDeviceBindings().then(function() {
+        renderControlDevicesPage();
+        return list;
+      });
     });
 }
 
