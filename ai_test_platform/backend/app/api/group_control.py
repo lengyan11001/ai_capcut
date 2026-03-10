@@ -553,6 +553,82 @@ def _call_openclaw_for_plan(
         return None
 
 
+def _apply_daily_strategy_to_plans(db: Session, snap: NurtureStrategySnapshot) -> None:
+    """
+    根据每日策略快照的 recommendations，对未来未执行的养号计划做轻量自动调参。
+
+    设计目标：
+    - 如果失败率升高（severity 提升），则收缩后续任务节奏，而不是一次性生成 30 天后永远不变。
+    - 仅调整「未来」的 NurtureScheduleItem，避免影响已派发/执行中的任务。
+    - 调整范围控制在安全参数上（upvote_ratio、执行间隔、automation_mode）。
+    """
+    recs: dict[str, Any] = snap.recommendations or {}
+    reduce_upvote_by = float(recs.get("reduce_upvote_ratio_by") or 0.0)
+    cooldown_minutes = int(recs.get("increase_cooldown_minutes") or 0)
+    switch_mode = str(recs.get("switch_mode") or "").strip()
+
+    if not reduce_upvote_by and not cooldown_minutes and not switch_mode:
+        return
+
+    now = datetime.utcnow()
+
+    # 1) 调整未来未执行的 schedule items（所有用户的 approved/active 计划）
+    plan_ids = [
+        p.id
+        for p in db.query(NurturePlan)
+        .filter(NurturePlan.status.in_(["approved", "active"]))
+        .all()
+    ]
+    if plan_ids:
+        items = (
+            db.query(NurtureScheduleItem)
+            .filter(
+                NurtureScheduleItem.plan_id.in_(plan_ids),
+                NurtureScheduleItem.status == "scheduled",
+                NurtureScheduleItem.scheduled_at > now,
+            )
+            .all()
+        )
+    else:
+        items = []
+
+    for it in items:
+        payload = dict(it.payload or {})
+        action = str(payload.get("action") or "").strip()
+
+        # 减少未来 upvote 任务的点赞比例
+        if reduce_upvote_by and action == "upvote":
+            try:
+                cur_ratio = float(payload.get("upvote_ratio") or 0.05)
+            except Exception:
+                cur_ratio = 0.05
+            new_ratio = max(0.0, cur_ratio - reduce_upvote_by)
+            payload["upvote_ratio"] = new_ratio
+
+        it.payload = payload
+
+        # 增加冷却：简单处理为整体向后平移 scheduled_at，避免过密
+        if cooldown_minutes:
+            it.scheduled_at = it.scheduled_at + timedelta(minutes=cooldown_minutes)
+
+        db.add(it)
+
+    # 2) 如果需要，整体切到 conservative 模式：调整绑定的 automation_mode
+    if switch_mode:
+        binds = (
+            db.query(NurtureBinding)
+            .filter(NurtureBinding.status == "active")
+            .all()
+        )
+        for b in binds:
+            # 只在推荐 conservative 时调整；其他值预留未来扩展
+            if switch_mode == "conservative":
+                b.automation_mode = "conservative"
+                db.add(b)
+
+    db.commit()
+
+
 def _daily_strategy_scan_if_due(db: Session) -> Optional[NurtureStrategySnapshot]:
     today = datetime.utcnow().date()
     existed = (
@@ -630,6 +706,13 @@ def _daily_strategy_scan_if_due(db: Session) -> Optional[NurtureStrategySnapshot
             db.add(p)
     db.commit()
     db.refresh(snap)
+
+    # 应用每日策略对后续计划/任务做自动轻量收敛
+    try:
+        _apply_daily_strategy_to_plans(db, snap)
+    except Exception:
+        logger.exception("apply_daily_strategy_to_plans failed for snapshot=%s", snap.id)
+
     return snap
 
 
@@ -681,10 +764,22 @@ def _dispatch_due_nurture_items(db: Session) -> int:
             continue
         task_payload = dict(item.payload or {})
         task_payload["reddit_account_id"] = binding.reddit_account_id
+
+        # 根据绑定设备的平台自动选择任务平台：
+        # - android -> reddit
+        # - ios     -> reddit_ios
+        task_platform = "reddit"
+        if binding.device_id:
+            dev = db.query(MobileDevice).filter(MobileDevice.id == binding.device_id).first()
+            if dev:
+                plat = (dev.platform or "android").strip().lower()
+                if plat == "ios":
+                    task_platform = "reddit_ios"
+
         row = ControlTask(
             user_id=item.user_id,
             title=item.title,
-            platform="reddit",
+            platform=task_platform,
             task_type="reddit_flow",
             payload=task_payload,
             target_device_id=binding.device_id,
@@ -1048,6 +1143,9 @@ def list_devices(
     for did, cnt, t in running_tasks_q:
         running_map[did] = (cnt, t or "")
 
+    offline_seconds = max(int(getattr(settings, "control_agent_offline_seconds", 90) or 90), 10)
+    now = datetime.utcnow()
+
     return [
         {
             "id": r.id,
@@ -1064,6 +1162,10 @@ def list_devices(
             "model": (r.meta or {}).get("model") if isinstance(r.meta, dict) else None,
             "brand": (r.meta or {}).get("brand") if isinstance(r.meta, dict) else None,
             "device_uid": (r.meta or {}).get("device_uid") if isinstance(r.meta, dict) else None,
+            "is_online": bool(r.last_seen_at and (now - r.last_seen_at).total_seconds() <= offline_seconds),
+            "online_status": "online"
+            if (r.last_seen_at and (now - r.last_seen_at).total_seconds() <= offline_seconds)
+            else "offline",
             "running_task_count": running_map.get(r.id, (0, ""))[0],
             "running_task_summary": running_map.get(r.id, (0, ""))[1],
             "last_seen_at": r.last_seen_at.isoformat() if r.last_seen_at else "",
@@ -1826,10 +1928,38 @@ def list_nurture_plans(
     if binding_id:
         q = q.filter(NurturePlan.binding_id == binding_id)
     rows = q.order_by(NurturePlan.updated_at.desc()).limit(200).all()
+
+    # Enrich plans with device platform (android/ios) inferred from binding.device_id -> MobileDevice.platform
+    binding_ids = {int(r.binding_id) for r in rows if getattr(r, "binding_id", None)}
+    bindings = (
+        db.query(NurtureBinding).filter(NurtureBinding.id.in_(binding_ids)).all() if binding_ids else []
+    )
+    binding_map = {b.id: b for b in bindings}
+    device_ids = {b.device_id for b in bindings if getattr(b, "device_id", None)}
+    devices = (
+        db.query(MobileDevice).filter(MobileDevice.id.in_(device_ids)).all() if device_ids else []
+    )
+    device_map = {d.id: d for d in devices}
+
     return [
         {
             "id": r.id,
             "binding_id": r.binding_id,
+            "device_id": (binding_map.get(r.binding_id).device_id if binding_map.get(r.binding_id) else None),
+            "device_platform": (
+                (device_map.get(binding_map.get(r.binding_id).device_id).platform)
+                if (binding_map.get(r.binding_id) and device_map.get(binding_map.get(r.binding_id).device_id))
+                else None
+            ),
+            "task_platform": (
+                "reddit_ios"
+                if (
+                    binding_map.get(r.binding_id)
+                    and device_map.get(binding_map.get(r.binding_id).device_id)
+                    and str(device_map.get(binding_map.get(r.binding_id).device_id).platform or "").strip().lower() == "ios"
+                )
+                else "reddit"
+            ),
             "name": r.name,
             "status": r.status,
             "plan_version": r.plan_version,
@@ -2419,10 +2549,22 @@ def create_task(
         task_payload = dict(base_payload)
         if acc_id is not None:
             task_payload["reddit_account_id"] = acc_id
+
+        # 自动根据设备平台选择任务平台：
+        # - 当 payload.platform 显式指定时尊重前端传入
+        # - 未指定时：android 设备 -> reddit，ios 设备 -> reddit_ios
+        task_platform = (payload.platform or "reddit").strip() or "reddit"
+        if not (payload.platform and payload.platform.strip()) and dev_id is not None:
+            dev = db.query(MobileDevice).filter(MobileDevice.id == dev_id).first()
+            if dev:
+                plat = (dev.platform or "android").strip().lower()
+                if plat == "ios":
+                    task_platform = "reddit_ios"
+
         return ControlTask(
             user_id=current_user.id,
             title=payload.title.strip(),
-            platform=(payload.platform or "reddit").strip() or "reddit",
+            platform=task_platform,
             task_type=(payload.task_type or "reddit_flow").strip() or "reddit_flow",
             payload=task_payload,
             target_device_id=dev_id,

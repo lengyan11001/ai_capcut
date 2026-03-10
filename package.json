@@ -19,10 +19,14 @@
     "@remotion/player": "4.0.427",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "appium": "^3.2.1",
     "lottie-web": "^5.12.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "remotion": "4.0.427",
     "typescript": "5.9.3"
+  },
+  "devDependencies": {
+    "appium-xcuitest-driver": "^10.26.0"
   }
 }
