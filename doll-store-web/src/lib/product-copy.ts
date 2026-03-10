@@ -42,7 +42,8 @@ function translateFeatureValue(value: string): string {
   for (const [pattern, replacement] of phraseMap) {
     text = text.replace(pattern, replacement);
   }
-  return normalizeUnits(normalizeSpaces(text.replace(/，/g, ", ")));
+  const normalized = normalizeUnits(normalizeSpaces(text.replace(/，/g, ", ")));
+  return hasChinese(normalized) ? "See product details." : normalized;
 }
 
 function translateProductSizeValue(value: string): string {
@@ -69,9 +70,37 @@ function translatePackageSizeValue(value: string): string {
   return `${match[1]} x ${match[2]} x ${match[3]} cm`;
 }
 
+const NAME_MAP: Record<string, string> = {
+  "硅胶名器2号": "Silicone Pleasure Mold No.2",
+  芷琳: "Zhilin",
+  思香: "Sixiang",
+  "雯雯2号": "Wenwen No.2",
+  苏亦芙: "Suyifu",
+};
+
+const SLUG_NAME_MAP: Record<string, string> = {
+  "mxj-sgjq-2": "Silicone Pleasure Mold No.2",
+  "mxj-zhilin": "Zhilin",
+  "mxj-sixiang": "Sixiang",
+  "mxj-wenwen-2": "Wenwen No.2",
+  "mxj-suyifu": "Suyifu",
+};
+
+function titleizeFromSlug(slug?: string): string {
+  if (!slug) return "Product";
+  return slug
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export function localizeMaterial(material: string, lang: Lang): string {
   if (lang === "zh") return material;
-  return translateMaterialValue(material);
+  const localized = translateMaterialValue(material);
+  return hasChinese(localized) ? "See specs" : localized;
 }
 
 export function localizeSpecValue(key: string, value: string, lang: Lang): string {
@@ -87,7 +116,7 @@ export function localizeSpecValue(key: string, value: string, lang: Lang): strin
     case "product_weight":
       return normalizeUnits(raw);
     default:
-      return normalizeUnits(raw);
+      return hasChinese(raw) ? "N/A" : normalizeUnits(raw);
   }
 }
 
@@ -107,6 +136,34 @@ export function localizeDescription(description: string, lang: Lang): string {
   if (materialMatch?.[1]) parts.push(`Material: ${translateMaterialValue(materialMatch[1].trim())}`);
   if (productSizeMatch?.[1]) parts.push(`Product size: ${translateProductSizeValue(productSizeMatch[1].trim())}`);
   if (packageSizeMatch?.[1]) parts.push(`Packaging size: ${translatePackageSizeValue(packageSizeMatch[1].trim())}`);
-  if (parts.length === 0) return normalizeUnits(raw);
-  return parts.join(" ");
+  if (parts.length === 0) {
+    const fallback = normalizeUnits(raw);
+    return hasChinese(fallback) ? "See detailed specifications below." : fallback;
+  }
+  const merged = parts.join(" ");
+  return hasChinese(merged) ? "See detailed specifications below." : merged;
+}
+
+export function localizeProductName(name: string, slug: string | undefined, lang: Lang): string {
+  if (lang === "zh") return name;
+  const raw = normalizeSpaces(name);
+  if (!hasChinese(raw)) return raw;
+  if (SLUG_NAME_MAP[slug ?? ""]) return SLUG_NAME_MAP[slug ?? ""];
+  if (NAME_MAP[raw]) return NAME_MAP[raw];
+  return titleizeFromSlug(slug);
+}
+
+export function localizeShippingNotice(notice: string, lang: Lang): string {
+  if (lang === "zh") return notice;
+  const normalized = normalizeSpaces(notice)
+    .replace(/运费按收货地区确认后报价。?/g, "Shipping is quoted after destination confirmation.")
+    .replace(/海外仓包邮。?/g, "Free shipping from overseas warehouse.")
+    .replace(/，/g, ", ");
+  return hasChinese(normalized) ? "Shipping is confirmed after destination review." : normalized;
+}
+
+export function localizeAddOnOption(option: string, lang: Lang): string {
+  if (lang === "zh") return option;
+  const normalized = normalizeUnits(normalizeSpaces(option).replace(/，/g, ", "));
+  return hasChinese(normalized) ? "Optional add-on (details on request)" : normalized;
 }

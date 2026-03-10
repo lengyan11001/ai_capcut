@@ -8,6 +8,7 @@ import { formatMoney } from "@/lib/money";
 import { isCountrySupported } from "@/lib/shipping";
 import { normalizeLang, t, type Lang } from "@/lib/i18n";
 import { trackEvent } from "@/lib/analytics";
+import { localizeProductName } from "@/lib/product-copy";
 
 export default function CheckoutPage() {
   const { items, subtotal, clearCart } = useCart();
@@ -246,7 +247,7 @@ export default function CheckoutPage() {
             {items.map((item) => (
               <li key={item.productId} className="flex justify-between">
                 <span>
-                  {item.name} × {item.quantity}
+                  {localizeProductName(item.name, item.slug, lang)} × {item.quantity}
                 </span>
                 <span>{formatMoney(item.price * item.quantity, item.currency ?? "CNY")}</span>
               </li>

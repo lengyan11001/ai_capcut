@@ -6,7 +6,14 @@ import { formatMoney } from "@/lib/money";
 import { resolveRegionContext } from "@/lib/request-context";
 import { ProductMediaGallery } from "@/components/ProductMediaGallery";
 import { getLangFromSearchParams, t } from "@/lib/i18n";
-import { localizeDescription, localizeMaterial, localizeSpecValue } from "@/lib/product-copy";
+import {
+  localizeAddOnOption,
+  localizeDescription,
+  localizeMaterial,
+  localizeProductName,
+  localizeShippingNotice,
+  localizeSpecValue,
+} from "@/lib/product-copy";
 
 const HIDDEN_SPEC_KEYS = new Set(["source_file"]);
 
@@ -57,6 +64,7 @@ export default async function ProductPage({
   const ctx = await resolveRegionContext(resolvedSearchParams);
   const product = await getProductBySlug(slug, { region: ctx.region, debugAll: ctx.debugAll });
   if (!product) notFound();
+  const localizedName = localizeProductName(product.name, product.slug, lang);
   const displayPrice = product.salePrice ?? product.price;
   const displayCurrency = product.saleCurrency ?? product.currency ?? "CNY";
   const shippingText =
@@ -78,14 +86,14 @@ export default async function ProductPage({
       <div className="grid gap-8 lg:grid-cols-2">
         <div className="space-y-4">
           <ProductMediaGallery
-            name={product.name}
+            name={localizedName}
             images={product.images.length > 0 ? product.images : ["https://placehold.co/600x800?text=Product"]}
             videoUrl={product.videoUrl}
             lang={lang}
           />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{product.name}</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{localizedName}</h1>
           <p className="mt-1 text-xs text-gray-500">
             {t(lang, "Region view:", "地区视图:")} {ctx.region}
             {ctx.debugAll ? t(lang, " · debug_all enabled", " · 已开启debug_all") : ""}
@@ -106,7 +114,7 @@ export default async function ProductPage({
           </div>
           {(product.shippingNotice || product.shippingQuoteMode || product.isFreeShippingOverseas) && (
             <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              {product.shippingNotice ?? shippingText}
+              {product.shippingNotice ? localizeShippingNotice(product.shippingNotice, lang) : shippingText}
             </p>
           )}
           <div className="mt-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
@@ -125,7 +133,7 @@ export default async function ProductPage({
             <AddToCartButton
               productId={product.id}
               slug={product.slug}
-              name={product.name}
+              name={localizedName}
               price={displayPrice}
               currency={displayCurrency}
               image={product.images[0]}
@@ -140,7 +148,7 @@ export default async function ProductPage({
               </h3>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-600">
                 {product.addOnOptions.map((opt) => (
-                  <li key={opt}>{opt}</li>
+                  <li key={opt}>{localizeAddOnOption(opt, lang)}</li>
                 ))}
               </ul>
             </div>

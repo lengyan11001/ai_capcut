@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useCart } from "@/context/CartContext";
 import { formatMoney } from "@/lib/money";
 import { normalizeLang, t, type Lang } from "@/lib/i18n";
+import { localizeProductName } from "@/lib/product-copy";
 
 export default function CartPage() {
   const { items, updateQuantity, removeItem, subtotal, totalItems } = useCart();
@@ -52,13 +53,15 @@ export default function CartPage() {
       <div className="mt-8 grid gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <ul className="divide-y divide-gray-200">
-            {items.map((item) => (
+            {items.map((item) => {
+              const localizedName = localizeProductName(item.name, item.slug, lang);
+              return (
               <li key={item.productId} className="flex gap-4 py-6">
                 <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded bg-gray-100">
                   {item.image ? (
                     <Image
                       src={item.image}
-                      alt={item.name}
+                      alt={localizedName}
                       fill
                       className="object-cover"
                       unoptimized={
@@ -74,7 +77,7 @@ export default function CartPage() {
                       href={`/product/${item.slug}?lang=${lang}`}
                       className="font-medium text-gray-900 hover:underline"
                     >
-                      {item.name}
+                      {localizedName}
                     </Link>
                     <p className="text-sm text-gray-500">
                       {formatMoney(item.price, item.currency ?? "CNY")}
@@ -109,7 +112,8 @@ export default function CartPage() {
                   {formatMoney(item.price * item.quantity, item.currency ?? "CNY")}
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-6">

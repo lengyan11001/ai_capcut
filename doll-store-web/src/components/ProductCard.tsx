@@ -4,6 +4,7 @@ import type { Product } from "@/types";
 import { formatMoney } from "@/lib/money";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import { localizeMaterial, localizeProductName } from "@/lib/product-copy";
 
 export function ProductCard({
   product,
@@ -19,6 +20,7 @@ export function ProductCard({
   const isProxyImage = imageUrl.startsWith("/api/image-proxy");
   const displayPrice = product.salePrice ?? product.price;
   const displayCurrency = product.saleCurrency ?? product.currency ?? "CNY";
+  const localizedName = localizeProductName(product.name, product.slug, lang);
   const href = queryString ? `/product/${product.slug}?${queryString}` : `/product/${product.slug}`;
   const shippingText =
     (product.sourceType === "overseas_us" || product.sourceType === "overseas_eu") &&
@@ -33,7 +35,7 @@ export function ProductCard({
       <div className="relative aspect-[3/4] bg-[#0e1424]">
         <Image
           src={imageUrl}
-          alt={product.name}
+          alt={localizedName}
           fill
           className="object-cover transition duration-300 group-hover:scale-[1.035]"
           sizes="(max-width: 768px) 100vw, 33vw"
@@ -48,10 +50,10 @@ export function ProductCard({
       </div>
       <div className="p-4">
         <h3 className="font-medium text-gray-100 group-hover:text-white">
-          {product.name}
+          {localizedName}
         </h3>
         <p className="mt-1 text-sm text-gray-400">
-          {product.material} ·{" "}
+          {localizeMaterial(product.material, lang)} ·{" "}
           {product.sourceType === "origin"
             ? t(lang, "Origin supply", "产地供应")
             : t(lang, "Warehouse supply", "海外仓供应")}
