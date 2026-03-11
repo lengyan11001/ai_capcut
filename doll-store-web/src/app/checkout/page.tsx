@@ -14,9 +14,15 @@ type PayPalButtonsActions = {
   render: (container: HTMLElement) => Promise<void>;
 };
 
+type PayPalOnClickActions = {
+  resolve: () => Promise<void>;
+  reject: () => Promise<void>;
+};
+
 type PayPalNamespace = {
   Buttons: (config: {
     style?: { layout?: string; shape?: string; label?: string };
+    onClick?: (_data: unknown, actions: PayPalOnClickActions) => Promise<void> | void;
     createOrder: () => Promise<string>;
     onApprove: (data: { orderID?: string }) => Promise<void>;
     onCancel: () => void;
@@ -35,6 +41,7 @@ export default function CheckoutPage() {
   const [paypalSdkError, setPaypalSdkError] = useState<string | null>(null);
   const [paypalReady, setPaypalReady] = useState(false);
   const paypalButtonsRef = useRef<HTMLDivElement | null>(null);
+  const checkoutFormRef = useRef<HTMLFormElement | null>(null);
   const paypalClientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
   const [form, setForm] = useState({
     name: "",
@@ -51,6 +58,32 @@ export default function CheckoutPage() {
   const mixedCurrencies = items.some((item) => (item.currency ?? "CNY") !== summaryCurrency);
   const paypalCurrency = summaryCurrency;
   const paypalCurrencySupported = paypalCurrency === "USD" || paypalCurrency === "EUR";
+  const requiredShippingMissing = !form.name || !form.email || !form.address || !form.city || !form.postalCode || !form.country;
+
+  const paypalValidationHint = useMemo(() => {
+    if (paymentMethod !== "paypal") return null;
+    if (requiredShippingMissing) {
+      return t(lang, "Complete required shipping fields before opening PayPal.", "请先填写完整收货信息，再打开 PayPal。");
+    }
+    if (!countrySupported) {
+      return t(
+        lang,
+        "This destination is not available yet. Please contact support for a manual quote.",
+        "当前目的地暂不支持自动下单，请联系客服人工确认运费。"
+      );
+    }
+    if (mixedCurrencies) {
+      return t(
+        lang,
+        "Mixed currencies in cart are not supported for PayPal checkout.",
+        "PayPal 暂不支持购物车多币种同时结算。"
+      );
+    }
+    if (!paypalCurrencySupported) {
+      return t(lang, "PayPal currently supports USD/EUR checkout only.", "PayPal 当前仅支持 USD/EUR 结算。");
+    }
+    return null;
+  }, [paymentMethod, requiredShippingMissing, countrySupported, mixedCurrencies, paypalCurrencySupported, lang]);
 
   const validateCheckout = useMemo(
     () => () => {
@@ -197,11 +230,27 @@ export default function CheckoutPage() {
       paypal
         .Buttons({
           style: { layout: "vertical", shape: "rect", label: "paypal" },
-          createOrder: async () => {
+          onClick: async (_data: unknown, actions: PayPalOnClickActions) => {
             setError(null);
-            if (!validateCheckout()) {
-              throw new Error("Checkout form is incomplete");
+            const formValid = checkoutFormRef.current?.reportValidity() ?? true;
+            if (!formValid) {
+              setError(
+                t(
+                  lang,
+                  "Please complete required checkout fields before PayPal payment.",
+                  "请先填写完整结账必填信息，再使用 PayPal 支付。"
+                )
+              );
+              await actions.reject();
+              return;
             }
+            if (!validateCheckout()) {
+              await actions.reject();
+              return;
+            }
+            await actions.resolve();
+          },
+          createOrder: async () => {
             trackEvent("submit_order_attempt", {
               payment_method: "paypal",
               value: subtotal,
@@ -339,7 +388,7 @@ export default function CheckoutPage() {
           "当前显示价格为最终应付价格，已包含运费。"
         )}
       </p>
-      <form onSubmit={handleSubmit} className="mt-8 grid gap-8 lg:grid-cols-3">
+      <form ref={checkoutFormRef} onSubmit={handleSubmit} className="mt-8 grid gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700">
@@ -556,6 +605,9 @@ export default function CheckoutPage() {
             {paymentMethod === "paypal" && (
               <div className="mt-3 space-y-2">
                 <div ref={paypalButtonsRef} />
+                {paypalValidationHint && (
+                  <p className="text-xs text-amber-700">{paypalValidationHint}</p>
+                )}
                 {!paypalReady && !paypalSdkError && (
                   <p className="text-xs text-gray-500">
                     {t(lang, "Loading PayPal...", "正在加载 PayPal...")}
