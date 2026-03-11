@@ -1,8 +1,13 @@
 import type { CartItem } from "@/types";
 
-export type OrderPaymentMethod = "manual_contact" | "crypto_manual";
+export type OrderPaymentMethod = "manual_contact" | "crypto_manual" | "paypal";
 
 export type OrderPaymentMeta = {
+  provider?: "paypal" | "crypto_manual";
+  orderId?: string;
+  captureId?: string;
+  payerEmail?: string;
+  status?: string;
   txHash?: string;
   paidAmount?: number;
   paidAt?: string;
@@ -48,7 +53,12 @@ export function normalizeOrderItems(raw: unknown): OrderItemsPayload {
 
   const value = raw as Partial<OrderItemsPayload> & { lines?: unknown };
   const lines = Array.isArray(value.lines) ? (value.lines as CartItem[]) : [];
-  const paymentMethod = value.paymentMethod === "crypto_manual" ? "crypto_manual" : "manual_contact";
+  const paymentMethod =
+    value.paymentMethod === "crypto_manual"
+      ? "crypto_manual"
+      : value.paymentMethod === "paypal"
+        ? "paypal"
+        : "manual_contact";
 
   return {
     lines,

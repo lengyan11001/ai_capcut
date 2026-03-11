@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/context/CartContext";
 import Link from "next/link";
@@ -10,6 +10,20 @@ import { normalizeLang, t, type Lang } from "@/lib/i18n";
 import { trackEvent } from "@/lib/analytics";
 import { localizeProductName } from "@/lib/product-copy";
 
+type PayPalButtonsActions = {
+  render: (container: HTMLElement) => Promise<void>;
+};
+
+type PayPalNamespace = {
+  Buttons: (config: {
+    style?: { layout?: string; shape?: string; label?: string };
+    createOrder: () => Promise<string>;
+    onApprove: (data: { orderID?: string }) => Promise<void>;
+    onCancel: () => void;
+    onError: () => void;
+  }) => PayPalButtonsActions;
+};
+
 export default function CheckoutPage() {
   const { items, subtotal, clearCart } = useCart();
   const router = useRouter();
@@ -17,7 +31,11 @@ export default function CheckoutPage() {
   const [lang, setLang] = useState<Lang>("en");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<"manual_contact" | "crypto_manual">("manual_contact");
+  const [paymentMethod, setPaymentMethod] = useState<"manual_contact" | "crypto_manual" | "paypal">("manual_contact");
+  const [paypalSdkError, setPaypalSdkError] = useState<string | null>(null);
+  const [paypalReady, setPaypalReady] = useState(false);
+  const paypalButtonsRef = useRef<HTMLDivElement | null>(null);
+  const paypalClientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -31,27 +49,67 @@ export default function CheckoutPage() {
   const countrySupported = form.country ? isCountrySupported(form.country) : true;
   const summaryCurrency = (items[0]?.currency ?? "CNY") as "CNY" | "USD" | "EUR";
   const mixedCurrencies = items.some((item) => (item.currency ?? "CNY") !== summaryCurrency);
+  const paypalCurrency = summaryCurrency;
+  const paypalCurrencySupported = paypalCurrency === "USD" || paypalCurrency === "EUR";
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    if (!countrySupported) {
-      setError(
-        t(
-          lang,
-          "This destination is not available yet. Please contact support for a manual shipping quote.",
-          "当前目的地暂不支持自动下单，请联系客服人工确认运费。"
-        )
-      );
-      return;
-    }
-    setLoading(true);
-    trackEvent("submit_order_attempt", {
-      payment_method: paymentMethod,
-      value: subtotal,
-      currency: summaryCurrency,
-    });
-    try {
+  const validateCheckout = useMemo(
+    () => () => {
+      if (!form.name || !form.email || !form.address || !form.city || !form.postalCode || !form.country) {
+        setError(t(lang, "Please complete all required shipping fields.", "请填写完整收货信息。"));
+        return false;
+      }
+      if (!countrySupported) {
+        setError(
+          t(
+            lang,
+            "This destination is not available yet. Please contact support for a manual shipping quote.",
+            "当前目的地暂不支持自动下单，请联系客服人工确认运费。"
+          )
+        );
+        return false;
+      }
+      if (mixedCurrencies) {
+        setError(
+          t(
+            lang,
+            "Mixed currencies in cart are not supported for PayPal checkout.",
+            "PayPal 暂不支持购物车多币种同时结算。"
+          )
+        );
+        return false;
+      }
+      if (paymentMethod === "paypal" && !paypalCurrencySupported) {
+        setError(
+          t(
+            lang,
+            "PayPal currently supports USD/EUR checkout only.",
+            "PayPal 当前仅支持 USD/EUR 结算。"
+          )
+        );
+        return false;
+      }
+      return true;
+    },
+    [
+      countrySupported,
+      form.address,
+      form.city,
+      form.country,
+      form.email,
+      form.name,
+      form.postalCode,
+      lang,
+      mixedCurrencies,
+      paymentMethod,
+      paypalCurrencySupported,
+    ]
+  );
+
+  const submitOrder = useCallback(
+    async (
+      method: "manual_contact" | "crypto_manual" | "paypal",
+      paypalMeta?: { orderId: string; captureId: string; payerEmail?: string; status?: string }
+    ) => {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -61,20 +119,39 @@ export default function CheckoutPage() {
           items,
           total: subtotal,
           currency: summaryCurrency,
-          paymentMethod,
+          paymentMethod: method,
+          paypal: paypalMeta,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? t(lang, "Order failed", "订单提交失败"));
       clearCart();
       trackEvent("submit_order_success", {
-        payment_method: paymentMethod,
+        payment_method: method,
         value: subtotal,
         currency: summaryCurrency,
       });
-      router.push(
-        `/checkout/thank-you?orderId=${data.orderId ?? ""}&lang=${lang}&paymentMethod=${paymentMethod}`
-      );
+      router.push(`/checkout/thank-you?orderId=${data.orderId ?? ""}&lang=${lang}&paymentMethod=${method}`);
+    },
+    [form, items, subtotal, summaryCurrency, lang, clearCart, router]
+  );
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (paymentMethod === "paypal") {
+      setError(t(lang, "Please complete payment using the PayPal button below.", "请点击下方 PayPal 按钮完成支付。"));
+      return;
+    }
+    if (!validateCheckout()) return;
+    setLoading(true);
+    trackEvent("submit_order_attempt", {
+      payment_method: paymentMethod,
+      value: subtotal,
+      currency: summaryCurrency,
+    });
+    try {
+      await submitOrder(paymentMethod);
     } catch (err) {
       setError(err instanceof Error ? err.message : t(lang, "Something went wrong", "系统异常，请稍后重试"));
     } finally {
@@ -93,6 +170,144 @@ export default function CheckoutPage() {
     }, 0);
     return () => clearTimeout(timer);
   }, [subtotal, summaryCurrency]);
+
+  useEffect(() => {
+    if (!mounted || paymentMethod !== "paypal") return;
+    if (!paypalClientId) {
+      setPaypalSdkError(
+        t(
+          lang,
+          "PayPal is not configured yet. Please contact support.",
+          "PayPal 尚未配置，请联系客服。"
+        )
+      );
+      return;
+    }
+
+    let cancelled = false;
+    const scriptId = "paypal-sdk-js";
+
+    const renderButtons = () => {
+      if (cancelled) return;
+      const paypal = (window as typeof window & { paypal?: PayPalNamespace }).paypal;
+      const container = paypalButtonsRef.current;
+      if (!paypal || !container) return;
+      container.innerHTML = "";
+      setPaypalReady(false);
+      paypal
+        .Buttons({
+          style: { layout: "vertical", shape: "rect", label: "paypal" },
+          createOrder: async () => {
+            setError(null);
+            if (!validateCheckout()) {
+              throw new Error("Checkout form is incomplete");
+            }
+            trackEvent("submit_order_attempt", {
+              payment_method: "paypal",
+              value: subtotal,
+              currency: paypalCurrency,
+            });
+            const res = await fetch("/api/paypal/create-order", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ amount: subtotal, currency: paypalCurrency }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.paypalOrderId) {
+              throw new Error(data.error ?? "Failed to initialize PayPal");
+            }
+            return data.paypalOrderId;
+          },
+          onApprove: async (data: { orderID?: string }) => {
+            setLoading(true);
+            try {
+              if (!data.orderID) throw new Error("Missing PayPal order ID");
+              const captureRes = await fetch("/api/paypal/capture-order", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ paypalOrderId: data.orderID }),
+              });
+              const captureData = await captureRes.json();
+              if (!captureRes.ok) {
+                throw new Error(captureData.error ?? "Failed to capture PayPal payment");
+              }
+              await submitOrder("paypal", {
+                orderId: captureData.orderId,
+                captureId: captureData.captureId,
+                payerEmail: captureData.payerEmail,
+                status: captureData.status,
+              });
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "PayPal checkout failed");
+            } finally {
+              setLoading(false);
+            }
+          },
+          onCancel: () => {
+            setError(t(lang, "PayPal payment was cancelled.", "PayPal 支付已取消。"));
+          },
+          onError: () => {
+            setError(t(lang, "PayPal failed to initialize. Try again later.", "PayPal 初始化失败，请稍后重试。"));
+          },
+        })
+        .render(container)
+        .then(() => {
+          if (!cancelled) setPaypalReady(true);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setPaypalSdkError(
+              t(lang, "PayPal button failed to render.", "PayPal 按钮渲染失败。")
+            );
+          }
+        });
+    };
+
+    const existingScript = document.getElementById(scriptId) as HTMLScriptElement | null;
+    const desiredSrc = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(
+      paypalClientId
+    )}&currency=${encodeURIComponent(paypalCurrency)}&intent=capture`;
+
+    if (existingScript && existingScript.src !== desiredSrc) {
+      existingScript.remove();
+    }
+    const currentScript = (document.getElementById(scriptId) as HTMLScriptElement | null) ?? null;
+    if (currentScript) {
+      if ((window as typeof window & { paypal?: PayPalNamespace }).paypal) {
+        renderButtons();
+      } else {
+        currentScript.addEventListener("load", renderButtons, { once: true });
+      }
+    } else {
+      const script = document.createElement("script");
+      script.id = scriptId;
+      script.src = desiredSrc;
+      script.async = true;
+      script.onload = renderButtons;
+      script.onerror = () => {
+        if (!cancelled) {
+          setPaypalSdkError(
+            t(lang, "Failed to load PayPal SDK.", "加载 PayPal SDK 失败。")
+          );
+        }
+      };
+      document.body.appendChild(script);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    mounted,
+    paymentMethod,
+    paypalClientId,
+    paypalCurrency,
+    subtotal,
+    validateCheckout,
+    lang,
+    paypalCurrencySupported,
+    submitOrder,
+  ]);
   const withLang = (path: string) => `${path}?lang=${lang}`;
 
   if (!mounted) {
@@ -120,8 +335,8 @@ export default function CheckoutPage() {
       <p className="mt-2 text-sm text-gray-500">
         {t(
           lang,
-          "Displayed prices are factory-to-forwarder only. International freight and final payable amount will be confirmed after destination review.",
-          "当前显示价格仅为工厂到货代，国际运费与最终应付金额将在确认目的地后给出。"
+          "Displayed prices are final payable prices and include shipping.",
+          "当前显示价格为最终应付价格，已包含运费。"
         )}
       </p>
       <form onSubmit={handleSubmit} className="mt-8 grid gap-8 lg:grid-cols-3">
@@ -260,7 +475,7 @@ export default function CheckoutPage() {
               : formatMoney(subtotal, summaryCurrency)}
           </p>
           <p className="mt-1 text-xs text-gray-500">
-            {t(lang, "Freight: quoted after destination confirmation.", "运费：确认收货地区后报价。")}
+            {t(lang, "Shipping is included in the amount above.", "运费已包含在上方金额中。")}
           </p>
           <div className="mt-4 rounded border border-gray-200 bg-white p-3 text-left">
             <p className="text-sm font-medium text-gray-800">{t(lang, "Payment method", "支付方式")}</p>
@@ -306,6 +521,29 @@ export default function CheckoutPage() {
                 </span>
               </span>
             </label>
+            <label className="mt-2 flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="radio"
+                name="paymentMethod"
+                value="paypal"
+                checked={paymentMethod === "paypal"}
+                onChange={() => setPaymentMethod("paypal")}
+                className="mt-0.5"
+                disabled={!paypalCurrencySupported}
+              />
+              <span>
+                <span className="font-medium">PayPal</span>
+                <span className="block text-xs text-gray-500">
+                  {!paypalCurrencySupported
+                    ? t(lang, "Unavailable for current currency.", "当前币种暂不支持 PayPal。")
+                    : t(
+                        lang,
+                        "Pay now with PayPal. Order is confirmed immediately after successful payment.",
+                        "使用 PayPal 立即支付，支付成功后自动确认订单。"
+                      )}
+                </span>
+              </span>
+            </label>
             {paymentMethod === "crypto_manual" && (
               <p className="mt-2 text-xs text-amber-700">
                 {t(
@@ -315,14 +553,27 @@ export default function CheckoutPage() {
                 )}
               </p>
             )}
+            {paymentMethod === "paypal" && (
+              <div className="mt-3 space-y-2">
+                <div ref={paypalButtonsRef} />
+                {!paypalReady && !paypalSdkError && (
+                  <p className="text-xs text-gray-500">
+                    {t(lang, "Loading PayPal...", "正在加载 PayPal...")}
+                  </p>
+                )}
+                {paypalSdkError && <p className="text-xs text-red-600">{paypalSdkError}</p>}
+              </div>
+            )}
           </div>
-          <button
-            type="submit"
-            disabled={loading || !countrySupported}
-            className="mt-6 w-full rounded bg-gray-900 py-3 font-medium text-white hover:bg-gray-800 disabled:opacity-70"
-          >
-            {loading ? t(lang, "Submitting…", "提交中…") : t(lang, "Submit order", "提交订单")}
-          </button>
+          {paymentMethod !== "paypal" && (
+            <button
+              type="submit"
+              disabled={loading || !countrySupported}
+              className="mt-6 w-full rounded bg-gray-900 py-3 font-medium text-white hover:bg-gray-800 disabled:opacity-70"
+            >
+              {loading ? t(lang, "Submitting…", "提交中…") : t(lang, "Submit order", "提交订单")}
+            </button>
+          )}
         </div>
       </form>
     </div>

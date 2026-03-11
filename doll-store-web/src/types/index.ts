@@ -76,5 +76,11 @@ export interface OrderPayload {
   items: CartItem[];
   total: number;
   currency: string;
-  paymentMethod?: "manual_contact" | "crypto_manual";
+  paymentMethod?: "manual_contact" | "crypto_manual" | "paypal";
+  paypal?: {
+    orderId: string;
+    captureId: string;
+    payerEmail?: string;
+    status?: string;
+  };
 }

@@ -84,7 +84,11 @@ export default async function AdminOrderDetailPage({
           <div>
             <p className="text-xs text-gray-500">Payment</p>
             <p className="text-sm text-gray-800">
-              {details.paymentMethod === "crypto_manual" ? "Crypto (manual)" : "Manual contact"}
+              {details.paymentMethod === "crypto_manual"
+                ? "Crypto (manual)"
+                : details.paymentMethod === "paypal"
+                  ? "PayPal"
+                  : "Manual contact"}
             </p>
             {details.payment?.txHash ? (
               <p className="break-all text-xs text-gray-600">tx: {details.payment.txHash}</p>

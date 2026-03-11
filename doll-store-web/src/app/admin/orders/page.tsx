@@ -72,7 +72,13 @@ export default async function AdminOrdersPage() {
                       <div className="font-medium text-gray-900">{row.shipping_name}</div>
                       <div className="text-xs text-gray-500">{row.email}</div>
                     </td>
-                    <td className="px-3 py-2">{details.paymentMethod === "crypto_manual" ? "Crypto" : "Manual"}</td>
+                    <td className="px-3 py-2">
+                      {details.paymentMethod === "crypto_manual"
+                        ? "Crypto"
+                        : details.paymentMethod === "paypal"
+                          ? "PayPal"
+                          : "Manual"}
+                    </td>
                     <td className="px-3 py-2">
                       <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">{row.status ?? "pending"}</span>
                     </td>

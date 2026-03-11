@@ -9,7 +9,12 @@ export default async function ThankYouPage({
   const params = await searchParams;
   const orderId = params.orderId ?? "";
   const lang = normalizeLang(params.lang);
-  const paymentMethod = params.paymentMethod === "crypto_manual" ? "crypto_manual" : "manual_contact";
+  const paymentMethod =
+    params.paymentMethod === "crypto_manual"
+      ? "crypto_manual"
+      : params.paymentMethod === "paypal"
+        ? "paypal"
+        : "manual_contact";
   const cryptoAddress = process.env.CRYPTO_PAY_ADDRESS;
   const cryptoNetwork = process.env.CRYPTO_PAY_NETWORK ?? "TRON (TRC20)";
   const cryptoCoin = process.env.CRYPTO_PAY_COIN ?? "USDT";
@@ -29,7 +34,13 @@ export default async function ThankYouPage({
               "Order received. Please complete crypto transfer using the details below, then contact support for confirmation.",
               "订单已收到。请按下方信息完成加密货币转账，并联系客服确认到账。"
             )
-          : t(
+          : paymentMethod === "paypal"
+            ? t(
+                lang,
+                "PayPal payment completed successfully. We will now process your order.",
+                "PayPal 支付已完成，我们将开始处理你的订单。"
+              )
+            : t(
               lang,
               "We’ve received your order and will contact you shortly for secure payment and shipping details.",
               "我们已收到订单，将尽快联系你确认支付与发货细节。"

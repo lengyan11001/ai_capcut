@@ -19,8 +19,9 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { email, shipping, items, total, currency, paymentMethod } = body as OrderPayload;
-  const resolvedPaymentMethod = paymentMethod === "crypto_manual" ? "crypto_manual" : "manual_contact";
+  const { email, shipping, items, total, currency, paymentMethod, paypal } = body as OrderPayload;
+  const resolvedPaymentMethod =
+    paymentMethod === "crypto_manual" ? "crypto_manual" : paymentMethod === "paypal" ? "paypal" : "manual_contact";
   if (!email || !shipping?.name || !shipping?.address || !Array.isArray(items) || typeof total !== "number") {
     return Response.json(
       { error: "Missing required fields: email, shipping (name, address), items, total" },
@@ -33,6 +34,9 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  if (resolvedPaymentMethod === "paypal" && (!paypal?.orderId || !paypal?.captureId)) {
+    return Response.json({ error: "PayPal payment details are required" }, { status: 400 });
+  }
 
   const supabase = getSupabase();
   if (supabase) {
@@ -42,9 +46,20 @@ export async function POST(request: NextRequest) {
       payment:
         resolvedPaymentMethod === "crypto_manual"
           ? {
+              provider: "crypto_manual",
               coin: process.env.CRYPTO_PAY_COIN ?? "USDT",
               network: process.env.CRYPTO_PAY_NETWORK ?? "TRON (TRC20)",
             }
+          : resolvedPaymentMethod === "paypal"
+            ? {
+                provider: "paypal",
+                orderId: paypal?.orderId,
+                captureId: paypal?.captureId,
+                payerEmail: paypal?.payerEmail,
+                status: paypal?.status ?? "COMPLETED",
+                paidAt: new Date().toISOString(),
+                paidAmount: total,
+              }
           : undefined,
     });
     const { data, error } = await supabase
@@ -63,7 +78,12 @@ export async function POST(request: NextRequest) {
         items: orderItems,
         total,
         currency: currency ?? "CNY",
-        status: resolvedPaymentMethod === "crypto_manual" ? "pending_crypto" : "pending",
+        status:
+          resolvedPaymentMethod === "crypto_manual"
+            ? "pending_crypto"
+            : resolvedPaymentMethod === "paypal"
+              ? "paid"
+              : "pending",
       })
       .select("id")
       .single();

@@ -10,7 +10,7 @@ type LookupOrder = {
   currency: "CNY" | "USD" | "EUR";
   status: string;
   createdAt: string;
-  paymentMethod: "manual_contact" | "crypto_manual";
+  paymentMethod: "manual_contact" | "crypto_manual" | "paypal";
   trackingNumber: string | null;
   trackingUrl: string | null;
   shippingCarrier: string | null;
@@ -112,6 +112,8 @@ export default function OrdersLookupClient({ lang }: { lang: Lang }) {
                 {t(lang, "Payment:", "支付方式:")}{" "}
                 {order.paymentMethod === "crypto_manual"
                   ? t(lang, "Crypto transfer", "加密货币转账")
+                  : order.paymentMethod === "paypal"
+                    ? "PayPal"
                   : t(lang, "Manual contact", "人工联系")}
               </p>
               <p className="text-sm text-gray-700">
