@@ -33,3 +33,58 @@ a {
   background: rgba(99, 102, 241, 0.35);
   color: #fff;
 }
+
+/* Global contrast overrides for dark UI */
+body .text-gray-900 {
+  color: #f3f4f6 !important;
+}
+body .text-gray-800 {
+  color: #e5e7eb !important;
+}
+body .text-gray-700 {
+  color: #d1d5db !important;
+}
+body .text-gray-600 {
+  color: #cbd5e1 !important;
+}
+body .text-gray-500 {
+  color: #94a3b8 !important;
+}
+body .text-gray-400 {
+  color: #9ca3af !important;
+}
+
+body .bg-white {
+  background-color: #12182a !important;
+}
+body .bg-gray-50 {
+  background-color: #12182a !important;
+}
+body .bg-gray-100 {
+  background-color: #0f1526 !important;
+}
+
+body .border-gray-300 {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+body .border-gray-200 {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+body .border-gray-100 {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+body .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+body .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+body .placeholder\:text-gray-500::placeholder {
+  color: #6b7280 !important;
+}
+
+body .hover\:bg-gray-50:hover {
+  background-color: #1a2238 !important;
+}
