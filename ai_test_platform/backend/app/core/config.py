@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     # FB Ads 海外 VPS 代理配置
     fb_ads_vps_url: str | None = None  # 海外 VPS API 地址，如 http://vps-ip:8000
     fb_ads_server_secret: str | None = None  # 与 VPS 的 server-to-server 鉴权密钥
+    # Reddit 评论转视频后端（异步任务调用）
+    reddit_comment2video_backend_url: str | None = None  # 如 http://127.0.0.1:8003
 
     class Config:
         env_file = ".env"

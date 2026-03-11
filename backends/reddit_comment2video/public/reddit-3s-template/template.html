@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Reddit Clip</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <video class="bg-video" src="__BG_VIDEO_SRC__" autoplay muted loop playsinline preload="auto"></video>
+    <div class="overlay">
+      <div class="stack">
+        <div class="post-card" role="group" aria-label="post image">
+          <img class="post-image" src="__POST_IMAGE__" alt="post image" />
+        </div>
+
+        <div class="comment-card" role="group" aria-label="comment">
+          <div class="comment-header">
+            <img class="comment-avatar" src="__PERSONA_AVATAR__" alt="avatar" />
+            <div class="comment-meta">
+              <div class="comment-author">__PERSONA_NAME__</div>
+            </div>
+          </div>
+          <div class="comment-text">__COMMENT_TEXT__</div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
+

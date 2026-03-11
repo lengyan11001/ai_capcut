@@ -232,6 +232,8 @@ class CapabilityCallLog(Base):
     chat_session_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     chat_context_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    # 异步任务状态：pending | running | completed | failed；NULL 表示历史记录按 success 推断
+    status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
 
 
 class ChatTurnLog(Base):

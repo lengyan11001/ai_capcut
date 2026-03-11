@@ -223,6 +223,8 @@ def _ensure_capability_call_log_columns():
                     conn.execute(text("ALTER TABLE capability_call_logs ADD COLUMN chat_session_id VARCHAR(128)"))
                 if "chat_context_id" not in columns:
                     conn.execute(text("ALTER TABLE capability_call_logs ADD COLUMN chat_context_id VARCHAR(128)"))
+                if "status" not in columns:
+                    conn.execute(text("ALTER TABLE capability_call_logs ADD COLUMN status VARCHAR(32)"))
     except Exception:
         pass
 

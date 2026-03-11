@@ -564,6 +564,11 @@ def _tool_definitions(catalog: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]
                 "inputSchema": {"type": "object", "properties": {}},
             },
             {
+                "name": "get_reddit_configured_subreddits",
+                "description": "查询 Reddit 评论转短视频当前已配置的板块列表与数量。用户问「配置了几个板块」「有哪些板块」时使用。",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+            {
                 "name": "invoke_capability",
                 "description": "调用平台统一能力路由（不暴露供应商细节）",
                 "inputSchema": {
@@ -790,6 +795,15 @@ async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str], requ
                         for cid in sorted(catalog.keys())
                     ]
                 }
+            elif name == "get_reddit_configured_subreddits":
+                r = await client.get(
+                    f"{BASE_URL}/capabilities/reddit-comment2video/configured-subreddits",
+                    headers=_backend_headers(token),
+                )
+                if r.status_code != 200:
+                    data = {"error": (r.json() if r.content else {}).get("detail") or r.text or f"HTTP {r.status_code}"}
+                else:
+                    data = r.json() if r.content else {"subreddits": [], "count": 0}
             elif name == "invoke_capability":
                 catalog = await _runtime_catalog(token, request=request)
                 capability_id = (args.get("capability_id") or "").strip()
@@ -820,6 +834,28 @@ async def _call_tool(name: str, args: Dict[str, Any], token: Optional[str], requ
                         left = int((me_json or {}).get("credits") or 0)
                         if left < required_credits:
                             return ([{"type": "text", "text": f"积分不足，调用该能力需 {required_credits}，当前 {left}"}], True)
+                # Reddit 评论转视频：走平台异步提交，不等待执行完成，提示用户到能力库看调用记录
+                if capability_id == "skill.reddit_comment2video":
+                    submit_body = {}
+                    if payload.get("max_clips") is not None:
+                        submit_body["max_clips"] = int(payload["max_clips"])
+                    if payload.get("subreddits"):
+                        sub = payload["subreddits"]
+                        submit_body["subreddits"] = sub if isinstance(sub, list) else [str(sub)]
+                    try:
+                        r = await client.post(
+                            f"{BASE_URL}/capabilities/reddit-comment2video/submit",
+                            json=submit_body,
+                            headers=_backend_headers(token),
+                        )
+                        if r.status_code in (200, 201, 202):
+                            j = r.json() if r.content else {}
+                            msg = j.get("message") or "任务已创建，请到能力库查看能力调用记录；完成的可查看下载链接，执行中或失败的会显示状态与原因。"
+                            return ([{"type": "text", "text": msg}], False)
+                        err = (r.json() if r.content else {}).get("detail") or r.text or f"HTTP {r.status_code}"
+                        return ([{"type": "text", "text": f"提交失败: {err}"}], True)
+                    except Exception as e:  # noqa: BLE001
+                        return ([{"type": "text", "text": f"提交任务出错: {e}"}], True)
                 # 用户通常不会主动提供 model，这里给图片生成补默认模型兜底。
                 effective_payload = dict(payload)
                 auto_selected_model = ""

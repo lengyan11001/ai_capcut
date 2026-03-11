@@ -158,38 +158,16 @@ openclaw gateway --port 18789
 
 ### 4.3 使用 systemd 常驻（推荐生产）
 
-创建 unit 文件：
+使用 systemd 可避免 Gateway 进程退出后无人知晓导致「无响应」；崩溃后会自动重启。仓库内提供示例 unit：
+
+- **学习实例（18789）**：`ai_test_platform/scripts/openclaw-gateway-learn.service.example`
+
+复制并按需修改用户与 `openclaw` 路径后安装：
 
 ```bash
-sudo tee /etc/systemd/system/openclaw-gateway.service << 'EOF'
-[Unit]
-Description=OpenClaw Gateway
-After=network.target
-
-[Service]
-Type=simple
-User=你的运行用户
-WorkingDirectory=/home/你的用户
-Environment="PATH=/usr/bin:/usr/local/bin:你的node路径"
-ExecStart=/usr/bin/openclaw gateway
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-将 `ExecStart` 中的 `/usr/bin/openclaw` 改为实际 `which openclaw` 路径；`User`、`WorkingDirectory` 改为实际用户与目录。若使用 nvm，可改为：
-
-```ini
-Environment="PATH=/home/你的用户/.nvm/versions/node/v22.x.x/bin:..."
-ExecStart=/home/你的用户/.nvm/versions/node/v22.x.x/bin/openclaw gateway
-```
-
-然后：
-
-```bash
+sudo cp /path/to/ai_test_platform/scripts/openclaw-gateway-learn.service.example /etc/systemd/system/openclaw-gateway.service
+# 若 openclaw 不在 /usr/bin：sudo sed -i 's|/usr/bin/openclaw|'"$(which openclaw)"'|g' /etc/systemd/system/openclaw-gateway.service
+# 若运行用户不是 ubuntu：sudo sed -i 's/User=ubuntu/User=你的用户/g; s|/home/ubuntu|/home/你的用户|g' /etc/systemd/system/openclaw-gateway.service
 sudo systemctl daemon-reload
 sudo systemctl enable openclaw-gateway
 sudo systemctl start openclaw-gateway
@@ -242,8 +220,18 @@ OPENCLAW_GATEWAY_TOKEN=你在 openclaw.json 里配置的 token
 
 ## 八、常见问题
 
-- **502 / 无法连接 OpenClaw Gateway**  
-  检查：Gateway 是否已启动；`OPENCLAW_GATEWAY_URL` 是否与 Gateway 监听地址一致；本机防火墙是否拦截。
+- **智能对话无响应 / No response from OpenClaw**  
+  - **1）确认 Gateway 进程与端口**：在 Gateway 所在机执行 `ps aux | grep openclaw`（应有 `openclaw` 与 `openclaw-gateway`）、`ss -tlnp | grep 18789`（学习实例应有监听）、`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18789/`（期望 200）。若进程或端口不存在，多半是 Gateway 已退出，需重新启动（见上文「四、启动」）；建议改用 systemd（见 4.3）以便崩溃后自动重启。  
+  - **2）确认平台配置**：本平台 `.env` 中 `OPENCLAW_GATEWAY_URL`（如 `http://127.0.0.1:18789`）、`OPENCLAW_GATEWAY_TOKEN` 已配置；`OPENCLAW_LEARN_ALLOWLIST` 包含当前管理员 user id（如 `2`）。`OPENCLAW_GATEWAY_TOKEN` 必须与 `~/.openclaw/openclaw.json` 中 `gateway.auth.token` 完全一致。  
+  - **3）看日志**：发送一条智能对话后，看本平台后端日志是否有 `openclaw_chat duration_ms=... status=...`（有则请求已到 Gateway）；Gateway 日志在 nohup 时为 `/tmp/openclaw-gateway-18789.log`，systemd 时为 `journalctl -u openclaw-gateway -f`。若请求超时（约 120 秒），检查 Gateway 或模型/MCP 是否卡住。  
+  - **4）手动测 Gateway**：在服务器上执行  
+    `curl -s -X POST http://127.0.0.1:18789/v1/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer 你的gateway_token" -H "x-openclaw-agent-id: main" -d '{"model":"openclaw","messages":[{"role":"user","content":"hi"}]}'`  
+    能正常返回 JSON 则 Gateway 与模型通路正常；401 则 token 错误。
+
+- **502 / 无法连接 OpenClaw Gateway** 或 **All connection attempts failed**  
+  - 检查对应实例的 Gateway 是否已启动：管理员/白名单走学习实例（默认 18789），普通用户走用户实例（默认 18790）。`ss -lntp | grep -E '18789|18790'` 确认端口有进程监听。  
+  - 确认平台后端所在机器能访问上述地址（`OPENCLAW_GATEWAY_URL` / `OPENCLAW_GATEWAY_URL_USERS`）；若后端与 Gateway 非同机，URL 需为 Gateway 所在机的内网 IP 或可解析域名，且防火墙/安全组放行。  
+  - 双实例部署时，用户实例未起会导致普通用户连接失败，需按 [OPENCLAW_DUAL_SETUP.md](OPENCLAW_DUAL_SETUP.md) 在对应端口启动用户实例 Gateway。
 
 - **401 Unauthorized**  
   `.env` 中的 `OPENCLAW_GATEWAY_TOKEN` 必须与 `~/.openclaw/openclaw.json` 中 `gateway.auth.token` 完全一致。

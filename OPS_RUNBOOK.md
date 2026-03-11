@@ -157,3 +157,32 @@ curl -s "http://127.0.0.1:8000/capabilities/call-logs?limit=20" \
 - 新用户注册后无法使用
   - 检查是否自动分配 binding：`/auth/openclaw-bindings?user_id=...`。
 
+### 7.1 OpenClaw 无响应（智能对话无回复）
+
+当用户反馈「智能对话无响应」或长时间 loading 后报错时，按下面顺序排查。
+
+1. **Gateway 是否在运行**（在 Gateway 所在机执行）  
+   ```bash
+   ps aux | grep openclaw
+   ss -tlnp | grep 18789
+   curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18789/
+   ```  
+   期望：有 `openclaw` / `openclaw-gateway` 进程、18789 有监听、curl 返回 200。若没有，说明 Gateway 已退出，需重新启动（nohup 或 systemd）。学习实例（18789）建议用 systemd：见 `ai_test_platform/scripts/openclaw-gateway-learn.service.example` 与 [OPENCLAW_SERVER_SETUP.md](ai_test_platform/docs/OPENCLAW_SERVER_SETUP.md)。
+
+2. **平台 .env 与 token**  
+   确认 `OPENCLAW_GATEWAY_URL`、`OPENCLAW_GATEWAY_TOKEN`、`OPENCLAW_LEARN_ALLOWLIST` 已配置；token 与 `~/.openclaw/openclaw.json` 中 `gateway.auth.token` 完全一致。
+
+3. **手动测 Chat Completions**  
+   ```bash
+   curl -s -X POST http://127.0.0.1:18789/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer 你的GATEWAY_TOKEN" \
+     -H "x-openclaw-agent-id: main" \
+     -d '{"model":"openclaw","messages":[{"role":"user","content":"hi"}]}'
+   ```  
+   能返回 JSON 则 Gateway 正常；401 为 token 错误；一直无响应则 Gateway 或模型/MCP 侧卡住。
+
+4. **日志**  
+   - 本平台后端：发一条对话后看是否有 `openclaw_chat duration_ms=... status=...`。  
+   - Gateway：nohup 启动时看 `/tmp/openclaw-gateway-18789.log`；systemd 时 `journalctl -u openclaw-gateway -f`。
+

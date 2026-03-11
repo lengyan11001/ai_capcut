@@ -1,0 +1,49 @@
+{
+  "output_dir": "out/reddit-comment2video-clips",
+  "default_max_clips": 2,
+  "time_window_hours": {
+    "min": 24,
+    "max": 48
+  },
+  "post_filters": {
+    "min_score": 500,
+    "min_num_comments": 100,
+    "min_image_width": 600,
+    "min_aspect_ratio": 0.6,
+    "exclude_ads": true,
+    "exclude_over18": true,
+    "exclude_video": true,
+    "exclude_gallery": true,
+    "exclude_gif": true,
+    "exclude_selftext_only": true
+  },
+  "youtube_safety_filters_path": "scripts/youtube_safety_filters.json",
+  "background_videos_dir": "public/reddit-3s-template/bg",
+  "background_audio_dir": "public/reddit-3s-template/audio",
+  "subreddits": [
+    {
+      "name": "ProgrammerHumor",
+      "subreddit_path": "/r/ProgrammerHumor",
+      "subreddit_url": "https://www.reddit.com/r/ProgrammerHumor",
+      "youtube_channel_id": "redditreveriesdb",
+      "comment_persona_name": "Reddit Reveries DB",
+      "comment_persona_avatar_path": "public/reddit-3s-template/avatars/redditreveriesdb.png"
+    },
+    {
+      "name": "rosesarered",
+      "subreddit_path": "/r/rosesarered",
+      "subreddit_url": "https://www.reddit.com/r/rosesarered/",
+      "youtube_channel_id": "thetaletrovegb",
+      "comment_persona_name": "The Tale Trove GB",
+      "comment_persona_avatar_path": "public/reddit-3s-template/avatars/thetaletrovegb.png"
+    },
+    {
+      "name": "meirl",
+      "subreddit_path": "/r/meirl",
+      "subreddit_url": "https://www.reddit.com/r/meirl/",
+      "youtube_channel_id": "talesofthehiveyo",
+      "comment_persona_name": "Tales of the Hive YO",
+      "comment_persona_avatar_path": "public/reddit-3s-template/avatars/talesofthehiveyo.png"
+    }
+  ]
+}

@@ -5,13 +5,14 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import httpx
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
 from ..core.credit_flow import add_credit_flow
-from ..db import get_db
+from ..db import SessionLocal, get_db
 from ..models import CapabilityCallLog, CapabilityConfig, CapabilityPolicy, User
 from .auth import _require_admin_token, get_current_user
 
@@ -80,6 +81,12 @@ class CapabilityCallRecordIn(BaseModel):
     source: Optional[str] = "ui"
     chat_session_id: Optional[str] = None
     chat_context_id: Optional[str] = None
+
+
+class RedditComment2VideoSubmitIn(BaseModel):
+    """提交 Reddit 评论转视频任务；不填则使用后端默认（全部板块、时间段内）。"""
+    max_clips: Optional[int] = Field(default=None, ge=1, le=20, description="生成条数，不填则用后端默认")
+    subreddits: Optional[List[str]] = Field(default=None, description="指定板块，如 ['ProgrammerHumor']；不填则全部")
 
 
 def _policy_match_user(row: CapabilityPolicy, user: User) -> bool:
@@ -478,6 +485,182 @@ def record_capability_call(
     }
 
 
+def _run_reddit_comment2video_job(call_log_id: int) -> None:
+    """后台执行：调用 Reddit 后端 8003，完成后更新能力调用记录状态与结果。"""
+    base_url = (getattr(settings, "reddit_comment2video_backend_url", None) or "").strip().rstrip("/")
+    if not base_url:
+        _update_call_log_status(call_log_id, "failed", success=False, error_message="未配置 reddit_comment2video_backend_url")
+        return
+    db = SessionLocal()
+    req: Dict[str, Any] = {}
+    try:
+        row = db.query(CapabilityCallLog).filter(CapabilityCallLog.id == call_log_id).first()
+        if not row:
+            return
+        req = dict(row.request_payload or {})
+    finally:
+        db.close()
+    body: Dict[str, Any] = {}
+    if req.get("max_clips") is not None:
+        body["max_clips"] = int(req["max_clips"])
+    if req.get("subreddits"):
+        body["subreddits"] = list(req["subreddits"]) if isinstance(req["subreddits"], list) else [str(req["subreddits"])]
+    import time
+    t0 = time.perf_counter()
+    try:
+        with httpx.Client(timeout=600.0) as client:
+            r = client.post(f"{base_url}/generate-clips", json=body if body else {"max_clips": 2})
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+        if r.status_code == 200:
+            data = r.json() if r.content else {}
+            _update_call_log_status(
+                call_log_id,
+                "completed",
+                success=data.get("success", True),
+                latency_ms=latency_ms,
+                response_payload=data,
+                error_message=data.get("error") or None,
+            )
+        else:
+            _update_call_log_status(
+                call_log_id,
+                "failed",
+                success=False,
+                latency_ms=latency_ms,
+                response_payload={"status_code": r.status_code, "text": (r.text or "")[:1000]},
+                error_message=f"后端返回 {r.status_code}: {(r.text or '')[:500]}",
+            )
+    except Exception as e:  # noqa: BLE001
+        _update_call_log_status(
+            call_log_id,
+            "failed",
+            success=False,
+            error_message=str(e)[:2000],
+        )
+
+
+def _update_call_log_status(
+    call_log_id: int,
+    status_value: str,
+    success: bool = False,
+    latency_ms: Optional[int] = None,
+    response_payload: Optional[Dict[str, Any]] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    db = SessionLocal()
+    try:
+        row = db.query(CapabilityCallLog).filter(CapabilityCallLog.id == call_log_id).first()
+        if row:
+            row.status = status_value
+            row.success = success
+            if latency_ms is not None:
+                row.latency_ms = latency_ms
+            if response_payload is not None:
+                row.response_payload = response_payload
+            if error_message is not None:
+                row.error_message = (error_message or "")[:2000] or None
+            db.commit()
+    finally:
+        db.close()
+
+
+REDDIT_CAPABILITY_ID = "skill.reddit_comment2video"
+
+REDDIT_UNCONFIGURED_GUIDE = (
+    "请先到 **能力库 → Reddit 评论转短视频** 页面，配置该板块与 YouTube 博主、背景视频/音频的对应关系后再生成。"
+)
+
+
+def _fetch_reddit_configured_subreddits() -> List[str]:
+    """从 Reddit 后端 8003 拉取当前已配置的板块名称列表。"""
+    base_url = (getattr(settings, "reddit_comment2video_backend_url", None) or "").strip().rstrip("/")
+    if not base_url:
+        return []
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            r = client.get(f"{base_url}/configured-subreddits")
+            if r.status_code == 200 and r.content:
+                data = r.json()
+                return list(data.get("subreddits") or [])
+    except Exception:
+        pass
+    return []
+
+
+@router.get("/reddit-comment2video/configured-subreddits", summary="查询当前已配置的 Reddit 板块（会话可用）")
+def get_reddit_configured_subreddits(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """返回当前已配置的板块列表与数量，供会话中「配置了几个板块」类问题使用。"""
+    cap = db.query(CapabilityConfig).filter(CapabilityConfig.capability_id == REDDIT_CAPABILITY_ID).first()
+    if not cap or not cap.enabled:
+        raise HTTPException(status_code=404, detail="能力不存在或未启用")
+    if not _capability_allowed_for_user(db, current_user, cap.capability_id):
+        raise HTTPException(status_code=403, detail="能力未授权")
+    names = _fetch_reddit_configured_subreddits()
+    return {"subreddits": names, "count": len(names)}
+
+
+@router.post("/reddit-comment2video/submit", summary="提交 Reddit 评论转视频任务（异步）")
+def submit_reddit_comment2video(
+    payload: RedditComment2VideoSubmitIn,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """创建一条能力调用记录（状态=执行中），后台调用 8003 生成视频，完成后更新记录。用户可到能力库查看能力调用记录获取状态与下载链接。"""
+    cap = db.query(CapabilityConfig).filter(CapabilityConfig.capability_id == REDDIT_CAPABILITY_ID).first()
+    if not cap or not cap.enabled:
+        raise HTTPException(status_code=404, detail="能力不存在或未启用")
+    if not _capability_allowed_for_user(db, current_user, cap.capability_id):
+        raise HTTPException(status_code=403, detail="能力未授权")
+    base_url = (getattr(settings, "reddit_comment2video_backend_url", None) or "").strip().rstrip("/")
+    if not base_url:
+        raise HTTPException(status_code=503, detail="未配置 Reddit 评论转视频后端地址 reddit_comment2video_backend_url")
+
+    if payload.subreddits:
+        configured = _fetch_reddit_configured_subreddits()
+        configured_lower = {s.strip().lower() for s in configured if s}
+        missing = [s for s in payload.subreddits if (s or "").strip().lower() not in configured_lower]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"以下板块尚未配置：{', '.join(missing)}。{REDDIT_UNCONFIGURED_GUIDE}",
+            )
+
+    request_payload: Dict[str, Any] = {}
+    if payload.max_clips is not None:
+        request_payload["max_clips"] = payload.max_clips
+    if payload.subreddits:
+        request_payload["subreddits"] = payload.subreddits
+
+    row = CapabilityCallLog(
+        user_id=current_user.id,
+        capability_id=REDDIT_CAPABILITY_ID,
+        upstream=cap.upstream,
+        upstream_tool=cap.upstream_tool,
+        success=False,
+        credits_charged=0,
+        latency_ms=None,
+        request_payload=request_payload or None,
+        response_payload=None,
+        error_message=None,
+        source="mcp_invoke",
+        chat_session_id=None,
+        chat_context_id=REDDIT_CAPABILITY_ID,
+        status="running",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    background_tasks.add_task(_run_reddit_comment2video_job, row.id)
+    return {
+        "call_log_id": row.id,
+        "message": "任务已创建，请到能力库查看能力调用记录；完成的可查看下载链接，执行中或失败的会显示状态与原因。",
+    }
+
+
 @router.get("/my-call-logs", summary="我的能力调用记录（用户态）")
 def list_my_capability_call_logs(
     capability_id: Optional[str] = None,
@@ -511,6 +694,7 @@ def list_my_capability_call_logs(
             "chat_session_id": r.chat_session_id,
             "chat_context_id": r.chat_context_id,
             "created_at": r.created_at.isoformat() if r.created_at else "",
+            "status": r.status,
         }
         for r in rows
     ]
@@ -553,6 +737,7 @@ def list_capability_call_logs(
             "chat_session_id": r.chat_session_id,
             "chat_context_id": r.chat_context_id,
             "created_at": r.created_at.isoformat() if r.created_at else "",
+            "status": getattr(r, "status", None),
         }
         for r in rows
     ]

@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "notes": "Simple, extendable blocklist for YouTube safety. Add new entries to arrays below; no code changes needed.",
+  "blocked_substrings_zh": [
+    "自杀",
+    "割腕",
+    "上吊",
+    "枪击",
+    "爆炸",
+    "强奸",
+    "猥亵",
+    "裸照",
+    "毒品",
+    "冰毒",
+    "海洛因"
+  ],
+  "blocked_substrings_en": [
+    "suicide",
+    "kill yourself",
+    "self-harm",
+    "rape",
+    "child porn",
+    "pedophile",
+    "pedoph",
+    "underage",
+    "molest",
+    "molesting",
+    "child molester",
+    "diddle",
+    "diddling",
+    "terrorist",
+    "bomb making",
+    "meth",
+    "heroin",
+    "cocaine"
+  ],
+  "blocked_regex": [
+    "(?i)\\b(kys)\\b",
+    "(?i)\\bpedo(phile|philia|)\\b",
+    "(?i)\\bhow\\s+to\\s+make\\s+(a\\s+)?bomb\\b"
+  ],
+  "whitelist_substrings": [
+    "suicide squad"
+  ]
+}

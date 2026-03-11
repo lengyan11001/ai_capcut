@@ -236,5 +236,21 @@
         }
       }
     }
+  },
+  "skill.reddit_comment2video": {
+    "description": "Reddit 评论转短视频（抓取 24-48h 帖子与评论，过滤后生成竖屏视频并上传 TOS）；可指定板块与条数，不指定则默认全部板块、时间段内。任务异步执行，请到能力库查看调用记录获取状态与下载链接。",
+    "upstream": "skill",
+    "upstream_tool": "reddit_comment2video",
+    "enabled": true,
+    "is_default": false,
+    "unit_credits": 0,
+    "arg_schema": {
+      "type": "object",
+      "properties": {
+        "max_clips": { "type": "integer", "description": "生成视频条数，不填则用后端默认（全部时间段内）", "minimum": 1, "maximum": 20 },
+        "subreddits": { "type": "array", "items": { "type": "string" }, "description": "指定板块，如 [\"ProgrammerHumor\",\"meirl\"]；不填则全部配置板块" }
+      },
+      "required": []
+    }
   }
 }

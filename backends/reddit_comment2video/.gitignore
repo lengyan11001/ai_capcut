@@ -1,0 +1,7 @@
+.venv/
+out/
+.cache/
+*.pyc
+__pycache__/
+.env
+*.local.json

@@ -211,16 +211,34 @@ function loadCapabilityCallLogs() {
       currentCapabilityCallLogs = all.slice(0, 200);
       renderCapabilityDomainStats();
       if (!all.length) { el.innerHTML = '<p class="meta">暂无调用记录</p>'; return; }
-      el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>时间</th><th>结果</th><th>扣费</th><th>耗时</th><th>请求</th><th>响应</th></tr></thead><tbody>' +
+      el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>时间</th><th>状态</th><th>结果</th><th>扣费</th><th>耗时</th><th>请求</th><th>响应/链接/错误</th></tr></thead><tbody>' +
         all.map(function(r) {
+          var status = r.status;
+          if (!status) status = r.success ? 'completed' : 'failed';
+          var statusText = status === 'running' ? '执行中' : (status === 'completed' ? '完成' : (status === 'failed' ? '失败' : (r.success ? '成功' : '失败')));
+          var statusCls = status === 'running' ? 'pending' : (status === 'completed' || r.success ? 'ok' : 'err');
           var okText = r.success ? '成功' : '失败';
           var okCls = r.success ? 'ok' : 'err';
           var req = escapeHtml(JSON.stringify(r.request_payload || {}, null, 0));
-          var rsp = escapeHtml(JSON.stringify(r.response_payload || {}, null, 0));
           var reqShort = req.length > 160 ? req.slice(0, 160) + '…' : req;
-          var rspShort = rsp.length > 200 ? rsp.slice(0, 200) + '…' : rsp;
+          var rspCell = '';
+          if (status === 'running') {
+            rspCell = '<span class="meta">执行中</span>';
+          } else if (status === 'failed' && (r.error_message || '').trim()) {
+            rspCell = '<span class="err" title="' + escapeAttr(r.error_message) + '">' + escapeHtml((r.error_message || '').slice(0, 300)) + ((r.error_message || '').length > 300 ? '…' : '') + '</span>';
+          } else if (status === 'completed' && r.response_payload && Array.isArray(r.response_payload.clips) && r.response_payload.clips.length) {
+            var links = r.response_payload.clips.map(function(c) {
+              var url = c.public_url || c.video_path || '';
+              var label = (c.subreddit || '') + (c.title ? ' | ' + String(c.title).slice(0, 30) : '');
+              return url ? '<a href="' + escapeAttr(url) + '" target="_blank" rel="noopener">' + escapeHtml(label || url) + '</a>' : '';
+            }).filter(Boolean);
+            rspCell = links.length ? links.join('<br>') : escapeHtml(JSON.stringify(r.response_payload).slice(0, 200));
+          } else {
+            var rsp = escapeHtml(JSON.stringify(r.response_payload || {}, null, 0));
+            rspCell = rsp.length > 200 ? rsp.slice(0, 200) + '…' : rsp;
+          }
           var t = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
-          return '<tr><td>' + t + '</td><td class="' + okCls + '">' + okText + '</td><td>' + (r.credits_charged || 0) + '</td><td>' + (r.latency_ms || '-') + 'ms</td><td title="' + escapeAttr(req) + '">' + reqShort + '</td><td title="' + escapeAttr(rsp) + '">' + rspShort + '</td></tr>';
+          return '<tr><td>' + t + '</td><td class="' + statusCls + '">' + statusText + '</td><td class="' + okCls + '">' + okText + '</td><td>' + (r.credits_charged || 0) + '</td><td>' + (r.latency_ms || '-') + 'ms</td><td title="' + escapeAttr(req) + '">' + reqShort + '</td><td class="rsp-cell">' + rspCell + '</td></tr>';
         }).join('') +
         '</tbody></table></div>';
     })

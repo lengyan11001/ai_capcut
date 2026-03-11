@@ -1,0 +1,26 @@
+# OpenClaw Gateway — 学习实例（端口 18789）
+# 安装：将 User/ExecStart 改为实际用户与 openclaw 路径后：
+#   sudo cp scripts/openclaw-gateway-learn.service.example /etc/systemd/system/openclaw-gateway.service
+#   sudo sed -i 's/ubuntu/你的用户/g; s|/usr/bin/openclaw|$(which openclaw)|g' /etc/systemd/system/openclaw-gateway.service
+#   sudo systemctl daemon-reload && sudo systemctl enable openclaw-gateway && sudo systemctl start openclaw-gateway
+# 日志：journalctl -u openclaw-gateway -f
+
+[Unit]
+Description=OpenClaw Gateway (learn instance, port 18789)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu
+Environment="PATH=/usr/bin:/usr/local/bin"
+# 使用默认配置 ~/.openclaw/openclaw.json；若需指定：Environment="OPENCLAW_CONFIG_PATH=/home/ubuntu/.openclaw/openclaw.json"
+ExecStart=/usr/bin/openclaw gateway run --port 18789
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=openclaw-gateway
+
+[Install]
+WantedBy=multi-user.target
