@@ -93,21 +93,21 @@ export default async function ProductPage({
           />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{localizedName}</h1>
-          <p className="mt-1 text-xs text-gray-500">
+          <h1 className="text-2xl font-bold text-gray-100">{localizedName}</h1>
+          <p className="mt-1 text-xs text-gray-300">
             {t(lang, "Region view:", "地区视图:")} {ctx.region}
             {ctx.debugAll ? t(lang, " · debug_all enabled", " · 已开启debug_all") : ""}
           </p>
-          <p className="mt-2 text-gray-500">
+          <p className="mt-2 text-gray-200">
             {localizeMaterial(product.material, lang)} ·{" "}
             {product.sourceType === "origin" ? t(lang, "Origin supply", "产地供应") : t(lang, "Warehouse supply", "海外仓供应")}
           </p>
           <div className="mt-4 flex items-center gap-3">
-            <span className="text-2xl font-semibold text-gray-900">
+            <span className="text-2xl font-semibold text-gray-100">
               {formatMoney(displayPrice, displayCurrency)}
             </span>
             {product.compareAtPrice != null && product.compareAtPrice > displayPrice && (
-              <span className="text-lg text-gray-400 line-through">
+              <span className="text-lg text-gray-500 line-through">
                 {formatMoney(product.compareAtPrice, displayCurrency)}
               </span>
             )}
@@ -117,14 +117,14 @@ export default async function ProductPage({
               {product.shippingNotice ? localizeShippingNotice(product.shippingNotice, lang) : shippingText}
             </p>
           )}
-          <div className="mt-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+          <div className="mt-3 rounded border border-white/10 bg-[#12182a] px-3 py-2 text-sm text-gray-200">
             <p>
               {t(
                 lang,
                 "See public packing and shipping evidence before ordering.",
                 "下单前可先查看公开打包与发货实拍。"
               )}{" "}
-              <Link href={`/shipping-proof?lang=${lang}`} className="underline">
+              <Link href={`/shipping-proof?lang=${lang}`} className="text-indigo-200 underline hover:text-indigo-100">
                 {t(lang, "Open shipping proof", "查看发货实拍")}
               </Link>
             </p>
@@ -140,13 +140,13 @@ export default async function ProductPage({
               lang={lang}
             />
           </div>
-          <p className="mt-6 text-gray-600">{localizeDescription(product.description, lang)}</p>
+          <p className="mt-6 text-gray-200">{localizeDescription(product.description, lang)}</p>
           {product.addOnOptions && product.addOnOptions.length > 0 && (
-            <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
-              <h3 className="font-medium text-gray-900">
+            <div className="mt-6 rounded-lg border border-white/10 bg-[#12182a] p-4">
+              <h3 className="font-medium text-gray-100">
                 {t(lang, "Optional functions (factory add-ons)", "可选功能（工厂增配）")}
               </h3>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-600">
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-300">
                 {product.addOnOptions.map((opt) => (
                   <li key={opt}>{localizeAddOnOption(opt, lang)}</li>
                 ))}
@@ -154,13 +154,13 @@ export default async function ProductPage({
             </div>
           )}
           {specEntries.length > 0 && (
-            <dl className="mt-6 border-t border-gray-200 pt-6">
-              <dt className="font-medium text-gray-900">{t(lang, "Specifications", "规格参数")}</dt>
+            <dl className="mt-6 border-t border-white/10 pt-6">
+              <dt className="font-medium text-gray-100">{t(lang, "Specifications", "规格参数")}</dt>
               <dd className="mt-2">
-                <ul className="space-y-1 text-sm text-gray-600">
+                <ul className="space-y-1 text-sm text-gray-300">
                   {specEntries.map(([key, value]) => (
                     <li key={key}>
-                      <span className="font-medium">{formatSpecLabel(key, lang)}:</span>{" "}
+                      <span className="font-medium text-gray-200">{formatSpecLabel(key, lang)}:</span>{" "}
                       {formatSpecValue(key, String(value), lang)}
                     </li>
                   ))}
@@ -169,7 +169,7 @@ export default async function ProductPage({
             </dl>
           )}
           <p className="mt-6">
-            <Link href={backHref} className="text-gray-600 underline hover:text-gray-900">
+            <Link href={backHref} className="text-gray-300 underline hover:text-gray-100">
               {t(lang, "← Back to products", "← 返回商品列表")}
             </Link>
           </p>

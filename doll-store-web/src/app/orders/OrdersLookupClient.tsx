@@ -54,8 +54,8 @@ export default function OrdersLookupClient({ lang }: { lang: Lang }) {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
-      <h1 className="text-2xl font-bold text-gray-900">{t(lang, "Order tracking", "订单查询")}</h1>
-      <p className="mt-2 text-sm text-gray-600">
+      <h1 className="text-2xl font-bold text-gray-100">{t(lang, "Order tracking", "订单查询")}</h1>
+      <p className="mt-2 text-sm text-gray-300">
         {t(
           lang,
           "Use your order email (and optional order ID) to check payment and shipping status.",
@@ -63,26 +63,26 @@ export default function OrdersLookupClient({ lang }: { lang: Lang }) {
         )}
       </p>
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-4 rounded border border-gray-200 bg-white p-4">
+      <form onSubmit={onSubmit} className="mt-6 space-y-4 rounded border border-white/10 bg-[#12182a] p-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700">{t(lang, "Order email", "下单邮箱")} *</label>
+          <label className="block text-sm font-medium text-gray-200">{t(lang, "Order email", "下单邮箱")} *</label>
           <input
             type="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+            className="mt-1 w-full rounded border border-white/15 bg-[#0f1526] px-3 py-2 text-gray-100 placeholder:text-gray-500"
             placeholder="you@email.com"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium text-gray-200">
             {t(lang, "Order ID (optional)", "订单号（可选）")}
           </label>
           <input
             value={orderId}
             onChange={(e) => setOrderId(e.target.value)}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+            className="mt-1 w-full rounded border border-white/15 bg-[#0f1526] px-3 py-2 text-gray-100 placeholder:text-gray-500"
             placeholder="uuid"
           />
         </div>
@@ -95,20 +95,20 @@ export default function OrdersLookupClient({ lang }: { lang: Lang }) {
         </button>
       </form>
 
-      {error ? <p className="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+      {error ? <p className="mt-4 rounded border border-red-400/30 bg-red-900/20 p-3 text-sm text-red-200">{error}</p> : null}
 
       <div className="mt-6 space-y-3">
         {hasResult ? (
           orders.map((order) => (
-            <div key={order.id} className="rounded border border-gray-200 bg-gray-50 p-4">
+            <div key={order.id} className="rounded border border-white/10 bg-[#12182a] p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-mono text-xs text-gray-700">{order.id}</p>
-                <span className="rounded bg-white px-2 py-1 text-xs text-gray-700">{order.status}</span>
+                <p className="font-mono text-xs text-gray-300">{order.id}</p>
+                <span className="rounded border border-white/15 bg-[#0f1526] px-2 py-1 text-xs text-gray-200">{order.status}</span>
               </div>
-              <p className="mt-2 text-sm text-gray-800">
+              <p className="mt-2 text-sm text-gray-200">
                 {t(lang, "Amount:", "金额:")} {formatMoney(order.total, order.currency ?? "CNY")}
               </p>
-              <p className="text-sm text-gray-700">
+              <p className="text-sm text-gray-300">
                 {t(lang, "Payment:", "支付方式:")}{" "}
                 {order.paymentMethod === "crypto_manual"
                   ? t(lang, "Crypto transfer", "加密货币转账")
@@ -116,14 +116,14 @@ export default function OrdersLookupClient({ lang }: { lang: Lang }) {
                     ? "PayPal"
                   : t(lang, "Manual contact", "人工联系")}
               </p>
-              <p className="text-sm text-gray-700">
+              <p className="text-sm text-gray-300">
                 {t(lang, "Created:", "下单时间:")} {new Date(order.createdAt).toLocaleString()}
               </p>
-              <p className="mt-1 text-sm text-gray-700">
+              <p className="mt-1 text-sm text-gray-300">
                 {t(lang, "Tracking:", "物流单号:")} {order.trackingNumber ?? t(lang, "Not shipped yet", "暂未发货")}
               </p>
               {order.shippedAt ? (
-                <p className="text-sm text-gray-700">
+                <p className="text-sm text-gray-300">
                   {t(lang, "Shipped at:", "发货时间:")} {new Date(order.shippedAt).toLocaleString()}
                 </p>
               ) : null}
@@ -132,7 +132,7 @@ export default function OrdersLookupClient({ lang }: { lang: Lang }) {
                   href={order.trackingUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-1 inline-block text-sm text-gray-700 underline"
+                  className="mt-1 inline-block text-sm text-indigo-200 underline hover:text-indigo-100"
                 >
                   {t(lang, "Open tracking link", "打开物流链接")}
                 </a>
@@ -145,7 +145,7 @@ export default function OrdersLookupClient({ lang }: { lang: Lang }) {
                       href={url}
                       target="_blank"
                       rel="noreferrer"
-                      className="rounded border border-gray-200 bg-white p-1 text-[11px] text-gray-600 hover:bg-gray-50"
+                      className="rounded border border-white/15 bg-[#0f1526] p-1 text-[11px] text-gray-300 hover:bg-[#10182c]"
                     >
                       {t(lang, "Packing photo", "打包实拍")}
                     </a>
@@ -160,7 +160,7 @@ export default function OrdersLookupClient({ lang }: { lang: Lang }) {
                       href={url}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-block text-sm text-gray-700 underline"
+                      className="inline-block text-sm text-indigo-200 underline hover:text-indigo-100"
                     >
                       {t(lang, "View warehouse video", "查看仓库视频")}
                     </a>
@@ -170,7 +170,7 @@ export default function OrdersLookupClient({ lang }: { lang: Lang }) {
             </div>
           ))
         ) : (
-          <p className="text-sm text-gray-500">{t(lang, "No orders yet.", "暂无订单记录。")}</p>
+          <p className="text-sm text-gray-400">{t(lang, "No orders yet.", "暂无订单记录。")}</p>
         )}
       </div>
     </div>
