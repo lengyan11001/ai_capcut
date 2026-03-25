@@ -509,7 +509,7 @@ def _call_openclaw_for_plan(
 
     db2 = SessionLocal()
     try:
-        base, token, agent_id = _resolve_openclaw_target(db2, user)
+        base, token, agent_id, _lane = _resolve_openclaw_target(db2, user)
     except Exception:
         db2.close()
         return None

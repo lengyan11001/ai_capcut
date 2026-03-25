@@ -1,18 +1,18 @@
-# 双 OpenClaw 部署：学习实例仅管理员 + 用户实例独立资源
+# 双 OpenClaw 部署：管理员一套 + 普通用户一套（完全隔离）
 
-本文档说明如何部署「主实例（带学习能力）」与「用户实例」双 Gateway，并在平台侧配置学习白名单与路由。推荐使用**实例池自动分配**：先配置一批用户实例，用户注册时自动绑定其中一个。单实例部署见 [OPENCLAW_SERVER_SETUP.md](OPENCLAW_SERVER_SETUP.md)。
+本文档说明如何在服务器上跑**两套相互独立的** OpenClaw Gateway：一套等价于以前「单实例给管理员用」，另一套专门给所有普通用户。平台用 `OPENCLAW_LEARN_ALLOWLIST` 区分账号走哪套。推荐使用**实例池**给用户分配用户侧实例。单实例部署见 [OPENCLAW_SERVER_SETUP.md](OPENCLAW_SERVER_SETUP.md)。
 
 ## 一、架构简述
 
-- **主实例（学习）**：端口 18789，单 agent（如 `main`），支持 `clawhub install` / 学习；**仅平台配置的白名单账号**会走此实例。
-- **用户实例**：端口 18790（或其它），可一机多实例；**非白名单用户**走用户实例。推荐实例池模式：每个用户绑定一个实例，默认 `agent_id=main`。
-- **平台**：根据当前登录用户是否在白名单内，选择调用主实例或用户实例及对应 agent。
+- **管理员实例**（`OPENCLAW_GATEWAY_URL`，如 18789）：与旧单实例一致，仅 **白名单** 内账号的智能对话会打到这台；`/learn`、skill、workspace 都在这套 OpenClaw 里。
+- **用户实例**（`OPENCLAW_GATEWAY_URL_USERS` 或实例池，如 18790）：**所有非白名单**账号只走这里，与管理员实例进程、状态目录、workspace 完全分开。
+- **平台**：先看是否在白名单 → 是则只连管理员实例；否则只连用户侧（绑定实例池或回退 `OPENCLAW_GATEWAY_URL_USERS`），**不会**把普通用户请求打到管理员那台。
 
-## 二、主实例（学习）- 保持现有
+## 二、管理员实例（原单实例）- 保持现有
 
 - 端口：**18789**（或你当前端口）。
 - 配置：沿用现有 `~/.openclaw/openclaw.json`，单 agent、workspace 如 `~/.openclaw/workspace`，无需改为多 agent。
-- 谁能用：由平台 `.env` 中的 **OPENCLAW_LEARN_ALLOWLIST** 控制（见下文「平台配置」）。
+- 谁能用：`.env` 里 **OPENCLAW_LEARN_ALLOWLIST** 中的 user id 或 email（见下文「平台配置」）。
 
 ## 三、用户实例（新建）
 
@@ -131,22 +131,25 @@ OPENCLAW_STATE_DIR=~/.openclaw-users OPENCLAW_CONFIG_PATH=~/.openclaw-users/open
 在 ai_test_platform 的 `.env` 中配置双实例与白名单：
 
 ```env
-# 学习实例（主实例，仅白名单使用）
+# 管理员专用 OpenClaw（原单实例）
 OPENCLAW_GATEWAY_URL=http://127.0.0.1:18789
-OPENCLAW_GATEWAY_TOKEN=主实例的token
+OPENCLAW_GATEWAY_TOKEN=管理员实例的token
 
-# 用户实例（多 agent）
+# 普通用户专用 OpenClaw（全新独立实例）
 OPENCLAW_GATEWAY_URL_USERS=http://127.0.0.1:18790
 OPENCLAW_GATEWAY_TOKEN_USERS=用户实例的token
 
-# 学习实例白名单：逗号分隔的 user id 或 email，仅这些账号走主实例
+# 仅以下账号走 OPENCLAW_GATEWAY_URL（管理员），其余账号只走用户侧
 OPENCLAW_LEARN_ALLOWLIST=1
 # 或按邮箱：OPENCLAW_LEARN_ALLOWLIST=admin@example.com
 # 或多个：OPENCLAW_LEARN_ALLOWLIST=1,2,admin@example.com
+
+# 极少用：true 时强制白名单也走用户实例（排障）
+# OPENCLAW_LEARN_ALLOWLIST_USE_USERS_GATEWAY=
 ```
 
-- 若**不配置** `OPENCLAW_GATEWAY_URL_USERS` / `OPENCLAW_GATEWAY_TOKEN_USERS`：所有人仍走单一 Gateway（当前 `OPENCLAW_GATEWAY_URL`），与之前行为一致。
-- 若配置了用户实例：白名单内用户走主实例（学习），其余用户优先走实例池绑定；无绑定时回退到 `OPENCLAW_GATEWAY_URL_USERS`（兼容模式）。
+- 若**不配置** `OPENCLAW_GATEWAY_URL_USERS` / `OPENCLAW_GATEWAY_TOKEN_USERS`：所有人仍走单一 Gateway（`OPENCLAW_GATEWAY_URL`），与旧版单实例一致。
+- 若配置了用户实例：**白名单 → 管理员实例**；**非白名单 → 实例池或 `OPENCLAW_GATEWAY_URL_USERS`**，两套流量完全分开。
 
 ## 五、Skill 同步（主实例 → 用户实例，可选）
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { getCategories, getFeaturedProducts } from "@/lib/data";
+import { getFeaturedProducts } from "@/lib/data";
 import { ProductCard } from "@/components/ProductCard";
 import { getGuides } from "@/lib/guides";
 import { resolveRegionContext } from "@/lib/request-context";
@@ -20,7 +20,6 @@ export default async function HomePage({
   if (ctx.debugRegion) query.set("debug_region", ctx.debugRegion);
   if (ctx.debugAll) query.set("debug_all", "1");
   const queryString = query.toString();
-  const categories = getCategories();
   const featured = await getFeaturedProducts({ region: ctx.region, debugAll: ctx.debugAll });
   const guides = getGuides().slice(0, 3);
   const featuredCards = featured.slice(0, 6);
@@ -140,25 +139,6 @@ export default async function HomePage({
               </p>
               <h3 className="mt-2 font-semibold text-gray-100">{guide.title}</h3>
               <p className="mt-2 text-sm text-gray-300">{guide.excerpt}</p>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* Category cards */}
-      <section className="mx-auto max-w-6xl px-4 py-12">
-        <h2 className="text-xl font-semibold text-white">{t(lang, "Shop by Category", "按品类选购")}</h2>
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {categories.map((cat) => (
-            <Link
-              key={cat.id}
-              href={`/category/${cat.slug}?${queryString}`}
-              className="rounded-xl border border-white/10 bg-[#12182a] p-6 text-center transition hover:border-indigo-300/40 hover:shadow-[0_16px_45px_rgba(0,0,0,0.35)]"
-            >
-              <h3 className="font-medium text-gray-100">{cat.name}</h3>
-              {cat.description && (
-                <p className="mt-2 text-sm text-gray-400">{cat.description}</p>
-              )}
             </Link>
           ))}
         </div>

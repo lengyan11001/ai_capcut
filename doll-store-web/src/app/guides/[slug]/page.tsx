@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { getGuideBySlug, getGuideProducts } from "@/lib/guides";
 import { ProductCard } from "@/components/ProductCard";
 
@@ -33,11 +34,39 @@ export default async function GuideDetailPage({
         ))}
       </div>
 
-      <article className="mt-8 space-y-6">
+      <article className="mt-8 space-y-10">
         {guide.sections.map((section) => (
           <section key={section.heading}>
             <h2 className="text-xl font-semibold text-gray-900">{section.heading}</h2>
             <p className="mt-2 leading-7 text-gray-700">{section.body}</p>
+            {section.images && section.images.length > 0 && (
+              <div
+                className={`mt-5 grid gap-4 ${section.images.length > 1 ? "sm:grid-cols-2" : "max-w-2xl"}`}
+              >
+                {section.images.map((img) => (
+                  <figure
+                    key={img.src}
+                    className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50 shadow-sm"
+                  >
+                    <div className="relative aspect-[4/5] w-full bg-gray-100">
+                      <Image
+                        src={img.src}
+                        alt={img.alt}
+                        fill
+                        className="object-cover object-center"
+                        sizes="(max-width: 640px) 100vw, 50vw"
+                        unoptimized
+                      />
+                    </div>
+                    {img.caption && (
+                      <figcaption className="border-t border-gray-100 px-3 py-2 text-center text-xs text-gray-600">
+                        {img.caption}
+                      </figcaption>
+                    )}
+                  </figure>
+                ))}
+              </div>
+            )}
           </section>
         ))}
       </article>

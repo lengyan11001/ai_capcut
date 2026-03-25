@@ -23,13 +23,15 @@ class Settings(BaseSettings):
     openai_base_url: str | None = None  # 可选，自定义网关或代理
     openai_provider: str | None = None  # 可选，当前配置的厂商，仅展示该厂商模型。可选值：deepseek / aliyun / volcengine
     # OpenClaw Gateway：配置后 /chat 将代理到 OpenClaw 的 Chat Completions，实现会话 + MCP 调用
-    openclaw_gateway_url: str | None = None  # 学习实例 URL（如 http://127.0.0.1:18789），白名单用户使用
-    openclaw_gateway_token: str | None = None  # 学习实例鉴权 token
-    # 用户实例（多 agent、每用户独立 workspace）；未配置时所有用户共用上面单一 Gateway
+    openclaw_gateway_url: str | None = None  # 管理员专用 OpenClaw（原单实例，如 http://127.0.0.1:18789）；仅 OPENCLAW_LEARN_ALLOWLIST 内账号使用
+    openclaw_gateway_token: str | None = None  # 上述实例鉴权 token
+    # 普通用户专用 OpenClaw（全新独立实例，如 18790）；与管理员实例完全隔离
     openclaw_gateway_url_users: str | None = None  # 如 http://127.0.0.1:18790
     openclaw_gateway_token_users: str | None = None  # 用户实例鉴权 token
-    # 学习实例白名单：逗号分隔的 user id 或 email，仅这些账号走学习实例；空则按是否配置 url_users 决定（见 chat 路由）
+    # 管理员名单：逗号分隔 user id 或 email；这些账号永远走 openclaw_gateway_url，其它账号只走用户实例（实例池或 url_users）
     openclaw_learn_allowlist: str = ""  # 例如 "1" 或 "admin@example.com" 或 "1,2,admin@example.com"
+    # 极少用：设为 true 时强制白名单也走用户实例（排障）；默认 false/不设则白名单固定走管理员实例
+    openclaw_learn_allowlist_use_users_gateway: bool | None = None
     # 新用户注册赠送积分（控制成本）
     default_credits_for_new_user: int = 30
     # 充值接口密钥：请求头 X-Recharge-Token 与此一致时才允许充值

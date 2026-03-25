@@ -430,7 +430,7 @@ async def _try_sutui_account_fallback(
 
 
 def _is_learn_allowlist_user(user: User) -> bool:
-    """当前用户是否在学习实例白名单内（仅白名单用户走带学习能力的主实例）。"""
+    """当前用户是否在 OPENCLAW_LEARN_ALLOWLIST 中：走「原单实例」管理员专用 OpenClaw（OPENCLAW_GATEWAY_URL）。"""
     allowlist = (getattr(settings, "openclaw_learn_allowlist", None) or "").strip()
     if not allowlist:
         return False
@@ -443,25 +443,50 @@ def _is_learn_allowlist_user(user: User) -> bool:
     return False
 
 
-def _resolve_openclaw_target(db: Session, user: User) -> tuple[str, str, str]:
-    """
-    返回 (base_url, token, agent_id)。
-    - 白名单用户 -> 学习实例 + main
-    - 已配置用户实例 -> 用户实例 + user_<id>
-    - 否则（未配用户实例）-> 学习实例 + main（向后兼容）
-    """
+def _openclaw_gateway_urls() -> tuple[str, str, str, str]:
+    """(url_learn, token_learn, url_users, token_users)，均已 strip。"""
     url_learn = (getattr(settings, "openclaw_gateway_url", None) or "").strip().rstrip("/")
     token_learn = (getattr(settings, "openclaw_gateway_token", None) or "").strip()
     url_users = (getattr(settings, "openclaw_gateway_url_users", None) or "").strip().rstrip("/")
     token_users = (getattr(settings, "openclaw_gateway_token_users", None) or "").strip()
+    return url_learn, token_learn, url_users, token_users
+
+
+def _resolve_allowlist_target(
+    url_learn: str,
+    token_learn: str,
+    url_users: str,
+    token_users: str,
+) -> tuple[str, str, str, Optional[str]]:
+    """
+    白名单（管理员）路由：默认固定走「原单实例」学习网关，与普通用户完全隔离。
+    仅当 OPENCLAW_LEARN_ALLOWLIST_USE_USERS_GATEWAY=true 时强制走用户网关（排障用）。
+    返回 (base, token, agent_id, lane_tag)。
+    """
+    force_users = getattr(settings, "openclaw_learn_allowlist_use_users_gateway", None) is True
+    if force_users:
+        if url_users and token_users:
+            return url_users, token_users, "main", "users"
+        if url_learn and token_learn:
+            return url_learn, token_learn, "main", "learn"
+    else:
+        if url_learn and token_learn:
+            return url_learn, token_learn, "main", "learn"
+        if url_users and token_users:
+            return url_users, token_users, "main", "users"
+    return url_learn, token_learn, "main", "learn" if url_learn else None
+
+
+def _resolve_openclaw_target(db: Session, user: User) -> tuple[str, str, str, Optional[str]]:
+    """
+    返回 (base_url, token, agent_id, lane_tag)。
+    - 白名单：管理员专用 OpenClaw（OPENCLAW_GATEWAY_URL），与旧单实例一致
+    - 非白名单：仅走用户侧（实例池绑定或 OPENCLAW_GATEWAY_URL_USERS），永不打管理员实例
+    """
+    url_learn, token_learn, url_users, token_users = _openclaw_gateway_urls()
 
     if _is_learn_allowlist_user(user):
-        if url_learn and token_learn:
-            return url_learn, token_learn, "main"
-        # 白名单但学习实例未配， fallback 到用户实例（若存在）
-        if url_users and token_users:
-            return url_users, token_users, f"user_{user.id}"
-        return url_learn, token_learn, "main"
+        return _resolve_allowlist_target(url_learn, token_learn, url_users, token_users)
 
     # 优先按用户绑定实例池路由（注册后自动分配）
     binding = (
@@ -476,26 +501,24 @@ def _resolve_openclaw_target(db: Session, user: User) -> tuple[str, str, str]:
             pool_token = (ins.gateway_token or "").strip()
             pool_agent = (binding.agent_id or ins.default_agent_id or "main").strip() or "main"
             if pool_url and pool_token:
-                return pool_url, pool_token, pool_agent
+                return pool_url, pool_token, pool_agent, None
 
     if url_users and token_users:
-        return url_users, token_users, f"user_{user.id}"
+        # users 实例当前工具挂载在 main agent；回退到 user_<id> 会导致工具缺失（如 list_capabilities 不可用）。
+        return url_users, token_users, "main", "users"
     # 未配用户实例：所有人走单一 Gateway（向后兼容）
-    return url_learn, token_learn, "main"
+    return url_learn, token_learn, "main", "learn" if url_learn else None
 
 
 def _openclaw_available(db: Session, user: Optional[User] = None) -> bool:
     """当前请求是否可用的 OpenClaw：按用户解析目标后检查 URL 与 token。"""
     if user is None:
         # 无用户时只检查是否至少有一个实例配置（用于文档/健康检查等）
-        url_learn = (getattr(settings, "openclaw_gateway_url", None) or "").strip()
-        token_learn = (getattr(settings, "openclaw_gateway_token", None) or "").strip()
-        url_users = (getattr(settings, "openclaw_gateway_url_users", None) or "").strip()
-        token_users = (getattr(settings, "openclaw_gateway_token_users", None) or "").strip()
+        url_learn, token_learn, url_users, token_users = _openclaw_gateway_urls()
         return bool(
             (url_learn and token_learn) or (url_users and token_users)
         )
-    base, token, _ = _resolve_openclaw_target(db, user)
+    base, token, _, __ = _resolve_openclaw_target(db, user)
     return bool(base and token)
 
 
@@ -561,7 +584,7 @@ async def chat_endpoint(
                     content=ChatResponse(reply=fallback_reply).model_dump(),
                     headers={"X-Chat-Fallback": "image.generate"},
                 )
-    base, token, agent_id = _resolve_openclaw_target(db, current_user)
+    base, token, agent_id, lane_tag = _resolve_openclaw_target(db, current_user)
     url = f"{base}/v1/chat/completions"
     messages = []
     history = payload.history or []
@@ -589,7 +612,13 @@ async def chat_endpoint(
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(url, json=body, headers=req_headers)
         duration_ms = round((time.perf_counter() - t0) * 1000)
-        logger.info("openclaw_chat duration_ms=%s status=%s agent_id=%s", duration_ms, resp.status_code, agent_id)
+        logger.info(
+            "openclaw_chat duration_ms=%s status=%s agent_id=%s lane=%s",
+            duration_ms,
+            resp.status_code,
+            agent_id,
+            lane_tag,
+        )
         if resp.status_code != 200:
             detail = resp.text
             try:
@@ -653,6 +682,7 @@ async def chat_endpoint(
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
                     "charged_credits": need,
+                    "openclaw_lane": lane_tag,
                 },
             )
             db.commit()

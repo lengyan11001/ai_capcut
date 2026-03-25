@@ -222,14 +222,14 @@ OPENCLAW_GATEWAY_TOKEN=你在 openclaw.json 里配置的 token
 
 - **智能对话无响应 / No response from OpenClaw**  
   - **1）确认 Gateway 进程与端口**：在 Gateway 所在机执行 `ps aux | grep openclaw`（应有 `openclaw` 与 `openclaw-gateway`）、`ss -tlnp | grep 18789`（学习实例应有监听）、`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18789/`（期望 200）。若进程或端口不存在，多半是 Gateway 已退出，需重新启动（见上文「四、启动」）；建议改用 systemd（见 4.3）以便崩溃后自动重启。  
-  - **2）确认平台配置**：本平台 `.env` 中 `OPENCLAW_GATEWAY_URL`（如 `http://127.0.0.1:18789`）、`OPENCLAW_GATEWAY_TOKEN` 已配置；`OPENCLAW_LEARN_ALLOWLIST` 包含当前管理员 user id（如 `2`）。`OPENCLAW_GATEWAY_TOKEN` 必须与 `~/.openclaw/openclaw.json` 中 `gateway.auth.token` 完全一致。  
+  - **2）确认平台配置**：双实例时 **白名单管理员** 只连 `OPENCLAW_GATEWAY_URL`（如 18789），**普通用户** 只连 `OPENCLAW_GATEWAY_URL_USERS` 或实例池（如 18790）。`OPENCLAW_LEARN_ALLOWLIST` 填管理员 user id；两套 token 分别与各自 `openclaw.json` 一致。排障时可用 `OPENCLAW_LEARN_ALLOWLIST_USE_USERS_GATEWAY=true` 临时让白名单也走用户实例。  
   - **3）看日志**：发送一条智能对话后，看本平台后端日志是否有 `openclaw_chat duration_ms=... status=...`（有则请求已到 Gateway）；Gateway 日志在 nohup 时为 `/tmp/openclaw-gateway-18789.log`，systemd 时为 `journalctl -u openclaw-gateway -f`。若请求超时（约 120 秒），检查 Gateway 或模型/MCP 是否卡住。  
   - **4）手动测 Gateway**：在服务器上执行  
     `curl -s -X POST http://127.0.0.1:18789/v1/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer 你的gateway_token" -H "x-openclaw-agent-id: main" -d '{"model":"openclaw","messages":[{"role":"user","content":"hi"}]}'`  
     能正常返回 JSON 则 Gateway 与模型通路正常；401 则 token 错误。
 
 - **502 / 无法连接 OpenClaw Gateway** 或 **All connection attempts failed**  
-  - 检查对应实例的 Gateway 是否已启动：管理员/白名单走学习实例（默认 18789），普通用户走用户实例（默认 18790）。`ss -lntp | grep -E '18789|18790'` 确认端口有进程监听。  
+  - 检查对应实例的 Gateway 是否已启动：双实例时 **18789（管理员）与 18790（用户）** 需分别启动；两类账号各走各的 Gateway。`ss -lntp | grep -E '18789|18790'` 确认端口有进程监听。  
   - 确认平台后端所在机器能访问上述地址（`OPENCLAW_GATEWAY_URL` / `OPENCLAW_GATEWAY_URL_USERS`）；若后端与 Gateway 非同机，URL 需为 Gateway 所在机的内网 IP 或可解析域名，且防火墙/安全组放行。  
   - 双实例部署时，用户实例未起会导致普通用户连接失败，需按 [OPENCLAW_DUAL_SETUP.md](OPENCLAW_DUAL_SETUP.md) 在对应端口启动用户实例 Gateway。
 
@@ -256,7 +256,7 @@ OPENCLAW_GATEWAY_TOKEN=你在 openclaw.json 里配置的 token
 
 ## 十、双实例部署（学习仅管理员 + 用户独立资源）
 
-若需「主实例带学习能力仅白名单可用、用户实例多 agent 每用户独立 workspace」，见 [OPENCLAW_DUAL_SETUP.md](OPENCLAW_DUAL_SETUP.md)。其中包含用户实例配置、新用户 agent 创建、学习白名单（OPENCLAW_LEARN_ALLOWLIST）及 Skill 同步说明。
+若需「管理员一套 OpenClaw + 用户一套 OpenClaw」双 Gateway，见 [OPENCLAW_DUAL_SETUP.md](OPENCLAW_DUAL_SETUP.md)。其中包含用户实例配置、`OPENCLAW_LEARN_ALLOWLIST`（谁走管理员实例）及可选 Skill 同步说明。
 
 ## 十一、参考链接
 

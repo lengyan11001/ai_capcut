@@ -235,9 +235,10 @@ git pull
 
 - **管理端改价**：`ADMIN_SECRET=你的管理密钥`（请求头 `X-Admin-Token` 与此一致时可访问 `GET/PUT /auth/model-pricing`）。
 - **OpenClaw 双实例（可选）**：
-  - `OPENCLAW_GATEWAY_URL`、`OPENCLAW_GATEWAY_TOKEN`：学习实例（白名单用户）
-  - `OPENCLAW_GATEWAY_URL_USERS`、`OPENCLAW_GATEWAY_TOKEN_USERS`：用户实例（兼容回退）
-  - `OPENCLAW_LEARN_ALLOWLIST`：学习实例白名单（user id 或 email，逗号分隔）
+  - `OPENCLAW_GATEWAY_URL`、`OPENCLAW_GATEWAY_TOKEN`：管理员专用（原单实例）
+  - `OPENCLAW_GATEWAY_URL_USERS`、`OPENCLAW_GATEWAY_TOKEN_USERS`：普通用户专用
+  - `OPENCLAW_LEARN_ALLOWLIST`：仅这些账号走管理员实例，其余只走用户实例
+  - `OPENCLAW_LEARN_ALLOWLIST_USE_USERS_GATEWAY`：可选，true 时排障用（白名单也走用户实例）
 - **智能对话用量限制**（可选，0 表示不限制，前期内部用可放宽）：
   - `CHAT_DAILY_CAP_PER_USER=100`  # 每用户每日最多 N 轮
   - `CHAT_RATE_LIMIT_PER_MINUTE=30` # 每用户每分钟最多 N 次

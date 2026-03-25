@@ -1,6 +1,8 @@
 // chat.js - 智能对话模块
 
     var CHAT_SESSIONS_KEY = 'ai_test_platform_chat_sessions';
+    var CHAT_SESSIONS_BY_LANE_KEY = 'ai_test_platform_chat_sessions_by_lane';
+    var CHAT_LANE_PREF_KEY = 'ai_test_platform_chat_lane';
     var chatSessions = [];
     var currentSessionId = null;
     var chatHistory = [];
@@ -45,22 +47,43 @@
       refreshChatInputState();
     }
 
+    function normalizeSessionList(arr) {
+      if (!Array.isArray(arr)) return [];
+      arr.forEach(function(s) {
+        if (s.id != null) s.id = String(s.id);
+        var m = s.messages || s.history;
+        s.messages = Array.isArray(m) ? m : [];
+      });
+      return arr;
+    }
+    /** 曾启用「双轨会话」时，把学习轨列表迁回单一 key，避免丢管理员侧历史 */
+    function migrateDualStorageToSingle() {
+      try {
+        var dualRaw = localStorage.getItem(CHAT_SESSIONS_BY_LANE_KEY);
+        if (!dualRaw) return;
+        if (localStorage.getItem(CHAT_SESSIONS_KEY)) {
+          localStorage.removeItem(CHAT_SESSIONS_BY_LANE_KEY);
+          localStorage.removeItem(CHAT_LANE_PREF_KEY);
+          return;
+        }
+        var o = JSON.parse(dualRaw);
+        var learn = normalizeSessionList(Array.isArray(o.learn) ? o.learn : []);
+        localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(learn));
+        localStorage.removeItem(CHAT_SESSIONS_BY_LANE_KEY);
+        localStorage.removeItem(CHAT_LANE_PREF_KEY);
+      } catch (e) {}
+    }
     function loadChatSessionsFromStorage() {
+      migrateDualStorageToSingle();
       try {
         var raw = localStorage.getItem(CHAT_SESSIONS_KEY);
         if (!raw) return;
         var parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          chatSessions = parsed;
-          chatSessions.forEach(function(s) {
-            if (s.id != null) s.id = String(s.id);
-            var m = s.messages || s.history;
-            s.messages = Array.isArray(m) ? m : [];
-          });
+          chatSessions = normalizeSessionList(parsed);
         }
       } catch (e) {}
     }
-    loadChatSessionsFromStorage();
     function saveChatSessionsToStorage() {
       try {
         localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(chatSessions));

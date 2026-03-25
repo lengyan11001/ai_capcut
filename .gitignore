@@ -56,3 +56,5 @@ __pycache__/
 ai_test_platform/mcp/capability_catalog.local.json
 ai_test_platform/.env.runtime
 ai_test_platform/docker-compose.local.yml
+# 云服务器 SSH / 口令等（勿推）
+ai_test_platform/.deploy/secrets.env

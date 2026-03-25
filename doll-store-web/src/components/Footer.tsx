@@ -39,16 +39,6 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href={withLang("/category/full-body")} className="text-gray-400 hover:text-gray-200">
-                  {t(lang, "Full Body", "全身款")}
-                </Link>
-              </li>
-              <li>
-                <Link href={withLang("/category/tpe")} className="text-gray-400 hover:text-gray-200">
-                  {t(lang, "TPE Dolls", "TPE 娃娃")}
-                </Link>
-              </li>
-              <li>
                 <Link href={withLang("/category/silicone")} className="text-gray-400 hover:text-gray-200">
                   {t(lang, "Silicone", "硅胶款")}
                 </Link>

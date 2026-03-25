@@ -27,25 +27,65 @@
     "id": "guide-2",
     "slug": "tpe-vs-silicone-differences",
     "title": "TPE vs Silicone: Cost, Touch, and Maintenance",
-    "excerpt": "A side-by-side comparison for decision making before payment.",
+    "excerpt": "Photo-backed comparison plus why our shop focuses on premium silicone for long-term ownership.",
     "category": "Comparison",
-    "readMinutes": 5,
+    "readMinutes": 8,
     "tags": ["tpe", "silicone", "comparison"],
     "sections": [
       {
+        "heading": "How to read this guide",
+        "body": "Below you’ll see real reference photos: the first pair is TPE, the second pair is silicone. Use them alongside the notes on cost, touch, and care—not as a substitute for hygiene and storage discipline."
+      },
+      {
         "heading": "Price and entry threshold",
-        "body": "TPE is usually lower cost and better for first order testing. Silicone has higher upfront cost and often higher freight impact."
+        "body": "TPE often wins on sticker price and can feel like a lower-risk first purchase. Silicone costs more up front and shipping weight/volume usually pushes landed cost higher—but many owners treat that as a long-term investment in stability, detail retention, and simpler day-to-day care."
       },
       {
-        "heading": "Touch and appearance",
-        "body": "Silicone usually offers stronger skin-texture consistency. TPE can feel softer in some ranges but requires more regular powder care."
+        "heading": "Visual reference: TPE samples",
+        "body": "TPE can look soft and approachable in photos, but the surface is more oil-dependent and stain-sensitive in daily use. Finer areas may also need more frequent powdering or touch-up to keep a consistent look under real lighting.",
+        "images": [
+          {
+            "src": "/guides/tpe-vs-silicone/tpe-1.png",
+            "alt": "TPE material product reference sample one",
+            "caption": "TPE — reference sample 1"
+          },
+          {
+            "src": "/guides/tpe-vs-silicone/tpe-2.png",
+            "alt": "TPE material product reference sample two",
+            "caption": "TPE — reference sample 2"
+          }
+        ]
       },
       {
-        "heading": "Maintenance rhythm",
-        "body": "Both materials need regular cleaning and dry storage. Silicone is more stable for long-term shape retention, while TPE needs stricter anti-stain handling."
+        "heading": "Visual reference: silicone samples",
+        "body": "Silicone typically holds sharper sculpt detail and a more stable skin read: less oily sheen day-to-day, more predictable texture, and stronger shape memory when cleaned, dried, and stored properly. That’s why our catalog is built around silicone-first curation.",
+        "images": [
+          {
+            "src": "/guides/tpe-vs-silicone/silicone-1.png",
+            "alt": "Silicone material product reference sample one",
+            "caption": "Silicone — reference sample 1"
+          },
+          {
+            "src": "/guides/tpe-vs-silicone/silicone-2.png",
+            "alt": "Silicone material product reference sample two",
+            "caption": "Silicone — reference sample 2"
+          }
+        ]
+      },
+      {
+        "heading": "Why choose silicone from RealDollHub",
+        "body": "We standardize on silicone because it matches what most experienced collectors want after the first purchase: cleaner surface behavior, better long-term shape retention, and a premium tactile read under normal room lighting. Our listings are curated for consistent factory finishing, discreet fulfillment, and clear lead-time communication—so you’re not guessing what arrives at your door."
+      },
+      {
+        "heading": "Touch, detail, and daily care",
+        "body": "If you prioritize softness above all, some TPE blends can feel plush—but silicone usually returns a more ‘settled’ skin texture with less maintenance theater. Both materials require thorough cleaning and full drying; silicone is generally more forgiving on stains and compression marks if you avoid harsh solvents and store without long-term point pressure."
+      },
+      {
+        "heading": "Maintenance rhythm (quick checklist)",
+        "body": "After each use: clean with a mild, manufacturer-safe routine, dry completely, and return to a breathable, dust-light space. Monthly: inspect high-contact areas, joints, and any coated zones. Silicone owners typically spend less time fighting oil bleed or surface tack than with many TPE setups—another reason we recommend silicone for buyers who want fewer variables over years, not weeks."
       }
     ],
-    "relatedProductSlugs": ["origin-tpe-149-standard", "origin-silicone-158-wig", "origin-silicone-171-skin-texture"]
+    "relatedProductSlugs": ["origin-silicone-149-wig", "origin-silicone-158-wig", "origin-silicone-171-skin-texture"]
   },
   {
     "id": "guide-3",

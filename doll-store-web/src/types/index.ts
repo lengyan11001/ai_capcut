@@ -37,6 +37,18 @@ export interface Product {
   featured?: boolean;
 }
 
+export interface GuideSectionImage {
+  src: string;
+  alt: string;
+  caption?: string;
+}
+
+export interface GuideSection {
+  heading: string;
+  body: string;
+  images?: GuideSectionImage[];
+}
+
 export interface GuideArticle {
   id: string;
   slug: string;
@@ -45,7 +57,7 @@ export interface GuideArticle {
   category: "Beginner" | "Material" | "Care" | "Scene" | "Comparison";
   readMinutes: number;
   tags: string[];
-  sections: Array<{ heading: string; body: string }>;
+  sections: GuideSection[];
   relatedProductSlugs: string[];
 }
 
