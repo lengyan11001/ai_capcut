@@ -12,6 +12,31 @@ const CORE_SUPPLIERS = (process.env.NEXT_PUBLIC_CORE_SUPPLIERS ?? "mxj")
   .filter(Boolean);
 const ENABLE_CORE_SUPPLIER_FILTER = process.env.NEXT_PUBLIC_ENABLE_CORE_SUPPLIER_FILTER !== "false";
 
+/** Set to true to show every published product again (debug / staging). */
+const SHOW_ALL_PUBLIC_CATALOG = process.env.NEXT_PUBLIC_SHOW_ALL_CATALOG === "true";
+
+/**
+ * Public storefront only lists these suppliers (妙小姐 import uses specs.supplier = "mxj").
+ * Silicone bodies → category_id silicone; 名器类 → accessories. Both are still "mxj".
+ */
+const STOREFRONT_SUPPLIERS = (process.env.NEXT_PUBLIC_STOREFRONT_SUPPLIERS ?? "mxj")
+  .split(",")
+  .map((v) => v.trim().toLowerCase())
+  .filter(Boolean);
+
+function passesStorefrontCatalogFilter(product: Product): boolean {
+  if (SHOW_ALL_PUBLIC_CATALOG) return true;
+  if (STOREFRONT_SUPPLIERS.length === 0) return true;
+  const supplier = getSupplierKey(product);
+  if (supplier !== "" && STOREFRONT_SUPPLIERS.includes(supplier)) return true;
+  // Import slugs are mxj-* even if an old row missed specs.supplier
+  const slug = product.slug.toLowerCase();
+  if (supplier === "" && slug.startsWith("mxj-") && STOREFRONT_SUPPLIERS.includes("mxj")) {
+    return true;
+  }
+  return false;
+}
+
 function normalizeImageUrl(url: string): string {
   if (url.startsWith(IMAGE_PROXY_PREFIX)) {
     return `/api/image-proxy?url=${encodeURIComponent(url)}`;
@@ -142,11 +167,11 @@ async function loadProductsFromSource(): Promise<Product[]> {
     .from("products")
     .select("*")
     .order("updated_at", { ascending: false });
-  if (error || !data) return staticProducts;
-  const mapped = (data as DbProductRow[]).map(mapDbProduct);
-  // Empty table → keep storefront usable with bundled seed data until import is done.
-  if (mapped.length === 0) return staticProducts;
-  return mapped;
+  // Do not fall back to bundled products.json: that looked like "random default data" on refresh
+  // when the query failed or the table was briefly empty.
+  if (error) return [];
+  if (!data || data.length === 0) return [];
+  return (data as DbProductRow[]).map(mapDbProduct);
 }
 
 const loadProductsCached = unstable_cache(loadProductsFromSource, ["products-all"], {
@@ -170,11 +195,12 @@ export async function getProducts(
     ? products
     : products.filter((p) => canShowByRegion(p, options?.region ?? "ROW") && canShowBySupplier(p));
   const publishedOnly = base.filter((p) => (p.assetStatus ?? "published") === "published");
+  const storefront = publishedOnly.filter(passesStorefrontCatalogFilter);
 
-  if (!categorySlug) return publishedOnly;
+  if (!categorySlug) return storefront;
   const cat = categories.find((c) => c.slug === categorySlug);
-  if (!cat) return publishedOnly;
-  return publishedOnly.filter((p) => p.categoryId === cat.id);
+  if (!cat) return storefront;
+  return storefront.filter((p) => p.categoryId === cat.id);
 }
 
 export async function getProductBySlug(

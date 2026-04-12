@@ -11,7 +11,7 @@ import { Suspense } from "react";
 
 export const metadata: Metadata = {
   title: "Doll Store | Premium Collectibles",
-  description: "Shop full body dolls, TPE and silicone collectibles. Discreet packaging, secure delivery.",
+  description: "Premium silicone dolls and collectibles. Discreet packaging, secure delivery.",
 };
 
 export default function RootLayout({

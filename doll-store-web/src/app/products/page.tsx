@@ -30,6 +30,15 @@ export default async function ProductsPage({
           "当前价格为工厂到货代报价，国际运费将按目的地单独核算。"
         )}
       </p>
+      {process.env.NEXT_PUBLIC_SHOW_ALL_CATALOG !== "true" && (
+        <p className="mt-2 text-sm font-medium text-indigo-900/80">
+          {t(
+            lang,
+            "Listed items are Miao Xiaojie (MXJ) selection only—silicone dolls and related SKUs we imported. Other warehouse lines are hidden.",
+            "当前仅展示妙小姐（MXJ）选品：已导入的硅胶款与相关 SKU，其它货源不在前台展示。"
+          )}
+        </p>
+      )}
       <p className="mt-2 text-xs text-gray-500">
         {t(lang, "Region view:", "地区视图:")} {ctx.region}
         {ctx.debugRegion ? ` (debug_region=${ctx.debugRegion})` : ""}
