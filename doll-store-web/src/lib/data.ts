@@ -165,9 +165,17 @@ function mapDbProduct(row: DbProductRow): Product {
   };
 }
 
+function isDeployedProductionBuild(): boolean {
+  return process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
+}
+
 async function loadProductsFromSource(): Promise<Product[]> {
   const supabase = getSupabaseAdmin();
-  if (!supabase) return staticProducts;
+  if (!supabase) {
+    // On Vercel/production, missing env must NOT fall back to repo products.json (looks like fake inventory).
+    if (isDeployedProductionBuild()) return [];
+    return staticProducts;
+  }
 
   const { data, error } = await supabase
     .from("products")
@@ -180,7 +188,8 @@ async function loadProductsFromSource(): Promise<Product[]> {
   return (data as DbProductRow[]).map(mapDbProduct);
 }
 
-const loadProductsCached = unstable_cache(loadProductsFromSource, ["products-all"], {
+// Bump key when load behavior changes (avoids stale ISR holding old JSON fallback).
+const loadProductsCached = unstable_cache(loadProductsFromSource, ["products-all-v3"], {
   revalidate: 30,
 });
 

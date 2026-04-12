@@ -6,6 +6,11 @@ import { getGuideCoverImage, getGuides } from "@/lib/guides";
 import { resolveRegionContext } from "@/lib/request-context";
 import { getLangFromSearchParams, t } from "@/lib/i18n";
 import { getShippingProofs } from "@/lib/shipping-proof";
+import { isSupabaseConfigured } from "@/lib/supabase-admin";
+
+function isProductionDeploy(): boolean {
+  return process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
+}
 
 export default async function HomePage({
   searchParams,
@@ -41,8 +46,19 @@ export default async function HomePage({
           : proof.image,
     }));
 
+  const missingSupabase = isProductionDeploy() && !isSupabaseConfigured();
+
   return (
     <div className="text-gray-100">
+      {missingSupabase && (
+        <div className="border-b border-amber-500/40 bg-amber-950/90 px-4 py-3 text-center text-sm text-amber-100">
+          {t(
+            lang,
+            "Store inventory is offline: set NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY on Vercel (Production) and redeploy.",
+            "商品库未连接：请在 Vercel Production 环境变量中配置 NEXT_PUBLIC_SUPABASE_URL 与 SUPABASE_SERVICE_ROLE_KEY 并重新部署。"
+          )}
+        </div>
+      )}
       <section className="relative overflow-hidden py-20 md:py-28">
         <div className="absolute inset-0 -z-10">
           <Image src={heroImage} alt="" fill className="object-cover" priority sizes="100vw" unoptimized />
