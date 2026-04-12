@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { getFeaturedProducts } from "@/lib/data";
 import { ProductCard } from "@/components/ProductCard";
-import { getGuides } from "@/lib/guides";
+import { getGuideCoverImage, getGuides } from "@/lib/guides";
 import { resolveRegionContext } from "@/lib/request-context";
 import { getLangFromSearchParams, t } from "@/lib/i18n";
 import { getShippingProofs } from "@/lib/shipping-proof";
@@ -21,7 +21,8 @@ export default async function HomePage({
   if (ctx.debugAll) query.set("debug_all", "1");
   const queryString = query.toString();
   const featured = await getFeaturedProducts({ region: ctx.region, debugAll: ctx.debugAll });
-  const guides = getGuides().slice(0, 3);
+  const homeGuides = getGuides().slice(0, 4);
+  const [spotlightGuide, ...secondaryGuides] = homeGuides;
   const featuredCards = featured.slice(0, 6);
   const featuredVisuals = featured
     .map((p) => p.images?.[0])
@@ -112,35 +113,106 @@ export default async function HomePage({
       </section>
 
       <section className="mx-auto max-w-6xl px-4 py-12">
-        <div className="flex items-end justify-between gap-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-white">{t(lang, "Guides First", "内容先行")}</h2>
+            <h2 className="text-xl font-semibold text-white">
+              {t(lang, "Editor’s picks", "精选长文")}
+            </h2>
             <p className="mt-1 text-sm text-gray-300">
               {t(
                 lang,
-                "Learn materials, use scenarios, and maintenance before choosing products.",
-                "先了解材质、使用场景和保养建议，再决定购买。"
+                "Material comparison, care, and buying guides—with photos where it matters.",
+                "材质对比、护理与选购指南，重要篇目配实拍图。"
               )}
             </p>
           </div>
-          <Link href={`/guides?${queryString}`} className="text-sm text-indigo-200 underline hover:text-indigo-100">
-            {t(lang, "View all guides", "查看全部指南")}
-          </Link>
-        </div>
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          {guides.map((guide) => (
+          <div className="flex flex-wrap items-center gap-3 text-sm">
             <Link
-              key={guide.id}
-              href={`/guides/${guide.slug}?${queryString}`}
-              className="rounded-lg border border-white/10 bg-[#12182a] p-5 hover:border-indigo-300/40 hover:shadow-[0_16px_45px_rgba(0,0,0,0.35)]"
+              href={`/brand-story?${queryString}`}
+              className="rounded-full border border-white/20 px-4 py-2 text-indigo-100 hover:border-indigo-300/50 hover:bg-white/5"
             >
-              <p className="text-xs uppercase tracking-wide text-gray-400">
-                {guide.category} · {guide.readMinutes} min
-              </p>
-              <h3 className="mt-2 font-semibold text-gray-100">{guide.title}</h3>
-              <p className="mt-2 text-sm text-gray-300">{guide.excerpt}</p>
+              {t(lang, "Brand story", "品牌故事")}
             </Link>
-          ))}
+            <Link
+              href={`/craft?${queryString}`}
+              className="rounded-full border border-white/20 px-4 py-2 text-indigo-100 hover:border-indigo-300/50 hover:bg-white/5"
+            >
+              {t(lang, "Craft guide", "工艺指南")}
+            </Link>
+            <Link href={`/guides?${queryString}`} className="text-indigo-200 underline hover:text-indigo-100">
+              {t(lang, "View all guides", "查看全部指南")}
+            </Link>
+          </div>
+        </div>
+
+        {spotlightGuide && (
+          <Link
+            href={`/guides/${spotlightGuide.slug}?${queryString}`}
+            className="mt-8 grid gap-6 overflow-hidden rounded-2xl border border-white/10 bg-[#12182a] transition hover:border-indigo-300/40 hover:shadow-[0_20px_55px_rgba(0,0,0,0.4)] md:grid-cols-2 md:items-stretch"
+          >
+            <div className="relative min-h-[200px] bg-[#0e1424] md:min-h-[280px]">
+              {getGuideCoverImage(spotlightGuide) ? (
+                <Image
+                  src={getGuideCoverImage(spotlightGuide)!}
+                  alt=""
+                  fill
+                  className="object-cover object-center"
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  unoptimized
+                />
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/40 to-[#0a1020]" />
+              )}
+              <span className="absolute left-4 top-4 rounded-full bg-indigo-500/90 px-3 py-1 text-xs font-semibold text-white">
+                {t(lang, "Featured read", "本期推荐")}
+              </span>
+            </div>
+            <div className="flex flex-col justify-center p-6 md:p-8">
+              <p className="text-xs uppercase tracking-wide text-gray-400">
+                {spotlightGuide.category} · {spotlightGuide.readMinutes} min
+              </p>
+              <h3 className="mt-2 text-xl font-semibold text-white md:text-2xl">{spotlightGuide.title}</h3>
+              <p className="mt-3 text-sm leading-relaxed text-gray-300">{spotlightGuide.excerpt}</p>
+              <span className="mt-4 text-sm font-medium text-indigo-200">
+                {t(lang, "Read article →", "阅读全文 →")}
+              </span>
+            </div>
+          </Link>
+        )}
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {secondaryGuides.map((guide) => {
+            const cover = getGuideCoverImage(guide);
+            return (
+              <Link
+                key={guide.id}
+                href={`/guides/${guide.slug}?${queryString}`}
+                className="group overflow-hidden rounded-xl border border-white/10 bg-[#12182a] transition hover:border-indigo-300/40 hover:shadow-[0_16px_45px_rgba(0,0,0,0.35)]"
+              >
+                <div className="relative aspect-[16/10] bg-[#0e1424]">
+                  {cover ? (
+                    <Image
+                      src={cover}
+                      alt=""
+                      fill
+                      className="object-cover object-center transition duration-300 group-hover:scale-[1.02]"
+                      sizes="(max-width: 640px) 100vw, 33vw"
+                      unoptimized
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-[#1a2240] to-[#0e1424]" />
+                  )}
+                </div>
+                <div className="p-4">
+                  <p className="text-xs uppercase tracking-wide text-gray-400">
+                    {guide.category} · {guide.readMinutes} min
+                  </p>
+                  <h3 className="mt-2 line-clamp-2 font-semibold text-gray-100">{guide.title}</h3>
+                  <p className="mt-2 line-clamp-2 text-sm text-gray-400">{guide.excerpt}</p>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </section>
 

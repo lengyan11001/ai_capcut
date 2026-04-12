@@ -59,6 +59,16 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href={withLang("/brand-story")} className="text-gray-400 hover:text-gray-200">
+                  {t(lang, "Brand story", "品牌故事")}
+                </Link>
+              </li>
+              <li>
+                <Link href={withLang("/craft")} className="text-gray-400 hover:text-gray-200">
+                  {t(lang, "Craft & bespoke", "工艺与定制")}
+                </Link>
+              </li>
+              <li>
                 <Link href={withLang("/shipping")} className="text-gray-400 hover:text-gray-200">
                   {t(lang, "Shipping & Delivery", "物流与配送")}
                 </Link>

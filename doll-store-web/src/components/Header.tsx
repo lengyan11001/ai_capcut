@@ -43,6 +43,9 @@ export function Header() {
           <Link href={buildHref("/guides")} prefetch className="text-sm text-gray-300 hover:text-white">
             {t(lang, "Guides", "指南")}
           </Link>
+          <Link href={buildHref("/craft")} prefetch className="text-sm text-gray-300 hover:text-white">
+            {t(lang, "Craft", "工艺")}
+          </Link>
           <Link href={buildHref("/orders")} prefetch className="text-sm text-gray-300 hover:text-white">
             {t(lang, "Track order", "订单查询")}
           </Link>
@@ -113,6 +116,14 @@ export function Header() {
             onClick={() => setOpen(false)}
           >
             {t(lang, "Guides", "指南")}
+          </Link>
+          <Link
+            href={buildHref("/craft")}
+            prefetch
+            className="block py-2 text-gray-300"
+            onClick={() => setOpen(false)}
+          >
+            {t(lang, "Craft", "工艺")}
           </Link>
           <Link
             href={buildHref("/cart")}

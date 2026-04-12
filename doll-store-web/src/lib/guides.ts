@@ -8,6 +8,16 @@ export function getGuides(): GuideArticle[] {
   return guides;
 }
 
+/** Cover for cards: explicit coverImage, else first image in any section */
+export function getGuideCoverImage(guide: GuideArticle): string | null {
+  if (guide.coverImage) return guide.coverImage;
+  for (const section of guide.sections) {
+    const first = section.images?.[0]?.src;
+    if (first) return first;
+  }
+  return null;
+}
+
 export function getGuideBySlug(slug: string): GuideArticle | undefined {
   return guides.find((g) => g.slug === slug);
 }

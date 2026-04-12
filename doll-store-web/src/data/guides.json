@@ -1,36 +1,16 @@
 [
   {
-    "id": "guide-1",
-    "slug": "how-to-choose-first-doll",
-    "title": "First Purchase Guide: How to Choose Size and Material",
-    "excerpt": "A practical path for first-time buyers: budget, body size, material feel, and shipping expectations.",
-    "category": "Beginner",
-    "readMinutes": 6,
-    "tags": ["beginner", "size", "budget"],
-    "sections": [
-      {
-        "heading": "Start from total landed budget",
-        "body": "Do not only compare factory price. Include international freight, destination fees, and optional functions before deciding."
-      },
-      {
-        "heading": "Size affects both handling and shipping",
-        "body": "100-130cm models are easier for storage and lower-risk first orders. 149-171cm models provide stronger realism but are heavier and more expensive to ship."
-      },
-      {
-        "heading": "Pick one must-have, then control options",
-        "body": "Choose one key preference (for example: skin texture, standing feet, implanted hair), then keep other add-ons minimal to avoid budget overflow."
-      }
-    ],
-    "relatedProductSlugs": ["origin-tpe-130-new-body", "origin-silicone-149-wig", "origin-half-body-7kg-st-7"]
-  },
-  {
     "id": "guide-2",
     "slug": "tpe-vs-silicone-differences",
     "title": "TPE vs Silicone: Cost, Touch, and Maintenance",
     "excerpt": "Photo-backed comparison plus why our shop focuses on premium silicone for long-term ownership.",
     "category": "Comparison",
     "readMinutes": 8,
-    "tags": ["tpe", "silicone", "comparison"],
+    "tags": [
+      "tpe",
+      "silicone",
+      "comparison"
+    ],
     "sections": [
       {
         "heading": "How to read this guide",
@@ -85,31 +65,135 @@
         "body": "After each use: clean with a mild, manufacturer-safe routine, dry completely, and return to a breathable, dust-light space. Monthly: inspect high-contact areas, joints, and any coated zones. Silicone owners typically spend less time fighting oil bleed or surface tack than with many TPE setups—another reason we recommend silicone for buyers who want fewer variables over years, not weeks."
       }
     ],
-    "relatedProductSlugs": ["origin-silicone-149-wig", "origin-silicone-158-wig", "origin-silicone-171-skin-texture"]
+    "relatedProductSlugs": [
+      "origin-silicone-149-wig",
+      "origin-silicone-158-wig",
+      "origin-silicone-171-skin-texture"
+    ]
   },
   {
     "id": "guide-3",
     "slug": "care-routine-weekly-monthly",
-    "title": "Care Routine: Weekly and Monthly Checklist",
-    "excerpt": "A maintenance SOP to keep product condition stable and reduce after-sales issues.",
+    "title": "Care Guide: Bathing, Drying & Daily Precautions",
+    "excerpt": "Treat silicone like skin: gentle washing, thorough drying, light powdering, and clear rules for standing, stains, and sharp contact.",
     "category": "Care",
-    "readMinutes": 4,
-    "tags": ["care", "maintenance", "checklist"],
+    "readMinutes": 7,
+    "tags": [
+      "care",
+      "silicone",
+      "bathing",
+      "drying"
+    ],
     "sections": [
       {
-        "heading": "Weekly basic care",
-        "body": "Surface cleaning, dry wipe, and quick visual check for high-contact zones."
+        "heading": "Why gentle care matters",
+        "body": "RealDollHub silicone is chosen to read naturally under indoor light—but it is not indestructible. Steady, boring habits (mild cleaners, full dry-down, safe storage) prevent 90% of avoidable wear. For material trade-offs, see our TPE vs silicone guide; this page focuses on daily ownership.",
+        "images": [
+          {
+            "src": "/guides/care/b48.jpg",
+            "alt": "Silicone doll care and gentle handling context",
+            "caption": "Routine care keeps finish and joints predictable over time."
+          }
+        ]
       },
       {
-        "heading": "Monthly deep care",
-        "body": "Joint movement check, powder or surface condition refresh, wig and accessory organization."
+        "heading": "Bathing and surface cleaning",
+        "body": "Short, lukewarm sessions are enough. Use a mild, pH-balanced body wash and soft pressure—no aggressive acids, alkalis, or solvents that attack coatings. Rinse thoroughly so residue does not dry into the surface texture.",
+        "images": [
+          {
+            "src": "/guides/care/b49.jpg",
+            "alt": "Bathing and cleaning silicone surfaces gently",
+            "caption": "Avoid very hot water and harsh cleaners."
+          }
+        ]
       },
       {
-        "heading": "Storage discipline",
-        "body": "Keep in dry, low-dust space. Avoid direct sunlight and long-term pressure on one side."
+        "heading": "Drying—especially internal moisture",
+        "body": "Trapped moisture drives odor and mold risk. After cleaning, towel the exterior, then allow full internal dry-down using the method recommended for your SKU. Many shipments include a moisture-absorbing drying rod or similar accessory—insert and leave as directed until the cavity reads dry, not “almost dry.”",
+        "images": [
+          {
+            "src": "/guides/care/b50.jpg",
+            "alt": "Drying accessories and internal moisture control",
+            "caption": "Complete drying beats rushing to store or dress."
+          }
+        ]
+      },
+      {
+        "heading": "Skin finishing after dry-down",
+        "body": "Once the body is fully dry, a thin layer of finishing powder (talc-free products your manufacturer approves) restores a silky hand-feel and helps dust slide off instead of sticking. Reapply when the surface starts to feel tacky again.",
+        "images": [
+          {
+            "src": "/guides/care/b51.jpg",
+            "alt": "Applying finishing powder after cleaning",
+            "caption": "Light powdering after full dry-down."
+          }
+        ]
+      },
+      {
+        "heading": "Standing and long-term posing",
+        "body": "Even with reinforced standing options, gravity is constant. Do not leave a full doll free-standing for extended stretches (for example beyond a couple of hours)—silicone at the feet can compress, and skeleton fatigue adds up. When idle, lay flat on a soft, colorfast towel or use a stable seated pose that does not punch one point load.",
+        "images": [
+          {
+            "src": "/guides/care/b52.jpg",
+            "alt": "Safe posing and standing precautions",
+            "caption": "Short standing displays; rest flat or seated for storage."
+          }
+        ]
+      },
+      {
+        "heading": "Stains, fabrics, and sharp contact",
+        "body": "Silicone can pick up dye from unwashed dark denim, ink-heavy prints, and cheap color-bleeding fabrics—stains are often permanent once set. Keep blades, long nails, zipper teeth, and pet claws away from the skin film; punctures are difficult to repair invisibly.",
+        "images": [
+          {
+            "src": "/guides/care/b53.jpg",
+            "alt": "Avoiding stains and damage to silicone",
+            "caption": "Colorfast layers only; watch fabrics and sharp edges."
+          }
+        ]
+      },
+      {
+        "heading": "Weekly and monthly rhythm",
+        "body": "Weekly: quick visual pass on high-contact zones, joints, and wig lines; confirm storage pose has not creased one spot for days. Monthly: deeper joint check, powder refresh if needed, and reorganize accessories so nothing presses the body in storage."
       }
     ],
-    "relatedProductSlugs": ["origin-half-body-14kg-st-2", "origin-silicone-168-wig"]
+    "relatedProductSlugs": [
+      "origin-silicone-149-wig",
+      "origin-silicone-168-wig",
+      "origin-silicone-171-skin-texture"
+    ]
+  },
+  {
+    "id": "guide-1",
+    "slug": "how-to-choose-first-doll",
+    "title": "First Purchase Guide: How to Choose Size and Material",
+    "excerpt": "A practical path for first-time buyers: budget, body size, and material—our listed prices include standard shipping.",
+    "category": "Beginner",
+    "readMinutes": 6,
+    "tags": [
+      "beginner",
+      "size",
+      "budget"
+    ],
+    "sections": [
+      {
+        "heading": "Start from the price you see (shipping included)",
+        "body": "On RealDollHub, the price shown for each product includes standard international shipping to supported destinations—use that number as your main budget anchor. You may still need to plan separately for optional upgrades, accessories, and any import duties or local fees your country applies."
+      },
+      {
+        "heading": "Size affects handling and total price",
+        "body": "100–130cm models are easier for storage and lower-risk first orders. 149–171cm models deliver stronger realism and usually sit at a higher list price (shipping is already bundled into what you see). Think about weight and storage at home, not an extra freight line item."
+      },
+      {
+        "heading": "Pick one must-have, then control options",
+        "body": "Choose one key preference (for example: skin texture, standing feet, implanted hair), then keep other add-ons minimal to avoid budget overflow."
+      }
+    ],
+    "relatedProductSlugs": [
+      "origin-tpe-130-new-body",
+      "origin-silicone-149-wig",
+      "origin-half-body-7kg-st-7"
+    ],
+    "coverImage": "/craft/b38.jpg"
   },
   {
     "id": "guide-4",
@@ -118,7 +202,11 @@
     "excerpt": "Understand the trade-off between faster regional inventory and wider origin options.",
     "category": "Beginner",
     "readMinutes": 5,
-    "tags": ["shipping", "warehouse", "origin"],
+    "tags": [
+      "shipping",
+      "warehouse",
+      "origin"
+    ],
     "sections": [
       {
         "heading": "Regional warehouse route",
@@ -133,7 +221,10 @@
         "body": "If timeline is priority, prefer local warehouse when available. If model customization is priority, origin route is usually better."
       }
     ],
-    "relatedProductSlugs": ["origin-tpe-100-standard", "origin-silicone-149-wig"]
+    "relatedProductSlugs": [
+      "origin-tpe-100-standard",
+      "origin-silicone-149-wig"
+    ]
   },
   {
     "id": "guide-5",
@@ -142,7 +233,11 @@
     "excerpt": "Choose based on space, handling, and use intensity instead of only body type preference.",
     "category": "Scene",
     "readMinutes": 4,
-    "tags": ["half-body", "full-body", "scenario"],
+    "tags": [
+      "half-body",
+      "full-body",
+      "scenario"
+    ],
     "sections": [
       {
         "heading": "Half body advantages",
@@ -157,7 +252,11 @@
         "body": "For first order and tight storage, start with half body. For long-term collection intent, choose full body."
       }
     ],
-    "relatedProductSlugs": ["origin-half-body-7kg-st-7", "origin-half-body-15kg-st-3", "origin-silicone-158-wig"]
+    "relatedProductSlugs": [
+      "origin-half-body-7kg-st-7",
+      "origin-half-body-15kg-st-3",
+      "origin-silicone-158-wig"
+    ]
   },
   {
     "id": "guide-6",
@@ -166,7 +265,11 @@
     "excerpt": "Prioritize options by conversion value instead of adding everything.",
     "category": "Comparison",
     "readMinutes": 4,
-    "tags": ["options", "pricing", "value"],
+    "tags": [
+      "options",
+      "pricing",
+      "value"
+    ],
     "sections": [
       {
         "heading": "High-impact options first",
@@ -181,7 +284,11 @@
         "body": "Before order confirmation, lock one must-have, one nice-to-have, and one optional fallback."
       }
     ],
-    "relatedProductSlugs": ["origin-tpe-169-new-shape", "origin-silicone-171-skin-texture", "origin-half-body-14kg-st-2"]
+    "relatedProductSlugs": [
+      "origin-tpe-169-new-shape",
+      "origin-silicone-171-skin-texture",
+      "origin-half-body-14kg-st-2"
+    ]
   },
   {
     "id": "guide-7",
@@ -190,7 +297,11 @@
     "excerpt": "A clear expectation-setting note for packaging, communication, and delivery checkpoints.",
     "category": "Beginner",
     "readMinutes": 3,
-    "tags": ["privacy", "delivery", "packaging"],
+    "tags": [
+      "privacy",
+      "delivery",
+      "packaging"
+    ],
     "sections": [
       {
         "heading": "Outer packaging",
@@ -205,7 +316,10 @@
         "body": "Inspect package condition, then do a basic product status check within the first day."
       }
     ],
-    "relatedProductSlugs": ["origin-tpe-130-new-body", "origin-silicone-149-wig"]
+    "relatedProductSlugs": [
+      "origin-tpe-130-new-body",
+      "origin-silicone-149-wig"
+    ]
   },
   {
     "id": "guide-8",
@@ -214,7 +328,11 @@
     "excerpt": "Three practical bundle ideas to reduce decision fatigue for first-time buyers.",
     "category": "Scene",
     "readMinutes": 5,
-    "tags": ["bundle", "budget", "starter"],
+    "tags": [
+      "bundle",
+      "budget",
+      "starter"
+    ],
     "sections": [
       {
         "heading": "Entry bundle",
@@ -229,6 +347,10 @@
         "body": "For long-term use, prioritize higher-grade texture model and strict post-delivery care routine."
       }
     ],
-    "relatedProductSlugs": ["origin-half-body-7kg-st-7", "origin-tpe-149-standard", "origin-silicone-171-skin-texture"]
+    "relatedProductSlugs": [
+      "origin-half-body-7kg-st-7",
+      "origin-tpe-149-standard",
+      "origin-silicone-171-skin-texture"
+    ]
   }
 ]

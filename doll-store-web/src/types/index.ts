@@ -59,6 +59,8 @@ export interface GuideArticle {
   tags: string[];
   sections: GuideSection[];
   relatedProductSlugs: string[];
+  /** Optional hero thumbnail for listings; falls back to first section image when unset */
+  coverImage?: string;
 }
 
 export interface CartItem {

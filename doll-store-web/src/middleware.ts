@@ -3,9 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 const BYPASS_COOKIE = "site_access_bypass";
 
 function isBypassKeyValid(input: string | null): boolean {
-  const expected = process.env.ACCESS_BYPASS_KEY;
+  const expected = process.env.ACCESS_BYPASS_KEY?.trim();
   if (!expected) return false;
-  return input === expected;
+  if (input == null || input === "") return false;
+  return input.trim() === expected;
 }
 
 function shouldBlockMainland(): boolean {

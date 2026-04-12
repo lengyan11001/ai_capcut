@@ -74,6 +74,8 @@ function canShowBySupplier(product: Product): boolean {
   if (!ENABLE_CORE_SUPPLIER_FILTER) return true;
   if (CORE_SUPPLIERS.length === 0) return true;
   const supplier = getSupplierKey(product);
+  // Unset / legacy rows (no specs.supplier) must still show, or the catalog and hero go empty.
+  if (supplier === "") return true;
   return CORE_SUPPLIERS.includes(supplier);
 }
 
@@ -141,7 +143,10 @@ async function loadProductsFromSource(): Promise<Product[]> {
     .select("*")
     .order("updated_at", { ascending: false });
   if (error || !data) return staticProducts;
-  return (data as DbProductRow[]).map(mapDbProduct);
+  const mapped = (data as DbProductRow[]).map(mapDbProduct);
+  // Empty table → keep storefront usable with bundled seed data until import is done.
+  if (mapped.length === 0) return staticProducts;
+  return mapped;
 }
 
 const loadProductsCached = unstable_cache(loadProductsFromSource, ["products-all"], {
