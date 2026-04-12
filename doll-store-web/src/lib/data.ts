@@ -10,19 +10,25 @@ const CORE_SUPPLIERS = (process.env.NEXT_PUBLIC_CORE_SUPPLIERS ?? "mxj")
   .split(",")
   .map((v) => v.trim().toLowerCase())
   .filter(Boolean);
-const ENABLE_CORE_SUPPLIER_FILTER = process.env.NEXT_PUBLIC_ENABLE_CORE_SUPPLIER_FILTER !== "false";
+/** Opt-in only. When unset/false, all suppliers show (your Supabase catalog). */
+const ENABLE_CORE_SUPPLIER_FILTER = process.env.NEXT_PUBLIC_ENABLE_CORE_SUPPLIER_FILTER === "true";
 
-/** Set to true to show every published product again (debug / staging). */
+/** Set to true to bypass optional supplier storefront filter. */
 const SHOW_ALL_PUBLIC_CATALOG = process.env.NEXT_PUBLIC_SHOW_ALL_CATALOG === "true";
 
 /**
- * Public storefront only lists these suppliers (妙小姐 import uses specs.supplier = "mxj").
- * Silicone bodies → category_id silicone; 名器类 → accessories. Both are still "mxj".
+ * Optional: limit storefront to specs.supplier in this list (e.g. mxj). Default: empty = no extra filter.
+ * Set NEXT_PUBLIC_STOREFRONT_SUPPLIERS=mxj only when you explicitly want MXJ-only.
  */
-const STOREFRONT_SUPPLIERS = (process.env.NEXT_PUBLIC_STOREFRONT_SUPPLIERS ?? "mxj")
+const STOREFRONT_SUPPLIERS = (process.env.NEXT_PUBLIC_STOREFRONT_SUPPLIERS ?? "")
   .split(",")
   .map((v) => v.trim().toLowerCase())
   .filter(Boolean);
+
+export function isStorefrontSupplierFilterEnabled(): boolean {
+  if (SHOW_ALL_PUBLIC_CATALOG) return false;
+  return STOREFRONT_SUPPLIERS.length > 0;
+}
 
 function passesStorefrontCatalogFilter(product: Product): boolean {
   if (SHOW_ALL_PUBLIC_CATALOG) return true;

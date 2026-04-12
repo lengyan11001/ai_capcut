@@ -1,4 +1,4 @@
-import { getProducts } from "@/lib/data";
+import { getProducts, isStorefrontSupplierFilterEnabled } from "@/lib/data";
 import { ProductCard } from "@/components/ProductCard";
 import { resolveRegionContext } from "@/lib/request-context";
 import { getLangFromSearchParams, t } from "@/lib/i18n";
@@ -30,12 +30,12 @@ export default async function ProductsPage({
           "当前价格为工厂到货代报价，国际运费将按目的地单独核算。"
         )}
       </p>
-      {process.env.NEXT_PUBLIC_SHOW_ALL_CATALOG !== "true" && (
+      {isStorefrontSupplierFilterEnabled() && (
         <p className="mt-2 text-sm font-medium text-indigo-900/80">
           {t(
             lang,
-            "Listed items are Miao Xiaojie (MXJ) selection only—silicone dolls and related SKUs we imported. Other warehouse lines are hidden.",
-            "当前仅展示妙小姐（MXJ）选品：已导入的硅胶款与相关 SKU，其它货源不在前台展示。"
+            "Catalog is limited to the supplier list set in STOREFRONT_SUPPLIERS (e.g. MXJ).",
+            "当前目录按环境变量限制了供应商（如仅妙小姐 MXJ），其余货源不展示。"
           )}
         </p>
       )}
